@@ -3,330 +3,386 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 
-interface Balances {
-  usd: number;
-  euro: number;
-  cad: number;
-  crypto: number;
-}
-
-interface ExchangeRates {
-  usd_to_eur: number;
-  usd_to_cad: number;
-  eur_to_usd: number;
-  cad_to_usd: number;
-}
-
-interface CryptoPrices {
-  bitcoin: number;
-  ethereum: number;
-}
-
-interface Message {
-  id: string;
-  title: string;
-  content: string;
-  message_type: string;
-  is_read: boolean;
-  created_at: string;
-  user_id: string;
-}
-
-interface Transaction {
-  id: string;
-  user_id: string;
-  transaction_type: string;
-  amount: number;
-  currency: string;
-  status: string;
-  description: string;
-  created_at: string;
-}
-
-export function useRealtimeData() {
-  const [balances, setBalances] = useState<Balances>({
-    usd: 0,
-    euro: 0,
-    cad: 0,
-    crypto: 0,
-  });
-  const [exchangeRates, setExchangeRates] = useState<ExchangeRates>({
-    usd_to_eur: 0.85,
-    usd_to_cad: 1.35,
-    eur_to_usd: 1.18,
-    cad_to_usd: 0.74,
-  });
-  const [cryptoPrices, setCryptoPrices] = useState<CryptoPrices>({
-    bitcoin: 45000,
-    ethereum: 3000,
-  });
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    initializeData();
-    setupRealtimeSubscriptions();
-  }, []);
-
-  const initializeData = async () => {
-    try {
-      await Promise.all([
-        fetchBalances(),
-        fetchMessages(),
-        fetchTransactions(),
-        fetchExchangeRates(),
-        fetchCryptoPrices(),
-      ]);
-    } catch (err: any) {
-      console.error("Error initializing data:", err.message || err);
-      setError(err.message || "Failed to load data");
-    } finally {
-      setLoading(false);
-    }
+interface RealtimeData {
+  balances: {
+    usd: number;
+    euro: number;
+    cad: number;
+    crypto: number;
   };
-
-  const setupRealtimeSubscriptions = async () => {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) return;
-
-      // Subscribe to balance changes
-      const balanceChannel = supabase
-        .channel("balance-changes")
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "usd_balances",
-            filter: `user_id=eq.${user.id}`,
-          },
-          () => fetchBalances()
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "euro_balances",
-            filter: `user_id=eq.${user.id}`,
-          },
-          () => fetchBalances()
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "cad_balances",
-            filter: `user_id=eq.${user.id}`,
-          },
-          () => fetchBalances()
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "crypto_balances",
-            filter: `user_id=eq.${user.id}`,
-          },
-          () => fetchBalances()
-        )
-        .subscribe();
-
-      // Subscribe to message changes
-      const messageChannel = supabase
-        .channel("message-changes")
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "user_messages",
-            filter: `user_id=eq.${user.id}`,
-          },
-          () => fetchMessages()
-        )
-        .subscribe();
-
-      // Subscribe to transaction changes
-      const transactionChannel = supabase
-        .channel("transaction-changes")
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "transactions",
-            filter: `user_id=eq.${user.id}`,
-          },
-          () => fetchTransactions()
-        )
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(balanceChannel);
-        supabase.removeChannel(messageChannel);
-        supabase.removeChannel(transactionChannel);
-      };
-    } catch (err: any) {
-      console.error("Error setting up subscriptions:", err.message || err);
-    }
+  exchangeRates: {
+    usd_to_eur: number;
+    usd_to_cad: number;
+    eur_to_usd: number;
+    cad_to_usd: number;
   };
+  cryptoPrices: {
+    bitcoin: number;
+    ethereum: number;
+  };
+  messages: any[];
+  transactions: any[];
+  loading: boolean;
+  error: string | null;
+}
 
-  const fetchBalances = async () => {
+export function useRealtimeData(): RealtimeData {
+  const [data, setData] = useState<RealtimeData>({
+    balances: { usd: 0, euro: 0, cad: 0, crypto: 0 },
+    exchangeRates: {
+      usd_to_eur: 0.85,
+      usd_to_cad: 1.35,
+      eur_to_usd: 1.18,
+      cad_to_usd: 0.74,
+    },
+    cryptoPrices: { bitcoin: 45000, ethereum: 3000 },
+    messages: [],
+    transactions: [],
+    loading: true,
+    error: null,
+  });
+
+  const fetchBalances = async (userId: string) => {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) return;
-
       const [usdResult, euroResult, cadResult, cryptoResult] =
         await Promise.all([
           supabase
             .from("usd_balances")
             .select("balance")
-            .eq("user_id", user.id)
+            .eq("user_id", userId)
             .single(),
           supabase
             .from("euro_balances")
             .select("balance")
-            .eq("user_id", user.id)
+            .eq("user_id", userId)
             .single(),
           supabase
             .from("cad_balances")
             .select("balance")
-            .eq("user_id", user.id)
+            .eq("user_id", userId)
             .single(),
           supabase
             .from("crypto_balances")
             .select("balance")
-            .eq("user_id", user.id)
+            .eq("user_id", userId)
             .single(),
         ]);
 
-      setBalances({
+      return {
         usd: usdResult.data?.balance || 0,
         euro: euroResult.data?.balance || 0,
         cad: cadResult.data?.balance || 0,
         crypto: cryptoResult.data?.balance || 0,
-      });
-    } catch (err: any) {
-      console.error("Error fetching balances:", err.message || err);
+      };
+    } catch (error) {
+      console.error("Error fetching balances:", error);
+      return { usd: 0, euro: 0, cad: 0, crypto: 0 };
     }
   };
 
-  const fetchMessages = async () => {
+  const fetchExchangeRates = async () => {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const { data, error } = await supabase
+        .from("exchange_rates")
+        .select("*")
+        .single();
 
-      if (!user) return;
+      if (error) {
+        console.error("Error fetching exchange rates:", error);
+        return {
+          usd_to_eur: 0.85,
+          usd_to_cad: 1.35,
+          eur_to_usd: 1.18,
+          cad_to_usd: 0.74,
+        };
+      }
 
+      return {
+        usd_to_eur: data.usd_to_eur || 0.85,
+        usd_to_cad: data.usd_to_cad || 1.35,
+        eur_to_usd: data.eur_to_usd || 1.18,
+        cad_to_usd: data.cad_to_usd || 0.74,
+      };
+    } catch (error) {
+      console.error("Error fetching exchange rates:", error);
+      return {
+        usd_to_eur: 0.85,
+        usd_to_cad: 1.35,
+        eur_to_usd: 1.18,
+        cad_to_usd: 0.74,
+      };
+    }
+  };
+
+  const fetchCryptoPrices = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("crypto_prices")
+        .select("*")
+        .single();
+
+      if (error) {
+        console.error("Error fetching crypto prices:", error);
+        return { bitcoin: 45000, ethereum: 3000 };
+      }
+
+      return {
+        bitcoin: data.bitcoin_price || 45000,
+        ethereum: data.ethereum_price || 3000,
+      };
+    } catch (error) {
+      console.error("Error fetching crypto prices:", error);
+      return { bitcoin: 45000, ethereum: 3000 };
+    }
+  };
+
+  const fetchMessages = async (userId: string) => {
+    try {
       const { data, error } = await supabase
         .from("user_messages")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .order("created_at", { ascending: false })
         .limit(10);
 
       if (error) {
         console.error("Error fetching messages:", error.message || error);
-        return;
+        return [];
       }
 
-      setMessages(data || []);
-    } catch (err: any) {
-      console.error("Error in fetchMessages:", err.message || err);
+      return data || [];
+    } catch (error: any) {
+      console.error("Error fetching messages:", error.message || error);
+      return [];
     }
   };
 
-  const fetchTransactions = async () => {
+  const fetchTransactions = async (userId: string) => {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) return;
-
       const { data, error } = await supabase
         .from("transactions")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .order("created_at", { ascending: false })
         .limit(10);
 
       if (error) {
-        console.error("Error fetching transactions:", error.message || error);
-        return;
+        console.error("Error fetching transactions:", error);
+        return [];
       }
 
-      setTransactions(data || []);
-    } catch (err: any) {
-      console.error("Error in fetchTransactions:", err.message || err);
+      return data || [];
+    } catch (error) {
+      console.error("Error fetching transactions:", error);
+      return [];
     }
   };
 
-  const fetchExchangeRates = async () => {
-    // Simulate live exchange rates with small random variations
-    const baseRates = {
-      usd_to_eur: 0.85,
-      usd_to_cad: 1.35,
-      eur_to_usd: 1.18,
-      cad_to_usd: 0.74,
-    };
+  const initializeData = async () => {
+    try {
+      setData((prev) => ({ ...prev, loading: true, error: null }));
 
-    const variation = () => (Math.random() - 0.5) * 0.02; // ±1% variation
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-    setExchangeRates({
-      usd_to_eur: baseRates.usd_to_eur + variation(),
-      usd_to_cad: baseRates.usd_to_cad + variation(),
-      eur_to_usd: baseRates.eur_to_usd + variation(),
-      cad_to_usd: baseRates.cad_to_usd + variation(),
-    });
+      if (userError || !user) {
+        setData((prev) => ({
+          ...prev,
+          loading: false,
+          error: "User not authenticated",
+        }));
+        return;
+      }
+
+      const [balances, exchangeRates, cryptoPrices, messages, transactions] =
+        await Promise.all([
+          fetchBalances(user.id),
+          fetchExchangeRates(),
+          fetchCryptoPrices(),
+          fetchMessages(user.id),
+          fetchTransactions(user.id),
+        ]);
+
+      setData({
+        balances,
+        exchangeRates,
+        cryptoPrices,
+        messages,
+        transactions,
+        loading: false,
+        error: null,
+      });
+    } catch (error: any) {
+      console.error("Error initializing data:", error);
+      setData((prev) => ({
+        ...prev,
+        loading: false,
+        error: error.message || "Failed to load data",
+      }));
+    }
   };
 
-  const fetchCryptoPrices = async () => {
-    // Simulate live crypto prices with random variations
-    const basePrices = {
-      bitcoin: 45000,
-      ethereum: 3000,
+  const setupRealtimeSubscriptions = async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) return;
+
+    // Subscribe to balance changes
+    const balanceSubscription = supabase
+      .channel("balance_changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "usd_balances",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          fetchBalances(user.id).then((balances) => {
+            setData((prev) => ({ ...prev, balances }));
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "euro_balances",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          fetchBalances(user.id).then((balances) => {
+            setData((prev) => ({ ...prev, balances }));
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "cad_balances",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          fetchBalances(user.id).then((balances) => {
+            setData((prev) => ({ ...prev, balances }));
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "crypto_balances",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          fetchBalances(user.id).then((balances) => {
+            setData((prev) => ({ ...prev, balances }));
+          });
+        }
+      )
+      .subscribe();
+
+    // Subscribe to exchange rate changes
+    const exchangeRateSubscription = supabase
+      .channel("exchange_rate_changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "exchange_rates",
+        },
+        () => {
+          fetchExchangeRates().then((exchangeRates) => {
+            setData((prev) => ({ ...prev, exchangeRates }));
+          });
+        }
+      )
+      .subscribe();
+
+    // Subscribe to crypto price changes
+    const cryptoPriceSubscription = supabase
+      .channel("crypto_price_changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "crypto_prices",
+        },
+        () => {
+          fetchCryptoPrices().then((cryptoPrices) => {
+            setData((prev) => ({ ...prev, cryptoPrices }));
+          });
+        }
+      )
+      .subscribe();
+
+    // Subscribe to message changes
+    const messageSubscription = supabase
+      .channel("message_changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "user_messages",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          fetchMessages(user.id).then((messages) => {
+            setData((prev) => ({ ...prev, messages }));
+          });
+        }
+      )
+      .subscribe();
+
+    // Subscribe to transaction changes
+    const transactionSubscription = supabase
+      .channel("transaction_changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "transactions",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          fetchTransactions(user.id).then((transactions) => {
+            setData((prev) => ({ ...prev, transactions }));
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      balanceSubscription.unsubscribe();
+      exchangeRateSubscription.unsubscribe();
+      cryptoPriceSubscription.unsubscribe();
+      messageSubscription.unsubscribe();
+      transactionSubscription.unsubscribe();
     };
-
-    const variation = () => (Math.random() - 0.5) * 0.1; // ±5% variation
-
-    setCryptoPrices({
-      bitcoin: Math.round(basePrices.bitcoin * (1 + variation())),
-      ethereum: Math.round(basePrices.ethereum * (1 + variation())),
-    });
   };
 
-  // Update exchange rates and crypto prices every 30 seconds
   useEffect(() => {
-    const interval = setInterval(() => {
-      fetchExchangeRates();
-      fetchCryptoPrices();
-    }, 30000);
+    initializeData();
+    const cleanup = setupRealtimeSubscriptions();
 
-    return () => clearInterval(interval);
+    return () => {
+      cleanup?.then((fn) => fn?.());
+    };
   }, []);
 
-  return {
-    balances,
-    exchangeRates,
-    cryptoPrices,
-    messages,
-    transactions,
-    loading,
-    error,
-    refetch: initializeData,
-  };
+  return data;
 }

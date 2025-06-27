@@ -37,7 +37,7 @@ interface DashboardContentProps {
     client_id: string;
     full_name: string | null;
     email: string | null;
-  } | null;
+  };
   setActiveTab: (tab: string) => void;
 }
 
@@ -140,20 +140,8 @@ export default function DashboardContent({
     );
   }
 
-  if (!userProfile) {
-    return (
-      <div className="flex-1 p-8 bg-gray-50">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <p className="text-red-600 mb-4">Error loading user profile</p>
-            <Button onClick={() => window.location.reload()}>
-              Reload Page
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Safe access to userProfile properties
+  const displayName = userProfile?.full_name || userProfile?.email || "User";
 
   return (
     <div className="flex-1 p-8 bg-gray-50 overflow-auto">
@@ -161,8 +149,7 @@ export default function DashboardContent({
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">
-            Welcome back,{" "}
-            {userProfile?.full_name || userProfile?.email || "User"}!
+            Welcome back, {displayName}!
           </h1>
           <p className="text-gray-600">
             Here's your account overview and recent activity

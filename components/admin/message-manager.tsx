@@ -11,8 +11,9 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Select,
   SelectContent,
@@ -20,18 +21,26 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   MessageSquare,
   Send,
+  Trash2,
   Users,
-  CheckCircle,
   AlertCircle,
+  CheckCircle,
   Info,
   AlertTriangle,
 } from "lucide-react";
+
+interface Message {
+  id: string;
+  user_id: string;
+  title: string;
+  content: string;
+  message_type: string;
+  is_read: boolean;
+  created_at: string;
+}
 
 interface User {
   id: string;
@@ -40,36 +49,28 @@ interface User {
   client_id: string | null;
 }
 
-interface Message {
-  id: string;
-  title: string;
-  content: string;
-  message_type: string;
-  is_read: boolean;
-  created_at: string;
-  user_id: string;
-}
-
 export default function MessageManager() {
-  const [users, setUsers] = useState<User[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [selectedUser, setSelectedUser] = useState("");
-  const [messageTitle, setMessageTitle] = useState("");
-  const [messageContent, setMessageContent] = useState("");
-  const [messageType, setMessageType] = useState("info");
+  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [alert, setAlert] = useState("");
+  const [newMessage, setNewMessage] = useState({
+    title: "",
+    content: "",
+    message_type: "info",
+    target_user: "all",
+  });
 
   useEffect(() => {
-    fetchUsers();
     fetchMessages();
+    fetchUsers();
   }, []);
 
   const fetchUsers = async () => {
     try {
       const { data, error } = await supabase
         .from("profiles")
-        .select("*")
+        .select("id, full_name, email, client_id")
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -87,8 +88,7 @@ export default function MessageManager() {
 
   const fetchMessages = async () => {
     try {
-      // Fetch messages without join - we'll get user info separately
-      const { data: messagesData, error } = await supabase
+      const { data, error } = await supabase
         .from("user_messages")
         .select("*")
         .order("created_at", { ascending: false })
@@ -102,69 +102,101 @@ export default function MessageManager() {
         return;
       }
 
-      setMessages(messagesData || []);
+      setMessages(data || []);
     } catch (error: any) {
       console.error("Error fetching messages:", error.message || error);
       setAlert(`Error fetching messages: ${error.message || "Unknown error"}`);
     }
   };
 
+  const getUserName = (userId: string) => {
+    const user = users.find((u) => u.id === userId);
+    return user?.full_name || user?.email || `User ${userId.slice(0, 8)}`;
+  };
+
   const sendMessage = async () => {
-    if (!messageTitle.trim() || !messageContent.trim()) {
-      setAlert("Please fill in all fields");
+    if (!newMessage.title.trim() || !newMessage.content.trim()) {
+      setAlert("Please fill in both title and content");
       return;
     }
 
     setLoading(true);
     try {
-      if (selectedUser === "all") {
+      if (newMessage.target_user === "all") {
         // Send to all users
         const messagePromises = users.map((user) =>
           supabase.from("user_messages").insert({
             user_id: user.id,
-            title: messageTitle,
-            content: messageContent,
-            message_type: messageType,
+            title: newMessage.title,
+            content: newMessage.content,
+            message_type: newMessage.message_type,
             is_read: false,
           })
         );
 
-        await Promise.all(messagePromises);
-        setAlert(`Message sent to all ${users.length} users successfully!`);
-      } else if (selectedUser) {
+        const results = await Promise.all(messagePromises);
+        const errors = results.filter((result) => result.error);
+
+        if (errors.length > 0) {
+          console.error("Some messages failed to send:", errors);
+          setAlert(`${errors.length} messages failed to send`);
+        } else {
+          setAlert(`Message sent to all ${users.length} users successfully!`);
+        }
+      } else {
         // Send to specific user
         const { error } = await supabase.from("user_messages").insert({
-          user_id: selectedUser,
-          title: messageTitle,
-          content: messageContent,
-          message_type: messageType,
+          user_id: newMessage.target_user,
+          title: newMessage.title,
+          content: newMessage.content,
+          message_type: newMessage.message_type,
           is_read: false,
         });
 
-        if (error) throw error;
-
-        const user = users.find((u) => u.id === selectedUser);
-        setAlert(
-          `Message sent to ${user?.full_name || user?.email} successfully!`
-        );
-      } else {
-        setAlert("Please select a user");
-        return;
+        if (error) {
+          console.error("Error sending message:", error);
+          setAlert(`Error sending message: ${error.message}`);
+        } else {
+          setAlert("Message sent successfully!");
+        }
       }
 
       // Reset form
-      setMessageTitle("");
-      setMessageContent("");
-      setMessageType("info");
-      setSelectedUser("");
+      setNewMessage({
+        title: "",
+        content: "",
+        message_type: "info",
+        target_user: "all",
+      });
 
       // Refresh messages
       fetchMessages();
     } catch (error: any) {
-      console.error("Error sending message:", error.message || error);
+      console.error("Error sending message:", error);
       setAlert(`Error sending message: ${error.message || "Unknown error"}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const deleteMessage = async (messageId: string) => {
+    try {
+      const { error } = await supabase
+        .from("user_messages")
+        .delete()
+        .eq("id", messageId);
+
+      if (error) {
+        console.error("Error deleting message:", error);
+        setAlert(`Error deleting message: ${error.message}`);
+        return;
+      }
+
+      setAlert("Message deleted successfully!");
+      fetchMessages();
+    } catch (error: any) {
+      console.error("Error deleting message:", error);
+      setAlert(`Error deleting message: ${error.message || "Unknown error"}`);
     }
   };
 
@@ -194,245 +226,186 @@ export default function MessageManager() {
     }
   };
 
-  const getUserName = (userId: string) => {
-    const user = users.find((u) => u.id === userId);
-    return user?.full_name || user?.email || "Unknown User";
-  };
-
   return (
-    <div className="p-8 bg-white">
-      <div className="max-w-6xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Message Manager
-          </h1>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold">Message Manager</h2>
           <p className="text-gray-600">
-            Send messages and notifications to users
+            Send messages to users and manage communications
           </p>
         </div>
-
-        {alert && (
-          <Alert className="mb-6">
-            <AlertDescription>{alert}</AlertDescription>
-          </Alert>
-        )}
-
-        <Tabs defaultValue="send" className="space-y-6">
-          <TabsList>
-            <TabsTrigger value="send">Send Message</TabsTrigger>
-            <TabsTrigger value="history">Message History</TabsTrigger>
-            <TabsTrigger value="users">User Management</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="send">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Send className="h-5 w-5" />
-                  <span>Send New Message</span>
-                </CardTitle>
-                <CardDescription>
-                  Send messages to individual users or broadcast to all users
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div>
-                  <Label htmlFor="user-select">Select Recipient</Label>
-                  <Select value={selectedUser} onValueChange={setSelectedUser}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choose a user or broadcast to all" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">
-                        📢 Broadcast to All Users ({users.length})
-                      </SelectItem>
-                      {users.map((user) => (
-                        <SelectItem key={user.id} value={user.id}>
-                          {user.full_name || user.email} ({user.client_id})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="message-title">Message Title</Label>
-                    <Input
-                      id="message-title"
-                      placeholder="Enter message title"
-                      value={messageTitle}
-                      onChange={(e) => setMessageTitle(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="message-type">Message Type</Label>
-                    <Select value={messageType} onValueChange={setMessageType}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="info">ℹ️ Information</SelectItem>
-                        <SelectItem value="success">✅ Success</SelectItem>
-                        <SelectItem value="warning">⚠️ Warning</SelectItem>
-                        <SelectItem value="alert">🚨 Alert</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div>
-                  <Label htmlFor="message-content">Message Content</Label>
-                  <Textarea
-                    id="message-content"
-                    placeholder="Enter your message content here..."
-                    rows={4}
-                    value={messageContent}
-                    onChange={(e) => setMessageContent(e.target.value)}
-                  />
-                </div>
-
-                <Button
-                  onClick={sendMessage}
-                  disabled={loading}
-                  className="w-full"
-                >
-                  {loading ? "Sending..." : "Send Message"}
-                </Button>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="history">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <MessageSquare className="h-5 w-5" />
-                  <span>Message History</span>
-                </CardTitle>
-                <CardDescription>Recent messages sent to users</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {messages.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>No messages sent yet</p>
-                    <p className="text-sm">
-                      Start sending messages to see them here
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {messages.map((message) => (
-                      <div key={message.id} className="border rounded-lg p-4">
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-start space-x-3">
-                            {getMessageIcon(message.message_type)}
-                            <div className="flex-1">
-                              <div className="flex items-center space-x-2 mb-1">
-                                <h4 className="font-semibold">
-                                  {message.title}
-                                </h4>
-                                <Badge
-                                  className={getMessageTypeColor(
-                                    message.message_type
-                                  )}
-                                >
-                                  {message.message_type}
-                                </Badge>
-                              </div>
-                              <p className="text-gray-600 mb-2">
-                                {message.content}
-                              </p>
-                              <div className="flex items-center space-x-4 text-sm text-gray-500">
-                                <span>To: {getUserName(message.user_id)}</span>
-                                <span>•</span>
-                                <span>
-                                  {new Date(
-                                    message.created_at
-                                  ).toLocaleString()}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          <Badge
-                            variant={message.is_read ? "default" : "secondary"}
-                          >
-                            {message.is_read ? "Read" : "Unread"}
-                          </Badge>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="users">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Users className="h-5 w-5" />
-                  <span>User Management</span>
-                </CardTitle>
-                <CardDescription>
-                  View and manage registered users
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {users.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>No users found</p>
-                    <p className="text-sm">
-                      Users will appear here when they register
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {users.map((user) => (
-                      <div
-                        key={user.id}
-                        className="flex items-center justify-between p-4 border rounded-lg"
-                      >
-                        <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-[#F26623] rounded-full flex items-center justify-center">
-                            <span className="text-white font-semibold">
-                              {(user.full_name || user.email || "U")
-                                .charAt(0)
-                                .toUpperCase()}
-                            </span>
-                          </div>
-                          <div>
-                            <p className="font-medium">
-                              {user.full_name || "No name"}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              {user.email}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              Client ID: {user.client_id}
-                            </p>
-                          </div>
-                        </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setSelectedUser(user.id)}
-                          className="ml-4"
-                        >
-                          Send Message
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+        <div className="flex items-center space-x-2">
+          <Users className="h-5 w-5 text-gray-500" />
+          <span className="text-sm text-gray-600">{users.length} users</span>
+        </div>
       </div>
+
+      {alert && (
+        <Alert className="border-blue-500 bg-blue-50">
+          <Info className="h-4 w-4" />
+          <AlertDescription>{alert}</AlertDescription>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setAlert("")}
+            className="ml-auto"
+          >
+            ×
+          </Button>
+        </Alert>
+      )}
+
+      {/* Send New Message */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <Send className="h-5 w-5 mr-2" />
+            Send New Message
+          </CardTitle>
+          <CardDescription>
+            Broadcast messages to users or send to specific individuals
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium mb-2 block">
+                Target Audience
+              </label>
+              <Select
+                value={newMessage.target_user}
+                onValueChange={(value) =>
+                  setNewMessage({ ...newMessage, target_user: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select target" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">
+                    All Users ({users.length})
+                  </SelectItem>
+                  {users.map((user) => (
+                    <SelectItem key={user.id} value={user.id}>
+                      {user.full_name || user.email} ({user.client_id})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-2 block">
+                Message Type
+              </label>
+              <Select
+                value={newMessage.message_type}
+                onValueChange={(value) =>
+                  setNewMessage({ ...newMessage, message_type: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="info">Information</SelectItem>
+                  <SelectItem value="success">Success</SelectItem>
+                  <SelectItem value="warning">Warning</SelectItem>
+                  <SelectItem value="alert">Alert</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-2 block">Title</label>
+            <Input
+              placeholder="Message title..."
+              value={newMessage.title}
+              onChange={(e) =>
+                setNewMessage({ ...newMessage, title: e.target.value })
+              }
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-2 block">Content</label>
+            <Textarea
+              placeholder="Message content..."
+              value={newMessage.content}
+              onChange={(e) =>
+                setNewMessage({ ...newMessage, content: e.target.value })
+              }
+              rows={4}
+            />
+          </div>
+          <Button onClick={sendMessage} disabled={loading} className="w-full">
+            {loading ? "Sending..." : "Send Message"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Message History */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <MessageSquare className="h-5 w-5 mr-2" />
+            Message History
+          </CardTitle>
+          <CardDescription>Recent messages sent to users</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {messages.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>No messages sent yet</p>
+              <p className="text-sm">Messages you send will appear here</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {messages.map((message) => (
+                <div key={message.id} className="border rounded-lg p-4">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start space-x-3 flex-1">
+                      {getMessageIcon(message.message_type)}
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2 mb-1">
+                          <h4 className="font-medium">{message.title}</h4>
+                          <Badge
+                            className={getMessageTypeColor(
+                              message.message_type
+                            )}
+                          >
+                            {message.message_type}
+                          </Badge>
+                          {!message.is_read && (
+                            <Badge variant="secondary">Unread</Badge>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 mb-2">
+                          {message.content}
+                        </p>
+                        <div className="flex items-center space-x-4 text-xs text-gray-500">
+                          <span>To: {getUserName(message.user_id)}</span>
+                          <span>
+                            {new Date(message.created_at).toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => deleteMessage(message.id)}
+                      className="text-red-600 hover:text-red-700"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

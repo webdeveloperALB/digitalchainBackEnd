@@ -5,12 +5,12 @@ import { supabase } from "@/lib/supabase";
 
 interface Message {
   id: string;
+  user_id: string;
   title: string;
   content: string;
   message_type: string;
   is_read: boolean;
   created_at: string;
-  user_id: string;
 }
 
 export function useLatestMessage() {
@@ -18,38 +18,15 @@ export function useLatestMessage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchLatestMessage();
-
-    // Set up real-time subscription
-    const channel = supabase
-      .channel("latest-message")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "user_messages",
-        },
-        () => {
-          fetchLatestMessage();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
   const fetchLatestMessage = async () => {
     try {
       const {
         data: { user },
+        error: userError,
       } = await supabase.auth.getUser();
 
-      if (!user) {
-        setLatestMessage(null);
+      if (userError || !user) {
+        setError("User not authenticated");
         setLoading(false);
         return;
       }
@@ -65,14 +42,14 @@ export function useLatestMessage() {
 
       if (error && error.code !== "PGRST116") {
         console.error("Error fetching latest message:", error.message || error);
-        setError(error.message || "Unknown error");
+        setError(error.message || "Failed to fetch message");
       } else {
         setLatestMessage(data || null);
         setError(null);
       }
-    } catch (err: any) {
-      console.error("Error in fetchLatestMessage:", err.message || err);
-      setError(err.message || "Unknown error");
+    } catch (error: any) {
+      console.error("Error fetching latest message:", error.message || error);
+      setError(error.message || "Failed to fetch message");
     } finally {
       setLoading(false);
     }
@@ -86,17 +63,41 @@ export function useLatestMessage() {
         .eq("id", messageId);
 
       if (error) {
-        console.error("Error marking message as read:", error.message || error);
+        console.error("Error marking message as read:", error);
         throw error;
       }
 
-      // Refresh latest message
-      await fetchLatestMessage();
-    } catch (err: any) {
-      console.error("Error in markAsRead:", err.message || err);
-      throw err;
+      // Update local state
+      setLatestMessage(null);
+    } catch (error: any) {
+      console.error("Error marking message as read:", error);
+      throw error;
     }
   };
+
+  useEffect(() => {
+    fetchLatestMessage();
+
+    // Set up real-time subscription
+    const subscription = supabase
+      .channel("user_messages_changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "user_messages",
+        },
+        () => {
+          fetchLatestMessage();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
 
   return {
     latestMessage,
