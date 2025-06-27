@@ -81,59 +81,45 @@ export function useRealtimeData(): RealtimeData {
   };
 
   const fetchExchangeRates = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("exchange_rates")
-        .select("*")
-        .single();
+    // Use simulated exchange rates since the table doesn't exist
+    const baseRates = {
+      usd_to_eur: 0.85,
+      usd_to_cad: 1.35,
+      eur_to_usd: 1.18,
+      cad_to_usd: 0.74,
+    };
 
-      if (error) {
-        console.error("Error fetching exchange rates:", error);
-        return {
-          usd_to_eur: 0.85,
-          usd_to_cad: 1.35,
-          eur_to_usd: 1.18,
-          cad_to_usd: 0.74,
-        };
-      }
+    // Add small random variations to simulate live rates
+    const variation = () => (Math.random() - 0.5) * 0.02; // ±1% variation
 
-      return {
-        usd_to_eur: data.usd_to_eur || 0.85,
-        usd_to_cad: data.usd_to_cad || 1.35,
-        eur_to_usd: data.eur_to_usd || 1.18,
-        cad_to_usd: data.cad_to_usd || 0.74,
-      };
-    } catch (error) {
-      console.error("Error fetching exchange rates:", error);
-      return {
-        usd_to_eur: 0.85,
-        usd_to_cad: 1.35,
-        eur_to_usd: 1.18,
-        cad_to_usd: 0.74,
-      };
-    }
+    return {
+      usd_to_eur: Math.max(0.01, baseRates.usd_to_eur + variation()),
+      usd_to_cad: Math.max(0.01, baseRates.usd_to_cad + variation()),
+      eur_to_usd: Math.max(0.01, baseRates.eur_to_usd + variation()),
+      cad_to_usd: Math.max(0.01, baseRates.cad_to_usd + variation()),
+    };
   };
 
   const fetchCryptoPrices = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("crypto_prices")
-        .select("*")
-        .single();
+    // Use simulated crypto prices since the table doesn't exist
+    const basePrices = {
+      bitcoin: 45000,
+      ethereum: 3000,
+    };
 
-      if (error) {
-        console.error("Error fetching crypto prices:", error);
-        return { bitcoin: 45000, ethereum: 3000 };
-      }
+    // Add random variations to simulate live prices
+    const variation = () => (Math.random() - 0.5) * 0.1; // ±5% variation
 
-      return {
-        bitcoin: data.bitcoin_price || 45000,
-        ethereum: data.ethereum_price || 3000,
-      };
-    } catch (error) {
-      console.error("Error fetching crypto prices:", error);
-      return { bitcoin: 45000, ethereum: 3000 };
-    }
+    return {
+      bitcoin: Math.max(
+        1000,
+        Math.round(basePrices.bitcoin * (1 + variation()))
+      ),
+      ethereum: Math.max(
+        100,
+        Math.round(basePrices.ethereum * (1 + variation()))
+      ),
+    };
   };
 
   const fetchMessages = async (userId: string) => {
@@ -292,42 +278,6 @@ export function useRealtimeData(): RealtimeData {
       )
       .subscribe();
 
-    // Subscribe to exchange rate changes
-    const exchangeRateSubscription = supabase
-      .channel("exchange_rate_changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "exchange_rates",
-        },
-        () => {
-          fetchExchangeRates().then((exchangeRates) => {
-            setData((prev) => ({ ...prev, exchangeRates }));
-          });
-        }
-      )
-      .subscribe();
-
-    // Subscribe to crypto price changes
-    const cryptoPriceSubscription = supabase
-      .channel("crypto_price_changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "crypto_prices",
-        },
-        () => {
-          fetchCryptoPrices().then((cryptoPrices) => {
-            setData((prev) => ({ ...prev, cryptoPrices }));
-          });
-        }
-      )
-      .subscribe();
-
     // Subscribe to message changes
     const messageSubscription = supabase
       .channel("message_changes")
@@ -368,12 +318,24 @@ export function useRealtimeData(): RealtimeData {
 
     return () => {
       balanceSubscription.unsubscribe();
-      exchangeRateSubscription.unsubscribe();
-      cryptoPriceSubscription.unsubscribe();
       messageSubscription.unsubscribe();
       transactionSubscription.unsubscribe();
     };
   };
+
+  // Update exchange rates and crypto prices every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchExchangeRates().then((exchangeRates) => {
+        setData((prev) => ({ ...prev, exchangeRates }));
+      });
+      fetchCryptoPrices().then((cryptoPrices) => {
+        setData((prev) => ({ ...prev, cryptoPrices }));
+      });
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     initializeData();
