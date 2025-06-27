@@ -2,70 +2,153 @@
 
 import { useState, useEffect } from "react";
 import {
-  useRealtimeBalances,
-  useRealtimeTransactions,
-} from "@/hooks/use-realtime-data";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useRealtimeData } from "@/hooks/use-realtime-data";
+import { useLatestMessage } from "@/hooks/use-latest-message";
 import {
-  ArrowLeftRight,
-  Download,
-  CreditCard,
-  Receipt,
+  DollarSign,
+  Euro,
+  MapIcon as Maple,
   Bitcoin,
-  Phone,
-  Mail,
-  Info,
-  RefreshCw,
+  TrendingUp,
+  TrendingDown,
+  MessageSquare,
+  Bell,
+  X,
+  ArrowUpRight,
+  ArrowDownRight,
+  Activity,
+  CreditCard,
+  Send,
+  Wallet,
 } from "lucide-react";
 
 interface DashboardContentProps {
-  userProfile: any;
+  userProfile: {
+    id: string;
+    client_id: string;
+    full_name: string | null;
+    email: string | null;
+  } | null;
+  setActiveTab: (tab: string) => void;
 }
 
 export default function DashboardContent({
   userProfile,
+  setActiveTab,
 }: DashboardContentProps) {
-  const userId = userProfile?.id;
-  const { balances, loading: balancesLoading } = useRealtimeBalances(userId);
-  const { transactions, loading: transactionsLoading } =
-    useRealtimeTransactions(userId);
-  const [lastUpdated, setLastUpdated] = useState(new Date());
+  const {
+    balances,
+    exchangeRates,
+    cryptoPrices,
+    transactions,
+    loading,
+    error,
+  } = useRealtimeData();
+  const { latestMessage, markAsRead } = useLatestMessage();
+  const [showMessage, setShowMessage] = useState(false);
 
-  // Update timestamp when balances change
   useEffect(() => {
-    setLastUpdated(new Date());
-  }, [balances]);
+    if (latestMessage && !latestMessage.is_read) {
+      setShowMessage(true);
+    }
+  }, [latestMessage]);
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
+  const handleDismissMessage = async () => {
+    if (latestMessage) {
+      try {
+        await markAsRead(latestMessage.id);
+        setShowMessage(false);
+      } catch (error) {
+        console.error("Error marking message as read:", error);
+      }
+    }
   };
 
-  const formatAmount = (amount: number, currency: string) => {
-    return `${amount.toLocaleString()} ${currency}`;
+  const formatCurrency = (amount: number, currency: string) => {
+    const symbols = {
+      usd: "$",
+      euro: "€",
+      cad: "C$",
+      crypto: "₿",
+    };
+    return `${
+      symbols[currency as keyof typeof symbols] || "$"
+    }${amount.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
   };
 
-  const paymentCategories = [
-    "Taxes – Pay your outstanding state or national tax obligations.",
-    "Invoices – Settle pending bills or service-related invoices.",
-    "Penalties & Fines – Clear any fines or penalties applied to your account.",
-    "Government Fees – Pay administrative or registration-related fees.",
-    "Utility Bills – Electricity, water, internet, and other monthly charges.",
-    "Account Recovery Fee – Pay to unlock or reactivate frozen accounts.",
-    "Transfer Fees – Cover costs related to outgoing or international transfers.",
-  ];
+  const getBalanceIcon = (currency: string) => {
+    switch (currency) {
+      case "usd":
+        return <DollarSign className="h-4 w-4" />;
+      case "euro":
+        return <Euro className="h-4 w-4" />;
+      case "cad":
+        return <Maple className="h-4 w-4" />;
+      case "crypto":
+        return <Bitcoin className="h-4 w-4" />;
+      default:
+        return <DollarSign className="h-4 w-4" />;
+    }
+  };
 
-  if (balancesLoading && transactionsLoading) {
+  const getMessageIcon = (type: string) => {
+    switch (type) {
+      case "alert":
+        return <Bell className="h-4 w-4" />;
+      case "warning":
+        return <Bell className="h-4 w-4" />;
+      default:
+        return <MessageSquare className="h-4 w-4" />;
+    }
+  };
+
+  const getMessageColor = (type: string) => {
+    switch (type) {
+      case "success":
+        return "border-green-500 bg-green-50";
+      case "alert":
+        return "border-red-500 bg-red-50";
+      case "warning":
+        return "border-yellow-500 bg-yellow-50";
+      default:
+        return "border-blue-500 bg-blue-50";
+    }
+  };
+
+  if (loading) {
     return (
-      <div className="flex-1 p-6 bg-white overflow-auto">
+      <div className="flex-1 p-8 bg-gray-50">
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F26623] mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading dashboard data...</p>
+            <p className="text-gray-600">Loading dashboard...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!userProfile) {
+    return (
+      <div className="flex-1 p-8 bg-gray-50">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <p className="text-red-600 mb-4">Error loading user profile</p>
+            <Button onClick={() => window.location.reload()}>
+              Reload Page
+            </Button>
           </div>
         </div>
       </div>
@@ -73,163 +156,264 @@ export default function DashboardContent({
   }
 
   return (
-    <div className="flex-1 p-6 bg-white overflow-auto">
-      {/* Header with real-time indicator */}
-      <div className="mb-6">
-        <div className="flex justify-between items-center">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">
-              {userProfile?.full_name || "Client Name"}
-            </h2>
-            <p className="text-gray-600">
-              Client ID {userProfile?.client_id || "Loading..."}
-            </p>
-          </div>
-          <div className="text-right">
-            <div className="flex items-center text-green-600 text-sm">
-              <div className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></div>
-              Real-time Data
-            </div>
-            <p className="text-xs text-gray-500">
-              Last updated: {lastUpdated.toLocaleTimeString()}
-            </p>
-          </div>
+    <div className="flex-1 p-8 bg-gray-50 overflow-auto">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">
+            Welcome back,{" "}
+            {userProfile?.full_name || userProfile?.email || "User"}!
+          </h1>
+          <p className="text-gray-600">
+            Here's your account overview and recent activity
+          </p>
         </div>
-      </div>
 
-      {/* Balance Cards - REAL-TIME DATA */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <Card className="bg-[#F26623] text-white">
-          <CardContent className="p-6">
-            <h3 className="text-lg font-medium mb-2">Crypto</h3>
-            <p className="text-3xl font-bold">
-              {Number(balances.crypto).toLocaleString()}
-            </p>
-            <p className="text-xs opacity-75 mt-1">BTC</p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-[#F26623] text-white">
-          <CardContent className="p-6">
-            <h3 className="text-lg font-medium mb-2">Euro</h3>
-            <p className="text-3xl font-bold">
-              €
-              {Number(balances.euro).toLocaleString("en-US", {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
-            </p>
-            <p className="text-xs opacity-75 mt-1">EUR</p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-[#F26623] text-white">
-          <CardContent className="p-6">
-            <h3 className="text-lg font-medium mb-2">CAD</h3>
-            <p className="text-3xl font-bold">
-              $
-              {Number(balances.cad).toLocaleString("en-US", {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
-            </p>
-            <p className="text-xs opacity-75 mt-1">CAD</p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-[#F26623] text-white">
-          <CardContent className="p-6">
-            <h3 className="text-lg font-medium mb-2">USD</h3>
-            <p className="text-3xl font-bold">
-              $
-              {Number(balances.usd).toLocaleString("en-US", {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
-            </p>
-            <p className="text-xs opacity-75 mt-1">USD</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Action Buttons */}
-      <div className="flex flex-wrap gap-4 mb-6">
-        <Button className="bg-[#F26623] hover:bg-[#E55A1F] text-white">
-          <ArrowLeftRight className="w-4 h-4 mr-2" />
-          Transfers
-        </Button>
-        <Button className="bg-[#F26623] hover:bg-[#E55A1F] text-white">
-          <Download className="w-4 h-4 mr-2" />
-          Deposit
-        </Button>
-        <Button className="bg-[#F26623] hover:bg-[#E55A1F] text-white">
-          <CreditCard className="w-4 h-4 mr-2" />
-          Payments
-        </Button>
-        <Button className="bg-[#F26623] hover:bg-[#E55A1F] text-white">
-          <Receipt className="w-4 h-4 mr-2" />
-          Taxes
-        </Button>
-        <Button className="bg-[#F26623] hover:bg-[#E55A1F] text-white">
-          <Bitcoin className="w-4 h-4 mr-2" />
-          Crypto
-        </Button>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Transaction History - REAL-TIME DATA */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              Transaction History
-              <div className="flex items-center text-green-600 text-xs">
-                <RefreshCw className="w-3 h-3 mr-1" />
-                Live
+        {/* Latest Message Alert */}
+        {showMessage && latestMessage && (
+          <Alert
+            className={`mb-6 ${getMessageColor(latestMessage.message_type)}`}
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex items-start space-x-2">
+                {getMessageIcon(latestMessage.message_type)}
+                <div>
+                  <h4 className="font-semibold">{latestMessage.title}</h4>
+                  <AlertDescription className="mt-1">
+                    {latestMessage.content}
+                  </AlertDescription>
+                </div>
               </div>
-            </CardTitle>
+              <Button variant="ghost" size="sm" onClick={handleDismissMessage}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </Alert>
+        )}
+
+        {/* Error Alert */}
+        {error && (
+          <Alert className="mb-6 border-red-500 bg-red-50">
+            <AlertDescription className="text-red-700">
+              Error: {error}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Balance Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          {Object.entries(balances).map(([currency, balance]) => (
+            <Card key={currency} className="hover:shadow-lg transition-shadow">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium capitalize">
+                  {currency} Balance
+                </CardTitle>
+                {getBalanceIcon(currency)}
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {formatCurrency(balance, currency)}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {currency === "crypto"
+                    ? "Bitcoin equivalent"
+                    : `${currency.toUpperCase()} account`}
+                </p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* Quick Actions */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <Button
+            onClick={() => setActiveTab("transfers")}
+            className="h-16 bg-[#F26623] hover:bg-[#E55A1F] text-white"
+          >
+            <Send className="h-5 w-5 mr-2" />
+            Transfer Money
+          </Button>
+          <Button
+            onClick={() => setActiveTab("deposit")}
+            variant="outline"
+            className="h-16"
+          >
+            <Wallet className="h-5 w-5 mr-2" />
+            Deposit Funds
+          </Button>
+          <Button
+            onClick={() => setActiveTab("crypto")}
+            variant="outline"
+            className="h-16"
+          >
+            <Bitcoin className="h-5 w-5 mr-2" />
+            Trade Crypto
+          </Button>
+          <Button
+            onClick={() => setActiveTab("card")}
+            variant="outline"
+            className="h-16"
+          >
+            <CreditCard className="h-5 w-5 mr-2" />
+            Manage Cards
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Exchange Rates */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Activity className="h-5 w-5 mr-2" />
+                Live Exchange Rates
+              </CardTitle>
+              <CardDescription>
+                Real-time currency exchange rates
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center">
+                  <DollarSign className="h-4 w-4 mr-2" />
+                  USD to EUR
+                </span>
+                <div className="flex items-center">
+                  <span className="font-mono">
+                    {exchangeRates.usd_to_eur.toFixed(4)}
+                  </span>
+                  <TrendingUp className="h-4 w-4 ml-2 text-green-500" />
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center">
+                  <DollarSign className="h-4 w-4 mr-2" />
+                  USD to CAD
+                </span>
+                <div className="flex items-center">
+                  <span className="font-mono">
+                    {exchangeRates.usd_to_cad.toFixed(4)}
+                  </span>
+                  <TrendingDown className="h-4 w-4 ml-2 text-red-500" />
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center">
+                  <Euro className="h-4 w-4 mr-2" />
+                  EUR to USD
+                </span>
+                <div className="flex items-center">
+                  <span className="font-mono">
+                    {exchangeRates.eur_to_usd.toFixed(4)}
+                  </span>
+                  <TrendingUp className="h-4 w-4 ml-2 text-green-500" />
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center">
+                  <Maple className="h-4 w-4 mr-2" />
+                  CAD to USD
+                </span>
+                <div className="flex items-center">
+                  <span className="font-mono">
+                    {exchangeRates.cad_to_usd.toFixed(4)}
+                  </span>
+                  <TrendingUp className="h-4 w-4 ml-2 text-green-500" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Crypto Prices */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Bitcoin className="h-5 w-5 mr-2" />
+                Cryptocurrency Prices
+              </CardTitle>
+              <CardDescription>
+                Live cryptocurrency market prices
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center">
+                  <Bitcoin className="h-4 w-4 mr-2" />
+                  Bitcoin (BTC)
+                </span>
+                <div className="flex items-center">
+                  <span className="font-mono">
+                    ${cryptoPrices.bitcoin.toLocaleString()}
+                  </span>
+                  <ArrowUpRight className="h-4 w-4 ml-2 text-green-500" />
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center">
+                  <div className="h-4 w-4 mr-2 rounded-full bg-gray-600"></div>
+                  Ethereum (ETH)
+                </span>
+                <div className="flex items-center">
+                  <span className="font-mono">
+                    ${cryptoPrices.ethereum.toLocaleString()}
+                  </span>
+                  <ArrowDownRight className="h-4 w-4 ml-2 text-red-500" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Recent Transactions */}
+        <Card className="mt-8">
+          <CardHeader>
+            <CardTitle>Recent Transactions</CardTitle>
+            <CardDescription>Your latest account activity</CardDescription>
           </CardHeader>
           <CardContent>
-            {transactionsLoading ? (
-              <div className="text-center py-4">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#F26623] mx-auto mb-2"></div>
-                <p className="text-gray-500 text-sm">Loading transactions...</p>
-              </div>
-            ) : transactions.length === 0 ? (
-              <div className="text-center py-4">
-                <p className="text-gray-500">No transactions found</p>
+            {transactions.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <Activity className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No recent transactions</p>
+                <p className="text-sm">
+                  Your transaction history will appear here
+                </p>
               </div>
             ) : (
               <div className="space-y-4">
-                {transactions.map((transaction, index) => (
+                {transactions.slice(0, 5).map((transaction) => (
                   <div
-                    key={transaction.id || index}
-                    className="flex justify-between items-center py-2 border-b last:border-b-0"
+                    key={transaction.id}
+                    className="flex items-center justify-between p-4 border rounded-lg"
                   >
-                    <div>
-                      <p className="font-medium">{transaction.type}</p>
-                      <p className="text-sm text-gray-600">
-                        {transaction.description || "No description"}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {transaction.platform || "N/A"}
-                      </p>
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-[#F26623] rounded-full flex items-center justify-center">
+                        <Activity className="h-5 w-5 text-white" />
+                      </div>
+                      <div>
+                        <p className="font-medium">
+                          {transaction.transaction_type}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          {transaction.description || "Transaction"}
+                        </p>
+                      </div>
                     </div>
                     <div className="text-right">
                       <p className="font-medium">
-                        {formatAmount(transaction.amount, transaction.currency)}
+                        {formatCurrency(
+                          transaction.amount,
+                          transaction.currency
+                        )}
                       </p>
-                      <p className="text-xs text-gray-500">
-                        {formatDate(transaction.created_at)}
-                      </p>
-                      <p
-                        className={`text-xs ${
-                          transaction.status === "Successful"
-                            ? "text-green-600"
-                            : "text-red-600"
-                        }`}
+                      <Badge
+                        variant={
+                          transaction.status === "completed"
+                            ? "default"
+                            : "secondary"
+                        }
                       >
                         {transaction.status}
-                      </p>
+                      </Badge>
                     </div>
                   </div>
                 ))}
@@ -237,79 +421,7 @@ export default function DashboardContent({
             )}
           </CardContent>
         </Card>
-
-        {/* Right Side Content */}
-        <div className="space-y-6">
-          {/* Digital Chain Bank Logo */}
-          <Card>
-            <CardContent className="p-6 text-center">
-              <div className="flex items-center justify-center mb-4">
-                <div className="w-16 h-16 bg-[#F26623] rounded-lg flex items-center justify-center">
-                  <div className="w-10 h-10 bg-white rounded transform rotate-45"></div>
-                </div>
-              </div>
-              <h3 className="text-xl font-bold text-[#F26623] mb-2">DIGITAL</h3>
-              <p className="text-gray-600">Chain Bank</p>
-              <div className="flex justify-center space-x-4 mt-4">
-                <Button variant="ghost" size="icon" className="text-[#F26623]">
-                  <Phone className="w-4 h-4" />
-                </Button>
-                <Button variant="ghost" size="icon" className="text-[#F26623]">
-                  <Mail className="w-4 h-4" />
-                </Button>
-                <Button variant="ghost" size="icon" className="text-[#F26623]">
-                  <Info className="w-4 h-4" />
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Message Alert */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Mail className="w-5 h-5 mr-2" />
-                Message
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <h4 className="font-medium">Account Status: Active</h4>
-                <p className="text-sm text-gray-600">
-                  Welcome {userProfile?.full_name || "User"}! Your account is
-                  active and all services are available.
-                </p>
-                <p className="text-sm text-gray-600">
-                  Your balances are updated in real-time. Any changes made to
-                  your account will appear instantly.
-                </p>
-                <p className="text-sm font-medium text-green-600">
-                  ✓ Real-time synchronization enabled
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
       </div>
-
-      {/* Payments Section */}
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <CreditCard className="w-5 h-5 mr-2" />
-            Available Payment Services
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {paymentCategories.map((category, index) => (
-              <p key={index} className="text-sm text-gray-700 py-1">
-                {category}
-              </p>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

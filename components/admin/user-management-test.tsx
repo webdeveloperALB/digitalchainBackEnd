@@ -4,241 +4,243 @@ import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Users, RefreshCw, DollarSign, Euro, Bitcoin } from "lucide-react";
+
+interface User {
+  id: string;
+  full_name: string;
+  client_id: string;
+  email: string;
+}
+
+interface UserBalance {
+  user_id: string;
+  crypto: number;
+  euro: number;
+  cad: number;
+  usd: number;
+}
 
 export default function UserManagementTest() {
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [userBalances, setUserBalances] = useState<UserBalance[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selectedUser, setSelectedUser] = useState("");
-  const [balanceUpdate, setBalanceUpdate] = useState({
-    currency: "euro",
-    amount: "",
-  });
 
   const fetchAllUsers = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      // Fetch all users
+      const { data: usersData, error: usersError } = await supabase
         .from("profiles")
-        .select(
-          `
-          id,
-          full_name,
-          email,
-          client_id,
-          crypto_balances(balance),
-          euro_balances(balance),
-          cad_balances(balance),
-          usd_balances(balance)
-        `
-        )
-        .order("full_name");
+        .select("*");
 
-      if (error) throw error;
-      setUsers(data || []);
-    } catch (error: any) {
-      alert(`Error: ${error.message}`);
+      if (usersError) {
+        console.error("Error fetching users:", usersError);
+        return;
+      }
+
+      setUsers(usersData || []);
+
+      // Fetch balances for each user separately
+      const balances: UserBalance[] = [];
+
+      for (const user of usersData || []) {
+        try {
+          const [cryptoResult, euroResult, cadResult, usdResult] =
+            await Promise.allSettled([
+              supabase
+                .from("crypto_balances")
+                .select("balance")
+                .eq("user_id", user.id)
+                .single(),
+              supabase
+                .from("euro_balances")
+                .select("balance")
+                .eq("user_id", user.id)
+                .single(),
+              supabase
+                .from("cad_balances")
+                .select("balance")
+                .eq("user_id", user.id)
+                .single(),
+              supabase
+                .from("usd_balances")
+                .select("balance")
+                .eq("user_id", user.id)
+                .single(),
+            ]);
+
+          const userBalance: UserBalance = {
+            user_id: user.id,
+            crypto:
+              cryptoResult.status === "fulfilled"
+                ? Number(cryptoResult.value.data?.balance || 0)
+                : 0,
+            euro:
+              euroResult.status === "fulfilled"
+                ? Number(euroResult.value.data?.balance || 0)
+                : 0,
+            cad:
+              cadResult.status === "fulfilled"
+                ? Number(cadResult.value.data?.balance || 0)
+                : 0,
+            usd:
+              usdResult.status === "fulfilled"
+                ? Number(usdResult.value.data?.balance || 0)
+                : 0,
+          };
+
+          balances.push(userBalance);
+        } catch (error) {
+          console.error(`Error fetching balances for user ${user.id}:`, error);
+          // Add zero balances for this user
+          balances.push({
+            user_id: user.id,
+            crypto: 0,
+            euro: 0,
+            cad: 0,
+            usd: 0,
+          });
+        }
+      }
+
+      setUserBalances(balances);
+    } catch (error) {
+      console.error("Error in fetchAllUsers:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  const updateUserBalance = async () => {
-    if (!selectedUser || !balanceUpdate.amount) return;
-
-    try {
-      const tableName = `${balanceUpdate.currency}_balances`;
-
-      const { error } = await supabase
-        .from(tableName)
-        .update({
-          balance: Number.parseFloat(balanceUpdate.amount),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("user_id", selectedUser);
-
-      if (error) throw error;
-
-      // Add transaction record
-      await supabase.from("transactions").insert({
-        user_id: selectedUser,
-        type: "Admin Adjustment",
-        amount: Number.parseFloat(balanceUpdate.amount),
-        currency: balanceUpdate.currency.toUpperCase(),
-        description: `Balance updated by admin to ${
-          balanceUpdate.amount
-        } ${balanceUpdate.currency.toUpperCase()}`,
-        platform: "Admin Panel",
-        status: "Successful",
-      });
-
-      alert(
-        "Balance updated successfully! Check the user's dashboard for real-time update."
-      );
-      setBalanceUpdate({ currency: "euro", amount: "" });
-      fetchAllUsers();
-    } catch (error: any) {
-      alert(`Error: ${error.message}`);
-    }
+  const getUserBalance = (userId: string) => {
+    return (
+      userBalances.find((balance) => balance.user_id === userId) || {
+        crypto: 0,
+        euro: 0,
+        cad: 0,
+        usd: 0,
+      }
+    );
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>User Management & Testing</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Button
-            onClick={fetchAllUsers}
-            disabled={loading}
-            className="bg-[#F26623] hover:bg-[#E55A1F]"
-          >
-            {loading ? "Loading..." : "Fetch All Users"}
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between">
+          <div className="flex items-center">
+            <Users className="w-5 h-5 mr-2" />
+            User Management & Testing
+          </div>
+          <Button onClick={fetchAllUsers} disabled={loading} variant="outline">
+            <RefreshCw
+              className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`}
+            />
+            Fetch All Users
           </Button>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="text-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F26623] mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading users and balances...</p>
+          </div>
+        ) : users.length === 0 ? (
+          <div className="text-center py-8">
+            <Users className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-600">No users found</p>
+            <p className="text-sm text-gray-500">
+              Click "Fetch All Users" to load user data
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">
+                All Users ({users.length})
+              </h3>
+              <Badge variant="outline">{users.length} users loaded</Badge>
+            </div>
 
-          {users.length > 0 && (
-            <div className="space-y-4">
-              <h3 className="font-medium">All Users & Their Balances:</h3>
-              <div className="grid gap-4">
-                {users.map((user) => (
-                  <Card key={user.id} className="p-4">
-                    <div className="flex justify-between items-start">
+            <div className="grid grid-cols-1 gap-4">
+              {users.map((user) => {
+                const balance = getUserBalance(user.id);
+                return (
+                  <div key={user.id} className="border rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
                       <div>
-                        <h4 className="font-medium">{user.full_name}</h4>
-                        <p className="text-sm text-gray-600">{user.email}</p>
-                        <p className="text-xs text-gray-500">
+                        <h4 className="font-medium text-lg">
+                          {user.full_name}
+                        </h4>
+                        <p className="text-sm text-gray-600">
                           Client ID: {user.client_id}
                         </p>
-                        <div className="mt-2 grid grid-cols-4 gap-2 text-xs">
-                          <span>
-                            Crypto: {user.crypto_balances?.[0]?.balance || 0}
-                          </span>
-                          <span>
-                            Euro: {user.euro_balances?.[0]?.balance || 0}
-                          </span>
-                          <span>
-                            CAD: {user.cad_balances?.[0]?.balance || 0}
-                          </span>
-                          <span>
-                            USD: {user.usd_balances?.[0]?.balance || 0}
-                          </span>
+                        <p className="text-sm text-gray-600">{user.email}</p>
+                      </div>
+                      <Badge variant="secondary">Active</Badge>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+                      <div className="bg-orange-50 p-3 rounded-lg">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-xs text-gray-600">Crypto</p>
+                            <p className="font-bold text-lg">
+                              {balance.crypto}
+                            </p>
+                            <p className="text-xs text-gray-500">BTC</p>
+                          </div>
+                          <Bitcoin className="w-5 h-5 text-orange-500" />
                         </div>
                       </div>
-                      <Button
-                        size="sm"
-                        variant={
-                          selectedUser === user.id ? "default" : "outline"
-                        }
-                        onClick={() => setSelectedUser(user.id)}
-                        className={
-                          selectedUser === user.id ? "bg-[#F26623]" : ""
-                        }
-                      >
-                        {selectedUser === user.id ? "Selected" : "Select"}
-                      </Button>
-                    </div>
-                  </Card>
-                ))}
-              </div>
 
-              {selectedUser && (
-                <Card className="p-4 bg-orange-50">
-                  <h4 className="font-medium mb-4">
-                    Update Selected User's Balance
-                  </h4>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <Label htmlFor="currency-select">Currency</Label>
-                      <select
-                        id="currency-select"
-                        value={balanceUpdate.currency}
-                        onChange={(e) =>
-                          setBalanceUpdate({
-                            ...balanceUpdate,
-                            currency: e.target.value,
-                          })
-                        }
-                        className="w-full p-2 border rounded"
-                        aria-label="Select currency to update"
-                      >
-                        <option value="crypto">Crypto</option>
-                        <option value="euro">Euro</option>
-                        <option value="cad">CAD</option>
-                        <option value="usd">USD</option>
-                      </select>
-                    </div>
-                    <div>
-                      <Label>New Amount</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={balanceUpdate.amount}
-                        onChange={(e) =>
-                          setBalanceUpdate({
-                            ...balanceUpdate,
-                            amount: e.target.value,
-                          })
-                        }
-                        placeholder="1000.00"
-                      />
-                    </div>
-                    <div className="flex items-end">
-                      <Button
-                        onClick={updateUserBalance}
-                        className="bg-[#F26623] hover:bg-[#E55A1F]"
-                      >
-                        Update Balance
-                      </Button>
+                      <div className="bg-blue-50 p-3 rounded-lg">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-xs text-gray-600">Euro</p>
+                            <p className="font-bold text-lg">
+                              €{balance.euro.toFixed(2)}
+                            </p>
+                            <p className="text-xs text-gray-500">EUR</p>
+                          </div>
+                          <Euro className="w-5 h-5 text-blue-500" />
+                        </div>
+                      </div>
+
+                      <div className="bg-green-50 p-3 rounded-lg">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-xs text-gray-600">CAD</p>
+                            <p className="font-bold text-lg">
+                              ${balance.cad.toFixed(2)}
+                            </p>
+                            <p className="text-xs text-gray-500">CAD</p>
+                          </div>
+                          <DollarSign className="w-5 h-5 text-green-500" />
+                        </div>
+                      </div>
+
+                      <div className="bg-purple-50 p-3 rounded-lg">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-xs text-gray-600">USD</p>
+                            <p className="font-bold text-lg">
+                              ${balance.usd.toFixed(2)}
+                            </p>
+                            <p className="text-xs text-gray-500">USD</p>
+                          </div>
+                          <DollarSign className="w-5 h-5 text-purple-500" />
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </Card>
-              )}
+                );
+              })}
             </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>How to Test User Isolation</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="space-y-2">
-            <h4 className="font-medium">Step 1: Create Test Users</h4>
-            <p className="text-sm text-gray-600">
-              1. Open your app in two different browsers (Chrome & Firefox)
-              <br />
-              2. Sign up as "Kevin" with kevin@test.com in Chrome
-              <br />
-              3. Sign up as "Andy" with andy@test.com in Firefox
-            </p>
           </div>
-
-          <div className="space-y-2">
-            <h4 className="font-medium">Step 2: Test Real-time Updates</h4>
-            <p className="text-sm text-gray-600">
-              1. Use this admin panel to update Kevin's Euro balance to 1000
-              <br />
-              2. Watch Kevin's dashboard update instantly in Chrome
-              <br />
-              3. Check Andy's dashboard in Firefox - it should NOT change
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <h4 className="font-medium">Step 3: Verify Isolation</h4>
-            <p className="text-sm text-gray-600">
-              1. Update Andy's CAD balance to 500
-              <br />
-              2. Only Andy's dashboard should update
-              <br />
-              3. Kevin's balances remain unchanged
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
