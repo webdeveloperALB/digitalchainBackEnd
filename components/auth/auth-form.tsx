@@ -9,11 +9,14 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Eye, EyeOff } from "lucide-react"
+import { Eye, EyeOff, AlertCircle } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 export default function AuthForm() {
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -23,9 +26,11 @@ export default function AuthForm() {
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
+    setError(null)
+    setSuccess(null)
 
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
         options: {
@@ -35,10 +40,16 @@ export default function AuthForm() {
         },
       })
 
-      if (error) throw error
-      alert("Check your email for the confirmation link!")
+      if (error) {
+        console.error('Signup error:', error)
+        throw error
+      }
+
+      console.log('Signup response:', data)
+      setSuccess("Check your email for the confirmation link!")
     } catch (error: any) {
-      alert(error.message)
+      console.error('Signup error details:', error)
+      setError(`Signup failed: ${error.message || 'Unknown error occurred'}`)
     } finally {
       setLoading(false)
     }
@@ -47,16 +58,25 @@ export default function AuthForm() {
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
+    setError(null)
+    setSuccess(null)
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email: formData.email,
         password: formData.password,
       })
 
-      if (error) throw error
+      if (error) {
+        console.error('Signin error:', error)
+        throw error
+      }
+
+      console.log('Signin successful:', data)
+      setSuccess("Successfully signed in!")
     } catch (error: any) {
-      alert(error.message)
+      console.error('Signin error details:', error)
+      setError(`Sign in failed: ${error.message || 'Unknown error occurred'}`)
     } finally {
       setLoading(false)
     }
@@ -79,6 +99,20 @@ export default function AuthForm() {
           <CardDescription>Sign in to your account or create a new one</CardDescription>
         </CardHeader>
         <CardContent>
+          {error && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {success && (
+            <Alert className="mb-4 border-green-200 bg-green-50">
+              <AlertCircle className="h-4 w-4 text-green-600" />
+              <AlertDescription className="text-green-800">{success}</AlertDescription>
+            </Alert>
+          )}
+
           <Tabs defaultValue="signin" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="signin">Sign In</TabsTrigger>
