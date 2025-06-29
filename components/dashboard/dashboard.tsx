@@ -18,10 +18,19 @@ export default function Dashboard() {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
-    fetchUserData();
-  }, []);
+    // Prevent double execution
+    if (isInitialized) return;
+
+    const initializeDashboard = async () => {
+      setIsInitialized(true);
+      await fetchUserData();
+    };
+
+    initializeDashboard();
+  }, [isInitialized]);
 
   const generateClientId = () => {
     return Math.floor(Math.random() * 1000000)
@@ -30,14 +39,27 @@ export default function Dashboard() {
   };
 
   const logError = (message: string, error: any) => {
-    console.error(message, {
-      error,
-      errorMessage: error?.message,
-      errorCode: error?.code,
-      errorDetails: error?.details,
-      errorHint: error?.hint,
-      fullError: JSON.stringify(error, null, 2)
-    });
+    // Improved error logging with fallback information
+    const errorInfo = {
+      message: message,
+      error: error,
+      errorMessage: error?.message || 'No error message provided',
+      errorCode: error?.code || 'No error code',
+      errorDetails: error?.details || 'No error details',
+      errorHint: error?.hint || 'No error hint',
+      timestamp: new Date().toISOString(),
+      // Add more context if error is empty
+      isEmpty: !error || Object.keys(error).length === 0,
+      type: typeof error,
+      stringified: JSON.stringify(error, null, 2)
+    };
+
+    console.error(message, errorInfo);
+
+    // Also log to help with debugging
+    if (errorInfo.isEmpty) {
+      console.warn("Empty error object detected - this might indicate a network issue or invalid operation");
+    }
   };
 
   const createUserProfile = async (user: any) => {
@@ -51,11 +73,14 @@ export default function Dashboard() {
         .from("profiles")
         .select("*")
         .eq("id", user.id)
-        .maybeSingle(); // Use maybeSingle instead of single to avoid errors when no row exists
+        .maybeSingle();
 
       if (checkError) {
         logError("Error checking existing profile:", checkError);
-        // Don't throw here, continue with creation attempt
+        // Continue with creation attempt only if it's not a critical error
+        if (checkError.code !== 'PGRST116') { // PGRST116 = no rows found
+          console.warn("Continuing despite check error...");
+        }
       }
 
       if (existingProfile) {
@@ -63,8 +88,8 @@ export default function Dashboard() {
         return existingProfile;
       }
 
-      // Create profile manually if trigger didn't work
-      console.log("Inserting new profile...");
+      // Create profile with upsert to handle race conditions
+      console.log("Upserting profile...");
       const profileData = {
         id: user.id,
         client_id: clientId,
@@ -75,76 +100,106 @@ export default function Dashboard() {
         email: user.email,
       };
 
+      console.log("Profile data to upsert:", profileData);
+
+      // Use upsert instead of insert to handle concurrent requests
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
-        .insert(profileData)
+        .upsert(profileData, {
+          onConflict: 'id',
+          ignoreDuplicates: false
+        })
         .select()
         .single();
 
       if (profileError) {
-        logError("Profile creation error:", profileError);
+        logError("Profile upsert error:", profileError);
 
-        // If it's a unique constraint error, try to fetch the existing profile
-        if (profileError.code === '23505') {
-          console.log("Profile already exists (unique constraint), fetching...");
-          const { data: existingProfile } = await supabase
-            .from("profiles")
-            .select("*")
-            .eq("id", user.id)
-            .single();
+        // If upsert fails, try to fetch existing profile
+        console.log("Upsert failed, attempting to fetch existing profile...");
+        const { data: fallbackProfile, error: fallbackError } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .maybeSingle();
 
-          if (existingProfile) {
-            return existingProfile;
-          }
+        if (!fallbackError && fallbackProfile) {
+          console.log("Found existing profile after upsert failure:", fallbackProfile);
+          return fallbackProfile;
         }
 
-        throw new Error(`Failed to create profile: ${profileError.message || 'Unknown error'}`);
+        // If we still can't get the profile, throw error
+        const errorMessage = profileError.message ||
+          profileError.details ||
+          profileError.hint ||
+          'Unknown database error';
+
+        throw new Error(`Failed to create/fetch profile: ${errorMessage} (Code: ${profileError.code || 'unknown'})`);
       }
 
       if (!profile) {
-        throw new Error("Profile creation returned no data");
+        throw new Error("Profile operation returned no data");
       }
 
-      // Create initial balances if they don't exist
-      console.log("Creating initial balances...");
-      const balanceOperations = [
-        { table: "crypto_balances", name: "crypto" },
-        { table: "euro_balances", name: "euro" },
-        { table: "cad_balances", name: "cad" },
-        { table: "usd_balances", name: "usd" }
-      ];
+      // Create initial balances asynchronously (don't block profile creation)
+      console.log("Scheduling initial balance creation...");
+      setTimeout(async () => {
+        const balanceOperations = [
+          { table: "crypto_balances", name: "crypto" },
+          { table: "euro_balances", name: "euro" },
+          { table: "cad_balances", name: "cad" },
+          { table: "usd_balances", name: "usd" }
+        ];
 
-      const balancePromises = balanceOperations.map(async (operation) => {
-        try {
-          const { error: balanceError } = await supabase
-            .from(operation.table)
-            .upsert({ user_id: user.id, balance: 0 }, {
-              onConflict: 'user_id',
-              ignoreDuplicates: true
-            });
+        for (const operation of balanceOperations) {
+          try {
+            const { error: balanceError } = await supabase
+              .from(operation.table)
+              .upsert({ user_id: user.id, balance: 0 }, {
+                onConflict: 'user_id',
+                ignoreDuplicates: true
+              });
 
-          if (balanceError) {
-            logError(`Error creating ${operation.name} balance:`, balanceError);
+            if (balanceError) {
+              console.warn(`Warning: Could not create ${operation.name} balance:`, balanceError.message);
+            }
+          } catch (balanceError) {
+            console.warn(`Warning: Exception creating ${operation.name} balance:`, balanceError);
           }
-        } catch (balanceError) {
-          logError(`Exception creating ${operation.name} balance:`, balanceError);
         }
-      });
+      }, 100); // Small delay to avoid blocking
 
-      // Wait for all balance operations to complete (but don't fail if they don't)
-      await Promise.allSettled(balancePromises);
-
-      console.log("Profile created successfully:", profile);
+      console.log("Profile created/updated successfully:", profile);
       return profile;
     } catch (error: any) {
-      logError("Error creating user profile:", error);
-      // Return a basic profile object even if creation fails
+      logError("Error in createUserProfile:", error);
+
+      // Last resort: try to fetch existing profile one more time
+      try {
+        console.log("Last resort: attempting to fetch existing profile...");
+        const { data: lastResortProfile } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (lastResortProfile) {
+          console.log("Successfully found existing profile on last resort:", lastResortProfile);
+          return lastResortProfile;
+        }
+      } catch (lastResortError) {
+        console.warn("Last resort fetch also failed:", lastResortError);
+      }
+
+      // Return a basic profile object even if everything fails
+      console.log("Creating temporary profile as fallback");
       return {
         id: user.id,
         client_id: generateClientId(),
         full_name:
           user.user_metadata?.full_name || user.email?.split("@")[0] || "User",
         email: user.email,
+        _isTemporary: true,
       };
     }
   };
@@ -185,7 +240,7 @@ export default function Dashboard() {
         .from("profiles")
         .select("*")
         .eq("id", user.id)
-        .maybeSingle(); // Use maybeSingle to avoid 406 errors
+        .maybeSingle();
 
       if (profileError) {
         logError("Profile fetch error:", profileError);
@@ -194,19 +249,12 @@ export default function Dashboard() {
       // If profile doesn't exist, create it
       if (!profile) {
         console.log("Profile not found, creating new profile...");
-        profile = await createUserProfile(user);
-      } else if (profileError) {
-        logError("Unexpected profile fetch error:", profileError);
-        // Create a fallback profile
-        profile = {
-          id: user.id,
-          client_id: generateClientId(),
-          full_name:
-            user.user_metadata?.full_name ||
-            user.email?.split("@")[0] ||
-            "User",
-          email: user.email,
-        };
+        try {
+          profile = await createUserProfile(user);
+        } catch (createError) {
+          logError("Failed to create profile, using fallback:", createError);
+          // Continue with fallback profile
+        }
       }
 
       // Ensure profile has all required fields
@@ -221,10 +269,16 @@ export default function Dashboard() {
         email: profile?.email || user.email || "user@example.com",
         created_at: profile?.created_at,
         updated_at: profile?.updated_at,
+        _isTemporary: profile?._isTemporary || false,
       };
 
       setUserProfile(safeProfile);
       console.log("User profile loaded successfully:", safeProfile);
+
+      // Set a warning if using temporary profile
+      if (safeProfile._isTemporary) {
+        setError("Using temporary profile - some features may be limited");
+      }
     } catch (error: any) {
       const errorMessage = error?.message || "Unknown error occurred";
       logError("Error in fetchUserData:", error);
@@ -313,6 +367,7 @@ export default function Dashboard() {
           <button
             onClick={() => {
               setLoading(true);
+              setError(null);
               fetchUserData();
             }}
             className="bg-[#F26623] text-white px-4 py-2 rounded-lg hover:bg-[#d55a1f] transition-colors"
@@ -343,13 +398,13 @@ export default function Dashboard() {
 
       {/* Show error banner if there's a non-critical error */}
       {error && userProfile?.id !== "unknown" && (
-        <div className="fixed top-4 right-4 bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded z-50">
+        <div className="fixed top-4 right-4 bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded z-50 max-w-sm">
           <div className="flex items-center">
             <span className="mr-2">⚠️</span>
-            <span className="text-sm">Some features may not work properly</span>
+            <span className="text-sm flex-1">{error}</span>
             <button
               onClick={() => setError(null)}
-              className="ml-4 text-yellow-700 hover:text-yellow-900"
+              className="ml-4 text-yellow-700 hover:text-yellow-900 text-xl leading-none"
             >
               ×
             </button>
