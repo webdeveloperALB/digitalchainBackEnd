@@ -165,7 +165,7 @@ export default function AccountsSection() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex items-center gap-x-14">
         <h2 className="text-2xl font-bold">External Bank Accounts</h2>
         <Button
           onClick={() => setShowAddForm(true)}

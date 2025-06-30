@@ -38,7 +38,7 @@ export default function Sidebar({
   const menuItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "accounts", label: "Accounts", icon: Wallet },
-    { id: "transfers", label: "Transfere", icon: ArrowLeftRight },
+    { id: "transfers", label: "Transfers", icon: ArrowLeftRight },
     { id: "deposit", label: "Deposit", icon: Download },
     { id: "payments", label: "Payments", icon: CreditCard },
     { id: "card", label: "Card", icon: CreditCard },

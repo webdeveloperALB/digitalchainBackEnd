@@ -1,19 +1,33 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { supabase } from "@/lib/supabase"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
-import { Receipt, FileText, AlertTriangle, Building, Zap, CreditCard, ArrowUpDown } from "lucide-react"
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Receipt,
+  FileText,
+  AlertTriangle,
+  Building,
+  Zap,
+  CreditCard,
+  ArrowUpDown,
+} from "lucide-react";
 
 export default function PaymentsSection() {
-  const [payments, setPayments] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [showPaymentForm, setShowPaymentForm] = useState(false)
+  const [payments, setPayments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [formData, setFormData] = useState({
     payment_type: "",
     amount: "",
@@ -21,40 +35,40 @@ export default function PaymentsSection() {
     description: "",
     recipient: "",
     due_date: "",
-  })
+  });
 
   useEffect(() => {
-    fetchPayments()
-  }, [])
+    fetchPayments();
+  }, []);
 
   const fetchPayments = async () => {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser()
+      } = await supabase.auth.getUser();
 
       if (user) {
         const { data, error } = await supabase
           .from("payments")
           .select("*")
           .eq("user_id", user.id)
-          .order("created_at", { ascending: false })
+          .order("created_at", { ascending: false });
 
-        if (error) throw error
-        setPayments(data || [])
+        if (error) throw error;
+        setPayments(data || []);
       }
     } catch (error) {
-      console.error("Error fetching payments:", error)
+      console.error("Error fetching payments:", error);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const submitPayment = async () => {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser()
+      } = await supabase.auth.getUser();
 
       if (user) {
         const { error } = await supabase.from("payments").insert({
@@ -66,9 +80,9 @@ export default function PaymentsSection() {
           recipient: formData.recipient,
           due_date: formData.due_date || null,
           status: "Pending",
-        })
+        });
 
-        if (error) throw error
+        if (error) throw error;
 
         // Add transaction record
         await supabase.from("transactions").insert({
@@ -80,7 +94,7 @@ export default function PaymentsSection() {
           platform: "Digital Chain Bank",
           status: "Pending",
           recipient_name: formData.recipient,
-        })
+        });
 
         setFormData({
           payment_type: "",
@@ -89,15 +103,15 @@ export default function PaymentsSection() {
           description: "",
           recipient: "",
           due_date: "",
-        })
-        setShowPaymentForm(false)
-        fetchPayments()
-        alert("Payment request submitted successfully!")
+        });
+        setShowPaymentForm(false);
+        fetchPayments();
+        alert("Payment request submitted successfully!");
       }
     } catch (error: any) {
-      alert(`Error: ${error.message}`)
+      alert(`Error: ${error.message}`);
     }
-  }
+  };
 
   const paymentTypes = [
     {
@@ -142,32 +156,40 @@ export default function PaymentsSection() {
       icon: ArrowUpDown,
       description: "Cover costs related to outgoing or international transfers",
     },
-  ]
+  ];
 
   if (loading) {
-    return <div className="p-6">Loading payments...</div>
+    return <div className="p-6">Loading payments...</div>;
   }
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Payments</h2>
-        <Button onClick={() => setShowPaymentForm(true)} className="bg-[#F26623] hover:bg-[#E55A1F]">
+        <Button
+          onClick={() => setShowPaymentForm(true)}
+          className="bg-[#F26623] hover:bg-[#E55A1F]"
+        >
           <Receipt className="w-4 h-4 mr-2" />
           New Payment
         </Button>
       </div>
 
-      {/* Payment Categories */}
-      <div className="grid gap-4">
+      {/* Payment Categories - Now Horizontal */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {paymentTypes.map((type) => (
-          <Card key={type.id} className="cursor-pointer hover:shadow-md transition-shadow">
+          <Card
+            key={type.id}
+            className="cursor-pointer hover:shadow-md transition-shadow"
+          >
             <CardContent className="p-4">
               <div className="flex items-start gap-4">
-                <type.icon className="w-6 h-6 text-[#F26623] mt-1" />
-                <div>
+                <type.icon className="w-6 h-6 text-[#F26623] mt-1 flex-shrink-0" />
+                <div className="min-w-0">
                   <h3 className="font-medium">{type.name}</h3>
-                  <p className="text-sm text-gray-600">{type.description}</p>
+                  <p className="text-sm text-gray-600 line-clamp-2">
+                    {type.description}
+                  </p>
                 </div>
               </div>
             </CardContent>
@@ -186,7 +208,9 @@ export default function PaymentsSection() {
                 <Label>Payment Type</Label>
                 <Select
                   value={formData.payment_type}
-                  onValueChange={(value) => setFormData({ ...formData, payment_type: value })}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, payment_type: value })
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select payment type" />
@@ -204,7 +228,9 @@ export default function PaymentsSection() {
                 <Label>Currency</Label>
                 <Select
                   value={formData.currency}
-                  onValueChange={(value) => setFormData({ ...formData, currency: value })}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, currency: value })
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -217,7 +243,6 @@ export default function PaymentsSection() {
                 </Select>
               </div>
             </div>
-
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Amount</Label>
@@ -225,7 +250,9 @@ export default function PaymentsSection() {
                   type="number"
                   step="0.01"
                   value={formData.amount}
-                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, amount: e.target.value })
+                  }
                   placeholder="0.00"
                 />
               </div>
@@ -234,35 +261,44 @@ export default function PaymentsSection() {
                 <Input
                   type="date"
                   value={formData.due_date}
-                  onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, due_date: e.target.value })
+                  }
                 />
               </div>
             </div>
-
             <div>
               <Label>Recipient/Payee</Label>
               <Input
                 value={formData.recipient}
-                onChange={(e) => setFormData({ ...formData, recipient: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, recipient: e.target.value })
+                }
                 placeholder="Enter recipient name or organization"
               />
             </div>
-
             <div>
               <Label>Description</Label>
               <Textarea
                 value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, description: e.target.value })
+                }
                 placeholder="Enter payment description..."
                 rows={3}
               />
             </div>
-
             <div className="flex gap-2">
-              <Button onClick={submitPayment} className="bg-[#F26623] hover:bg-[#E55A1F]">
+              <Button
+                onClick={submitPayment}
+                className="bg-[#F26623] hover:bg-[#E55A1F]"
+              >
                 Submit Payment
               </Button>
-              <Button variant="outline" onClick={() => setShowPaymentForm(false)}>
+              <Button
+                variant="outline"
+                onClick={() => setShowPaymentForm(false)}
+              >
                 Cancel
               </Button>
             </div>
@@ -281,27 +317,39 @@ export default function PaymentsSection() {
           ) : (
             <div className="space-y-4">
               {payments.map((payment) => (
-                <div key={payment.id} className="flex justify-between items-center p-4 border rounded-lg">
+                <div
+                  key={payment.id}
+                  className="flex justify-between items-center p-4 border rounded-lg"
+                >
                   <div>
                     <p className="font-medium">{payment.payment_type}</p>
-                    <p className="text-sm text-gray-600">{payment.description}</p>
-                    <p className="text-sm text-gray-600">To: {payment.recipient}</p>
-                    <p className="text-xs text-gray-500">{new Date(payment.created_at).toLocaleString()}</p>
+                    <p className="text-sm text-gray-600">
+                      {payment.description}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      To: {payment.recipient}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {new Date(payment.created_at).toLocaleString()}
+                    </p>
                     {payment.due_date && (
-                      <p className="text-xs text-gray-500">Due: {new Date(payment.due_date).toLocaleDateString()}</p>
+                      <p className="text-xs text-gray-500">
+                        Due: {new Date(payment.due_date).toLocaleDateString()}
+                      </p>
                     )}
                   </div>
                   <div className="text-right">
                     <p className="font-medium">
-                      {Number(payment.amount).toLocaleString()} {payment.currency}
+                      {Number(payment.amount).toLocaleString()}{" "}
+                      {payment.currency}
                     </p>
                     <p
                       className={`text-sm font-medium ${
-                        payment.status === "Completed"
+                        payment.status === "Success"
                           ? "text-green-600"
                           : payment.status === "Pending"
-                            ? "text-yellow-600"
-                            : "text-red-600"
+                          ? "text-yellow-600"
+                          : "text-red-600"
                       }`}
                     >
                       {payment.status}
@@ -314,5 +362,5 @@ export default function PaymentsSection() {
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }

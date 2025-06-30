@@ -220,7 +220,7 @@ export default function DepositsSection() {
                   <div className="text-right">
                     <p
                       className={`text-sm font-medium ${
-                        deposit.status === "Completed"
+                        deposit.status === "Success"
                           ? "text-green-600"
                           : deposit.status === "Pending"
                             ? "text-yellow-600"
