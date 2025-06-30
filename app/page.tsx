@@ -29,14 +29,30 @@ export default function Page() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-orange-100">
-        <div className="text-center">
-          <div className="w-16 h-16 bg-[#F26623] rounded-lg flex items-center justify-center mx-auto mb-4">
-            <div className="w-10 h-10 bg-white rounded transform rotate-45 animate-spin"></div>
-          </div>
-          <p className="text-gray-600">Loading...</p>
+      <>
+        {/* inline keyframes + utility class */}
+        <style>
+          {`
+      @keyframes zoomInOut {
+        0%, 100% { transform: scale(1); }
+        50%       { transform: scale(1.2); }
+      }
+      .zoom-breath {
+        animation: zoomInOut 2s ease-in-out infinite;
+      }
+    `}
+        </style>
+
+        <div className="min-h-screen flex flex-col items-center justify-center space-y-4 bg-gradient-to-br from-orange-50 to-orange-100">
+          {/* massive logo + breathing effect */}
+          <img
+            src="/logo.svg"
+            alt="Loading logo"
+            className="w-64 h-64 object-contain zoom-breath"
+          />
+          <p className="text-gray-600 text-2xl text-center">Loading...</p>
         </div>
-      </div>
+      </>
     );
   }
 

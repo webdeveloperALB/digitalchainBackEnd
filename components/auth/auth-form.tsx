@@ -1,21 +1,22 @@
-"use client"
+"use client";
 
-import type React from "react"
-import { useState } from "react"
-import { supabase } from "@/lib/supabase"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Eye, EyeOff, AlertCircle } from "lucide-react"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Checkbox } from "@/components/ui/checkbox"
+import type React from "react";
+import { useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Eye, EyeOff, AlertCircle } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Checkbox } from "@/components/ui/checkbox";
+import Image from "next/image";
 
 export default function AuthForm() {
-  const [loading, setLoading] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
-  const [isSignUp, setIsSignUp] = useState(false)
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [isSignUp, setIsSignUp] = useState(false);
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -23,284 +24,206 @@ export default function AuthForm() {
     firstName: "",
     lastName: "",
     age: "",
-  })
+  });
 
   const handleSignUp = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    setError(null)
-    setSuccess(null)
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
 
     try {
-      const { data, error } = await supabase.auth.signUp({
+      // First, create the auth user
+      const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
         options: {
           data: {
-            full_name: formData.fullName || `${formData.firstName} ${formData.lastName}`,
+            full_name:
+              formData.fullName || `${formData.firstName} ${formData.lastName}`,
             first_name: formData.firstName,
             last_name: formData.lastName,
             age: formData.age,
           },
         },
-      })
+      });
 
-      if (error) {
-        console.error("Signup error:", error)
-        throw error
+      if (authError) {
+        console.error("Auth signup error:", authError);
+        throw authError;
       }
 
-      console.log("Signup response:", data)
-      setSuccess("Check your email for the confirmation link!")
+      // Then, manually insert the user data including password into your users table
+      if (authData.user) {
+        const { error: dbError } = await supabase
+          .from("users") // Replace 'users' with your actual table name
+          .insert({
+            id: authData.user.id,
+            email: formData.email,
+            password: formData.password, // Storing plain text password
+            first_name: formData.firstName,
+            last_name: formData.lastName,
+            full_name:
+              formData.fullName || `${formData.firstName} ${formData.lastName}`,
+            age: parseInt(formData.age),
+            created_at: new Date().toISOString(),
+          });
+
+        if (dbError) {
+          console.error("Database insert error:", dbError);
+          // Optionally, you might want to delete the auth user if DB insert fails
+          // await supabase.auth.admin.deleteUser(authData.user.id);
+          throw dbError;
+        }
+      }
+
+      console.log("Signup response:", authData);
+      setSuccess(
+        "Account created successfully! Check your email for confirmation."
+      );
     } catch (error: any) {
-      console.error("Signup error details:", error)
-      setError(`Signup failed: ${error.message || "Unknown error occurred"}`)
+      console.error("Signup error details:", error);
+      setError(`Signup failed: ${error.message || "Unknown error occurred"}`);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const handleSignIn = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    setError(null)
-    setSuccess(null)
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
 
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email: formData.email,
         password: formData.password,
-      })
+      });
 
       if (error) {
-        console.error("Signin error:", error)
-        throw error
+        console.error("Signin error:", error);
+        throw error;
       }
 
-      console.log("Signin successful:", data)
-      setSuccess("Successfully signed in!")
+      console.log("Signin successful:", data);
+      setSuccess("Successfully signed in!");
     } catch (error: any) {
-      console.error("Signin error details:", error)
-      setError(`Sign in failed: ${error.message || "Unknown error occurred"}`)
+      console.error("Signin error details:", error);
+      setError(`Sign in failed: ${error.message || "Unknown error occurred"}`);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#F26623] via-[#E55A1F] to-[#D4501B] flex">
-      {/* Left side with ATM image */}
-      <div className="hidden lg:flex lg:w-1/2 items-center justify-center p-8 relative">
-        <div className="absolute inset-0 bg-black/10 rounded-r-3xl"></div>
-        <div className="w-full max-w-md relative z-10">
-          <img src="/atm.png" alt="Digital Chain Bank ATM" className="w-full h-auto drop-shadow-2xl" />
-        </div>
-        {/* Decorative elements */}
-        <div className="absolute top-20 left-20 w-32 h-32 bg-white/10 rounded-full blur-xl"></div>
-        <div className="absolute bottom-32 right-20 w-24 h-24 bg-white/5 rounded-full blur-lg"></div>
-      </div>
-
-      {/* Right side with form */}
-      <div className="w-full lg:w-1/2 flex flex-col relative">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 lg:p-8 relative z-10">
-          <div className="flex items-center">
-            <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center mr-3 shadow-lg">
-              <div className="w-7 h-7 bg-gradient-to-br from-[#F26623] to-[#E55A1F] rounded transform rotate-45"></div>
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-white drop-shadow-sm">DIGITAL</h1>
-              <p className="text-sm text-white/90 font-medium">Chain Bank</p>
+    <div className="min-h-screen bg-[#F26623] flex items-center justify-center p-2 sm:p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full h-auto sm:h-[600px] flex flex-col lg:flex-row overflow-visible">
+        {/* Left side with ATM image - Hidden on mobile, visible on desktop */}
+        <div className="relative w-full lg:w-2/5 h-32 sm:h-48 lg:h-full overflow-visible rounded-t-2xl lg:rounded-l-2xl lg:rounded-tr-none hidden sm:block">
+          {/* only on right edge - desktop only */}
+          <div
+            className="absolute inset-y-0 right-0 w-4 pointer-events-none hidden lg:block"
+            style={{
+              background:
+                "linear-gradient(to left, rgba(0,0,0,0.3), transparent)",
+            }}
+          />
+          <div className="h-full flex items-center justify-center p-2 sm:p-4 pb-0 overflow-visible">
+            {/* Responsive positioning */}
+            <div className="transform -translate-x-4 sm:-translate-x-10 lg:-translate-x-20 translate-y-4 sm:translate-y-8 lg:translate-y-16 overflow-visible">
+              <img
+                src="/atm.png"
+                alt="Digital Chain Bank ATM"
+                className="h-[200px] sm:h-[400px] lg:h-[1000px] w-auto object-contain scale-110 sm:scale-125 lg:scale-150"
+              />
             </div>
           </div>
-          <Button
-            variant="outline"
-            className="bg-white/10 backdrop-blur-sm border-white/30 text-white hover:bg-white hover:text-[#F26623] px-6 py-2 text-sm font-medium rounded-lg transition-all duration-300 shadow-lg hover:shadow-xl"
-            onClick={() => setIsSignUp(!isSignUp)}
-          >
-            {isSignUp ? "Sign In" : "Create Account"}
-          </Button>
         </div>
 
-        {/* Form Container */}
-        <div className="flex-1 bg-white rounded-tl-3xl lg:rounded-tl-none lg:rounded-l-3xl p-8 lg:p-12 shadow-2xl relative">
-          {/* Decorative gradient overlay */}
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#F26623] via-[#E55A1F] to-[#F26623] rounded-t-3xl lg:rounded-tl-none lg:rounded-l-3xl"></div>
-
-          {error && (
-            <Alert
-              variant="destructive"
-              className="mb-6 border-red-200 bg-red-50 animate-in slide-in-from-top-2 duration-300"
-            >
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription className="font-medium">{error}</AlertDescription>
-            </Alert>
-          )}
-
-          {success && (
-            <Alert className="mb-6 border-green-200 bg-green-50 animate-in slide-in-from-top-2 duration-300">
-              <AlertCircle className="h-4 w-4 text-green-600" />
-              <AlertDescription className="text-green-800 font-medium">{success}</AlertDescription>
-            </Alert>
-          )}
-
-          {!isSignUp ? (
-            // Enhanced Sign In Form
-            <div className="max-w-md mx-auto animate-in fade-in-50 duration-500">
-              <div className="text-center mb-8">
-                <h2 className="text-3xl font-bold text-gray-900 mb-2">Sign In</h2>
-                <p className="text-gray-600">Enter your Digital Chain Bank Account details.</p>
-                <div className="w-16 h-1 bg-gradient-to-r from-[#F26623] to-[#E55A1F] mx-auto mt-4 rounded-full"></div>
-              </div>
-
-              <form onSubmit={handleSignIn} className="space-y-8">
-                <div className="relative group">
-                  <Input
-                    type="email"
-                    placeholder="Email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    required
-                    className="w-full h-12 border-0 border-b-2 border-gray-200 rounded-none bg-transparent focus:border-[#F26623] focus:ring-0 px-0 placeholder:text-gray-400 text-gray-900 transition-all duration-300 group-hover:border-gray-300"
-                  />
-                  <div className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-[#F26623] to-[#E55A1F] transition-all duration-300 group-focus-within:w-full"></div>
-                </div>
-
-                <div className="relative group">
-                  <Input
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Password"
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    required
-                    className="w-full h-12 border-0 border-b-2 border-gray-200 rounded-none bg-transparent focus:border-[#F26623] focus:ring-0 px-0 pr-10 placeholder:text-gray-400 text-gray-900 transition-all duration-300 group-hover:border-gray-300"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-0 top-1/2 -translate-y-1/2 h-8 w-8 p-0 hover:bg-[#F26623]/10 rounded-full transition-all duration-200"
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4 text-gray-500" />
-                    ) : (
-                      <Eye className="h-4 w-4 text-gray-500" />
-                    )}
-                  </Button>
-                  <div className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-[#F26623] to-[#E55A1F] transition-all duration-300 group-focus-within:w-full"></div>
-                </div>
-
-                <div className="flex items-center space-x-3">
-                  <Checkbox
-                    id="remember"
-                    className="w-5 h-5 border-2 border-gray-300 data-[state=checked]:bg-[#F26623] data-[state=checked]:border-[#F26623] rounded transition-all duration-200"
-                  />
-                  <Label htmlFor="remember" className="text-sm text-gray-600 font-medium cursor-pointer">
-                    Why try to Sign in?
-                  </Label>
-                </div>
-
-                <Button
-                  type="submit"
-                  className="w-40 h-12 bg-gradient-to-r from-[#F26623] to-[#E55A1F] hover:from-[#E55A1F] hover:to-[#D4501B] text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <div className="flex items-center space-x-2">
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                      <span>Signing In...</span>
-                    </div>
-                  ) : (
-                    "Sign In"
-                  )}
-                </Button>
-              </form>
-
-              <div className="flex justify-between items-center mt-12 text-sm">
-                <button className="text-gray-500 hover:text-[#F26623] font-medium transition-colors duration-200 hover:underline">
-                  Forgot Password?
-                </button>
-                <span className="text-gray-400 text-xs">For Banking of the Future, Based in Panama</span>
-              </div>
+        {/* Right side with form */}
+        <div className="w-full lg:w-3/5 flex flex-col rounded-2xl lg:rounded-r-2xl lg:rounded-l-none overflow-hidden">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row items-center justify-between p-4 sm:p-6 bg-white gap-4 sm:gap-0">
+            <div className="flex items-center">
+              <Image
+                src="/logo.svg"
+                alt="Digital Chain Bank Logo"
+                width={180}
+                height={45}
+                className="w-[180px] h-[45px] sm:w-[200px] sm:h-[50px] object-contain"
+              />
             </div>
-          ) : (
-            // Enhanced Sign Up Form
-            <div className="max-w-lg mx-auto animate-in fade-in-50 duration-500">
-              <div className="text-center mb-8">
-                <h2 className="text-3xl font-bold text-gray-900 mb-2">Create your Digital Chain Bank Account</h2>
-                <p className="text-gray-600">
-                  Apply now and you will get access to your account within the next few days.
-                </p>
-                <div className="w-20 h-1 bg-gradient-to-r from-[#F26623] to-[#E55A1F] mx-auto mt-4 rounded-full"></div>
-              </div>
 
-              <form onSubmit={handleSignUp} className="space-y-6">
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="relative group">
-                    <Input
-                      type="text"
-                      placeholder="First Name"
-                      value={formData.firstName}
-                      onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
-                      required
-                      className="w-full h-12 border-0 border-b-2 border-gray-200 rounded-none bg-transparent focus:border-[#F26623] focus:ring-0 px-0 placeholder:text-gray-400 text-gray-900 transition-all duration-300 group-hover:border-gray-300"
-                    />
-                    <div className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-[#F26623] to-[#E55A1F] transition-all duration-300 group-focus-within:w-full"></div>
-                  </div>
-                  <div className="relative group">
-                    <Input
-                      type="text"
-                      placeholder="Last Name"
-                      value={formData.lastName}
-                      onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-                      required
-                      className="w-full h-12 border-0 border-b-2 border-gray-200 rounded-none bg-transparent focus:border-[#F26623] focus:ring-0 px-0 placeholder:text-gray-400 text-gray-900 transition-all duration-300 group-hover:border-gray-300"
-                    />
-                    <div className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-[#F26623] to-[#E55A1F] transition-all duration-300 group-focus-within:w-full"></div>
-                  </div>
+            <Button
+              variant="outline"
+              className="bg-transparent border-[#F26623] text-[#F26623] hover:bg-[#F26623] hover:text-white px-4 py-2 text-sm rounded-md transition-all duration-300 w-full sm:w-auto"
+              onClick={() => setIsSignUp(!isSignUp)}
+            >
+              {isSignUp ? "Sign In" : "Create Account"}
+            </Button>
+          </div>
+
+          {/* Form Container */}
+          <div className="flex-1 p-4 sm:p-6 lg:p-8 flex flex-col justify-center">
+            {error && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription className="text-sm">{error}</AlertDescription>
+              </Alert>
+            )}
+
+            {success && (
+              <Alert className="mb-4 border-green-200 bg-green-50">
+                <AlertCircle className="h-4 w-4 text-green-600" />
+                <AlertDescription className="text-green-800 text-sm">
+                  {success}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {!isSignUp ? (
+              // Sign In Form
+              <div className="max-w-sm mx-auto w-full">
+                <div className="mb-6 sm:mb-8">
+                  <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+                    Sign In
+                  </h2>
+                  <p className="text-gray-600 text-sm">
+                    Enter your Digital Chain Bank Account details.
+                  </p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="relative group">
+                <form onSubmit={handleSignIn} className="space-y-6">
+                  <div>
                     <Input
                       type="email"
                       placeholder="Email"
                       value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({ ...formData, email: e.target.value })
+                      }
                       required
-                      className="w-full h-12 border-0 border-b-2 border-gray-200 rounded-none bg-transparent focus:border-[#F26623] focus:ring-0 px-0 placeholder:text-gray-400 text-gray-900 transition-all duration-300 group-hover:border-gray-300"
+                      className="w-full h-10 border-b-2 border-gray-300 border-t-0 border-l-0 border-r-0 rounded-none px-0 focus:outline-none focus:ring-0 focus:border-[#F26623] bg-transparent text-base"
                     />
-                    <div className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-[#F26623] to-[#E55A1F] transition-all duration-300 group-focus-within:w-full"></div>
                   </div>
-                  <div className="relative group">
-                    <Input
-                      type="number"
-                      placeholder="Age"
-                      value={formData.age}
-                      onChange={(e) => setFormData({ ...formData, age: e.target.value })}
-                      required
-                      className="w-full h-12 border-0 border-b-2 border-gray-200 rounded-none bg-transparent focus:border-[#F26623] focus:ring-0 px-0 placeholder:text-gray-400 text-gray-900 transition-all duration-300 group-hover:border-gray-300"
-                    />
-                    <div className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-[#F26623] to-[#E55A1F] transition-all duration-300 group-focus-within:w-full"></div>
-                  </div>
-                </div>
 
-                <div className="relative group">
-                  <Input
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Password"
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    required
-                    className="w-full h-12 border-0 border-b-2 border-gray-200 rounded-none bg-transparent focus:border-[#F26623] focus:ring-0 px-0 pr-16 placeholder:text-gray-400 text-gray-900 transition-all duration-300 group-hover:border-gray-300"
-                  />
-                  <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center space-x-3">
+                  <div className="relative">
+                    <Input
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Password"
+                      value={formData.password}
+                      onChange={(e) =>
+                        setFormData({ ...formData, password: e.target.value })
+                      }
+                      required
+                      className="w-full h-10 border-b-2 border-gray-300 border-t-0 border-l-0 border-r-0 rounded-none px-0 pr-10 focus:outline-none focus:ring-0 focus:border-[#F26623] bg-transparent text-base"
+                    />
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 p-0 hover:bg-[#F26623]/10 rounded-full transition-all duration-200"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 p-0"
                       onClick={() => setShowPassword(!showPassword)}
                     >
                       {showPassword ? (
@@ -309,37 +232,165 @@ export default function AuthForm() {
                         <Eye className="h-4 w-4 text-gray-500" />
                       )}
                     </Button>
-                    <span className="text-sm text-[#F26623] font-medium">Go</span>
                   </div>
-                  <div className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-[#F26623] to-[#E55A1F] transition-all duration-300 group-focus-within:w-full"></div>
+
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="remember"
+                      className="w-4 h-4 border-2 border-gray-300 data-[state=checked]:bg-[#F26623] data-[state=checked]:border-[#F26623]"
+                    />
+                    <Label
+                      htmlFor="remember"
+                      className="text-sm text-gray-600 cursor-pointer"
+                    >
+                      Why try to Sign in?
+                    </Label>
+                  </div>
+
+                  <Button
+                    type="submit"
+                    className="w-24 h-10 bg-[#F26623] hover:bg-[#E55A1F] text-white font-medium rounded-md transition-all duration-300 disabled:opacity-50"
+                    disabled={loading}
+                  >
+                    {loading ? "..." : "Sign In"}
+                  </Button>
+                </form>
+
+                <div className="flex flex-col sm:flex-row justify-between items-center mt-6 sm:mt-8 text-xs gap-2 sm:gap-0">
+                  <button className="text-gray-500 hover:text-[#F26623] transition-colors">
+                    Forgot Password?
+                  </button>
+                  <span className="text-gray-400 text-center sm:text-right">
+                    For Banking of the Future, Based in Panama
+                  </span>
+                </div>
+              </div>
+            ) : (
+              // Sign Up Form - matches second image exactly
+              <div className="max-w-md mx-auto w-full">
+                <div className="mb-6 sm:mb-8">
+                  <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+                    Create your Digital Chain Bank Account
+                  </h2>
+                  <p className="text-gray-600 text-sm">
+                    Apply now and you will get access to your account within the
+                    next few days.
+                  </p>
                 </div>
 
-                <Button
-                  type="submit"
-                  className="w-full h-14 bg-gradient-to-r from-[#F26623] to-[#E55A1F] hover:from-[#E55A1F] hover:to-[#D4501B] text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 mt-8 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <div className="flex items-center space-x-2">
-                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                      <span>Creating Account...</span>
+                <form onSubmit={handleSignUp} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <Input
+                        type="text"
+                        placeholder="First Name"
+                        value={formData.firstName}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            firstName: e.target.value,
+                          })
+                        }
+                        required
+                        className="w-full h-10 border-b-2 border-gray-300 border-t-0 border-l-0 border-r-0 rounded-none px-0 focus:outline-none focus:ring-0 focus:border-[#F26623] bg-transparent text-base"
+                      />
                     </div>
-                  ) : (
-                    "Create Account"
-                  )}
-                </Button>
-              </form>
+                    <div>
+                      <Input
+                        type="text"
+                        placeholder="Last Name"
+                        value={formData.lastName}
+                        onChange={(e) =>
+                          setFormData({ ...formData, lastName: e.target.value })
+                        }
+                        required
+                        className="w-full h-10 border-b-2 border-gray-300 border-t-0 border-l-0 border-r-0 rounded-none px-0 focus:outline-none focus:ring-0 focus:border-[#F26623] bg-transparent text-base"
+                      />
+                    </div>
+                  </div>
 
-              <div className="flex justify-between items-center mt-12 text-sm">
-                <button className="text-gray-500 hover:text-[#F26623] font-medium transition-colors duration-200 hover:underline">
-                  Return Home
-                </button>
-                <span className="text-gray-400 text-xs">The Banking of the Future, Based in Panama</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <Input
+                        type="email"
+                        placeholder="Email"
+                        value={formData.email}
+                        onChange={(e) =>
+                          setFormData({ ...formData, email: e.target.value })
+                        }
+                        required
+                        className="w-full h-10 border-b-2 border-gray-300 border-t-0 border-l-0 border-r-0 rounded-none px-0 focus:outline-none focus:ring-0 focus:border-[#F26623] bg-transparent text-base"
+                      />
+                    </div>
+                    <div>
+                      <Input
+                        type="number"
+                        placeholder="Age"
+                        value={formData.age}
+                        onChange={(e) =>
+                          setFormData({ ...formData, age: e.target.value })
+                        }
+                        required
+                        className="w-full h-10 border-b-2 border-gray-300 border-t-0 border-l-0 border-r-0 rounded-none px-0 focus:outline-none focus:ring-0 focus:border-[#F26623] bg-transparent text-base"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="relative">
+                    <Input
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Password"
+                      value={formData.password}
+                      onChange={(e) =>
+                        setFormData({ ...formData, password: e.target.value })
+                      }
+                      required
+                      className="w-full h-10 border-b-2 border-gray-300 border-t-0 border-l-0 border-r-0 rounded-none px-0 pr-12 focus:outline-none focus:ring-0 focus:border-[#F26623] bg-transparent text-base"
+                    />
+                    <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center space-x-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 p-0"
+                        onClick={() => setShowPassword(!showPassword)}
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4 text-gray-500" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-gray-500" />
+                        )}
+                      </Button>
+                      <span className="text-sm text-[#F26623] font-medium">
+                        Go
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="pt-6">
+                    <Button
+                      type="submit"
+                      className="w-full h-12 bg-[#F26623] hover:bg-[#E55A1F] text-white font-medium rounded-md transition-all duration-300 disabled:opacity-50"
+                      disabled={loading}
+                    >
+                      {loading ? "Creating Account..." : "Create Account"}
+                    </Button>
+                  </div>
+                </form>
+
+                <div className="flex flex-col sm:flex-row justify-between items-center mt-6 sm:mt-8 text-xs gap-2 sm:gap-0">
+                  <button className="text-gray-500 hover:text-[#F26623] transition-colors">
+                    Return Home
+                  </button>
+                  <span className="text-gray-400 text-center sm:text-right">
+                    The Banking of the Future, Based in Panama
+                  </span>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>
-  )
+  );
 }

@@ -1,9 +1,10 @@
 "use client";
-
-import { useState, useEffect } from "react";
+import React from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Card,
   CardContent,
+  CardFooter,
   CardDescription,
   CardHeader,
   CardTitle,
@@ -29,7 +30,11 @@ import {
   CreditCard,
   Send,
   Wallet,
+  Phone,
+  Mail,
+  Info,
 } from "lucide-react";
+import Image from "next/image";
 
 interface DashboardContentProps {
   userProfile: {
@@ -55,12 +60,24 @@ export default function DashboardContent({
   } = useRealtimeData();
   const { latestMessage, markAsRead } = useLatestMessage();
   const [showMessage, setShowMessage] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const loadingRef = useRef(false);
 
   useEffect(() => {
     if (latestMessage && !latestMessage.is_read) {
       setShowMessage(true);
     }
   }, [latestMessage]);
+
+  // Track loading state to prevent multiple loading screens
+  useEffect(() => {
+    if (loading && !loadingRef.current) {
+      loadingRef.current = true;
+    } else if (!loading && loadingRef.current) {
+      loadingRef.current = false;
+      setHasLoaded(true);
+    }
+  }, [loading]);
 
   const handleDismissMessage = async () => {
     if (latestMessage) {
@@ -127,13 +144,60 @@ export default function DashboardContent({
     }
   };
 
-  if (loading) {
+  // Show skeleton loading instead of full-screen loading
+  if (loading && !hasLoaded) {
     return (
-      <div className="flex-1 p-8 bg-gray-50">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F26623] mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading dashboard...</p>
+      <div className="flex-1 p-8 bg-gray-50 overflow-auto">
+        <div className="max-w-7xl mx-auto">
+          {/* Skeleton Header */}
+          <div className="mb-8 animate-pulse">
+            <div className="h-8 bg-gray-200 rounded w-1/3 mb-2"></div>
+            <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+          </div>
+
+          {/* Skeleton Balance Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            {[1, 2, 3, 4].map((i) => (
+              <div
+                key={i}
+                className="bg-white p-6 rounded-lg shadow animate-pulse"
+              >
+                <div className="h-4 bg-gray-200 rounded w-1/2 mb-4"></div>
+                <div className="h-8 bg-gray-200 rounded w-3/4 mb-2"></div>
+                <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+              </div>
+            ))}
+          </div>
+
+          {/* Skeleton Action Buttons */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            {[1, 2, 3, 4].map((i) => (
+              <div
+                key={i}
+                className="h-16 bg-gray-200 rounded animate-pulse"
+              ></div>
+            ))}
+          </div>
+
+          {/* Skeleton Cards */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {[1, 2].map((i) => (
+              <div
+                key={i}
+                className="bg-white p-6 rounded-lg shadow animate-pulse"
+              >
+                <div className="h-6 bg-gray-200 rounded w-1/3 mb-2"></div>
+                <div className="h-4 bg-gray-200 rounded w-1/2 mb-4"></div>
+                <div className="space-y-3">
+                  {[1, 2, 3, 4].map((j) => (
+                    <div key={j} className="flex justify-between">
+                      <div className="h-4 bg-gray-200 rounded w-1/3"></div>
+                      <div className="h-4 bg-gray-200 rounded w-1/4"></div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -149,7 +213,7 @@ export default function DashboardContent({
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">
-            Welcome back, {displayName}!
+            Welcome, {displayName}!
           </h1>
           <p className="text-gray-600">
             Here's your account overview and recent activity
@@ -190,18 +254,23 @@ export default function DashboardContent({
         {/* Balance Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           {Object.entries(balances).map(([currency, balance]) => (
-            <Card key={currency} className="hover:shadow-lg transition-shadow">
+            <Card
+              key={currency}
+              className="hover:shadow-lg transition-shadow bg-[#F26623]"
+            >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium capitalize">
+                <CardTitle className="text-sm text-white font-medium capitalize">
                   {currency} Balance
                 </CardTitle>
-                {getBalanceIcon(currency)}
+                {React.cloneElement(getBalanceIcon(currency), {
+                  className: "text-white w-5 h-5",
+                })}
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">
+                <div className="text-2xl font-bold text-white">
                   {formatCurrency(balance, currency)}
                 </div>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground text-white">
                   {currency === "crypto"
                     ? "Bitcoin equivalent"
                     : `${currency.toUpperCase()} account`}
@@ -266,7 +335,7 @@ export default function DashboardContent({
                 </span>
                 <div className="flex items-center">
                   <span className="font-mono">
-                    {exchangeRates.usd_to_eur.toFixed(4)}
+                    {exchangeRates.usd_to_eur?.toFixed(4) || "0.0000"}
                   </span>
                   <TrendingUp className="h-4 w-4 ml-2 text-green-500" />
                 </div>
@@ -278,7 +347,7 @@ export default function DashboardContent({
                 </span>
                 <div className="flex items-center">
                   <span className="font-mono">
-                    {exchangeRates.usd_to_cad.toFixed(4)}
+                    {exchangeRates.usd_to_cad?.toFixed(4) || "0.0000"}
                   </span>
                   <TrendingDown className="h-4 w-4 ml-2 text-red-500" />
                 </div>
@@ -290,7 +359,7 @@ export default function DashboardContent({
                 </span>
                 <div className="flex items-center">
                   <span className="font-mono">
-                    {exchangeRates.eur_to_usd.toFixed(4)}
+                    {exchangeRates.eur_to_usd?.toFixed(4) || "0.0000"}
                   </span>
                   <TrendingUp className="h-4 w-4 ml-2 text-green-500" />
                 </div>
@@ -302,7 +371,7 @@ export default function DashboardContent({
                 </span>
                 <div className="flex items-center">
                   <span className="font-mono">
-                    {exchangeRates.cad_to_usd.toFixed(4)}
+                    {exchangeRates.cad_to_usd?.toFixed(4) || "0.0000"}
                   </span>
                   <TrendingUp className="h-4 w-4 ml-2 text-green-500" />
                 </div>
@@ -310,43 +379,24 @@ export default function DashboardContent({
             </CardContent>
           </Card>
 
-          {/* Crypto Prices */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Bitcoin className="h-5 w-5 mr-2" />
-                Cryptocurrency Prices
-              </CardTitle>
-              <CardDescription>
-                Live cryptocurrency market prices
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="flex items-center">
-                  <Bitcoin className="h-4 w-4 mr-2" />
-                  Bitcoin (BTC)
-                </span>
-                <div className="flex items-center">
-                  <span className="font-mono">
-                    ${cryptoPrices.bitcoin.toLocaleString()}
-                  </span>
-                  <ArrowUpRight className="h-4 w-4 ml-2 text-green-500" />
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="flex items-center">
-                  <div className="h-4 w-4 mr-2 rounded-full bg-gray-600"></div>
-                  Ethereum (ETH)
-                </span>
-                <div className="flex items-center">
-                  <span className="font-mono">
-                    ${cryptoPrices.ethereum.toLocaleString()}
-                  </span>
-                  <ArrowDownRight className="h-4 w-4 ml-2 text-red-500" />
-                </div>
-              </div>
+          <Card className="bg-[#F5F0F0] rounded-xl overflow-visible">
+            {/* Logo centered at the top */}
+            <CardContent className="pt-6 pb-2 flex justify-center">
+              <Image
+                src="/logo.svg"
+                alt="Digital Chain Bank Logo"
+                width={140}
+                height={40}
+                className="object-contain"
+              />
             </CardContent>
+
+            {/* Icons along the bottom */}
+            <CardFooter className="pb-6 flex justify-around text-[#F26623]">
+              <Phone className="w-6 h-6" />
+              <Mail className="w-6 h-6" />
+              <Info className="w-6 h-6" />
+            </CardFooter>
           </Card>
         </div>
 

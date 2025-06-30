@@ -43,22 +43,24 @@ export default function Dashboard() {
     const errorInfo = {
       message: message,
       error: error,
-      errorMessage: error?.message || 'No error message provided',
-      errorCode: error?.code || 'No error code',
-      errorDetails: error?.details || 'No error details',
-      errorHint: error?.hint || 'No error hint',
+      errorMessage: error?.message || "No error message provided",
+      errorCode: error?.code || "No error code",
+      errorDetails: error?.details || "No error details",
+      errorHint: error?.hint || "No error hint",
       timestamp: new Date().toISOString(),
       // Add more context if error is empty
       isEmpty: !error || Object.keys(error).length === 0,
       type: typeof error,
-      stringified: JSON.stringify(error, null, 2)
+      stringified: JSON.stringify(error, null, 2),
     };
 
     console.error(message, errorInfo);
 
     // Also log to help with debugging
     if (errorInfo.isEmpty) {
-      console.warn("Empty error object detected - this might indicate a network issue or invalid operation");
+      console.warn(
+        "Empty error object detected - this might indicate a network issue or invalid operation"
+      );
     }
   };
 
@@ -78,7 +80,8 @@ export default function Dashboard() {
       if (checkError) {
         logError("Error checking existing profile:", checkError);
         // Continue with creation attempt only if it's not a critical error
-        if (checkError.code !== 'PGRST116') { // PGRST116 = no rows found
+        if (checkError.code !== "PGRST116") {
+          // PGRST116 = no rows found
           console.warn("Continuing despite check error...");
         }
       }
@@ -94,9 +97,7 @@ export default function Dashboard() {
         id: user.id,
         client_id: clientId,
         full_name:
-          user.user_metadata?.full_name ||
-          user.email?.split("@")[0] ||
-          "User",
+          user.user_metadata?.full_name || user.email?.split("@")[0] || "User",
         email: user.email,
       };
 
@@ -106,8 +107,8 @@ export default function Dashboard() {
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .upsert(profileData, {
-          onConflict: 'id',
-          ignoreDuplicates: false
+          onConflict: "id",
+          ignoreDuplicates: false,
         })
         .select()
         .single();
@@ -124,17 +125,25 @@ export default function Dashboard() {
           .maybeSingle();
 
         if (!fallbackError && fallbackProfile) {
-          console.log("Found existing profile after upsert failure:", fallbackProfile);
+          console.log(
+            "Found existing profile after upsert failure:",
+            fallbackProfile
+          );
           return fallbackProfile;
         }
 
         // If we still can't get the profile, throw error
-        const errorMessage = profileError.message ||
+        const errorMessage =
+          profileError.message ||
           profileError.details ||
           profileError.hint ||
-          'Unknown database error';
+          "Unknown database error";
 
-        throw new Error(`Failed to create/fetch profile: ${errorMessage} (Code: ${profileError.code || 'unknown'})`);
+        throw new Error(
+          `Failed to create/fetch profile: ${errorMessage} (Code: ${
+            profileError.code || "unknown"
+          })`
+        );
       }
 
       if (!profile) {
@@ -148,23 +157,32 @@ export default function Dashboard() {
           { table: "crypto_balances", name: "crypto" },
           { table: "euro_balances", name: "euro" },
           { table: "cad_balances", name: "cad" },
-          { table: "usd_balances", name: "usd" }
+          { table: "usd_balances", name: "usd" },
         ];
 
         for (const operation of balanceOperations) {
           try {
             const { error: balanceError } = await supabase
               .from(operation.table)
-              .upsert({ user_id: user.id, balance: 0 }, {
-                onConflict: 'user_id',
-                ignoreDuplicates: true
-              });
+              .upsert(
+                { user_id: user.id, balance: 0 },
+                {
+                  onConflict: "user_id",
+                  ignoreDuplicates: true,
+                }
+              );
 
             if (balanceError) {
-              console.warn(`Warning: Could not create ${operation.name} balance:`, balanceError.message);
+              console.warn(
+                `Warning: Could not create ${operation.name} balance:`,
+                balanceError.message
+              );
             }
           } catch (balanceError) {
-            console.warn(`Warning: Exception creating ${operation.name} balance:`, balanceError);
+            console.warn(
+              `Warning: Exception creating ${operation.name} balance:`,
+              balanceError
+            );
           }
         }
       }, 100); // Small delay to avoid blocking
@@ -184,7 +202,10 @@ export default function Dashboard() {
           .maybeSingle();
 
         if (lastResortProfile) {
-          console.log("Successfully found existing profile on last resort:", lastResortProfile);
+          console.log(
+            "Successfully found existing profile on last resort:",
+            lastResortProfile
+          );
           return lastResortProfile;
         }
       } catch (lastResortError) {
@@ -339,18 +360,7 @@ export default function Dashboard() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 bg-[#F26623] rounded-lg flex items-center justify-center mx-auto mb-4">
-            <div className="w-10 h-10 bg-white rounded transform rotate-45 animate-spin"></div>
-          </div>
-          <p className="text-gray-600">Loading your dashboard...</p>
-        </div>
-      </div>
-    );
-  }
+ 
 
   // Show error state if there's a critical error
   if (error && userProfile?.id === "unknown") {
