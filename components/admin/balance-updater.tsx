@@ -121,13 +121,13 @@ export default function BalanceUpdater() {
 
           <TabsContent value="add" className="space-y-4 mt-4">
             <div className="text-sm text-green-600 bg-green-50 p-2 rounded">
-              💰 Add funds to existing balance (500k + 200k = 700k)
+              Add funds to existing balance
             </div>
           </TabsContent>
 
           <TabsContent value="subtract" className="space-y-4 mt-4">
             <div className="text-sm text-red-600 bg-red-50 p-2 rounded">
-              💸 Remove funds from existing balance (500k - 200k = 300k)
+              💸 Remove funds from existing balance
             </div>
           </TabsContent>
 

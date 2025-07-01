@@ -398,7 +398,7 @@ export default function DashboardContent({
         transfer.from_amount === transfer.to_amount);
 
     if (isDeposit) {
-      return `💰 Account Deposit - ${(
+      return `Account Deposit - ${(
         transfer.to_currency || transfer.from_currency
       ).toUpperCase()}`;
     }
@@ -624,7 +624,7 @@ export default function DashboardContent({
                             <div>
                               <p className="font-medium text-sm">
                                 {isDeposit
-                                  ? `💰 Account Deposit - ${(
+                                  ? `Account Deposit - ${(
                                       transfer.to_currency ||
                                       transfer.from_currency
                                     ).toUpperCase()}`
