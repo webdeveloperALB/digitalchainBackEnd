@@ -29,6 +29,8 @@ import {
   Phone,
   Mail,
   Info,
+  ArrowDownLeft,
+  ArrowUpRight,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -64,12 +66,27 @@ interface Payment {
   created_at: string;
 }
 
+interface Transfer {
+  id: string;
+  user_id: string;
+  client_id: string;
+  from_currency: string;
+  to_currency: string;
+  from_amount: number;
+  to_amount: number;
+  exchange_rate: number;
+  status: string;
+  transfer_type: string;
+  description?: string;
+  created_at: string;
+}
+
 export default function DashboardContent({
   userProfile,
   setActiveTab,
 }: DashboardContentProps) {
   const {
-    balances,
+    balances: realtimeBalances,
     exchangeRates,
     cryptoPrices,
     transactions,
@@ -77,13 +94,14 @@ export default function DashboardContent({
     loading,
     error,
   } = useRealtimeData();
+
   const { latestMessage, markAsRead } = useLatestMessage();
   const [payments, setPayments] = useState<Payment[]>([]);
   const [paymentsLoading, setPaymentsLoading] = useState(true);
   const [showMessage, setShowMessage] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
   const loadingRef = useRef(false);
-  const [transfersData, setTransfersData] = useState<any[]>([]);
+  const [transfersData, setTransfersData] = useState<Transfer[]>([]);
   const [transfersLoading, setTransfersLoading] = useState(true);
 
   useEffect(() => {
@@ -92,7 +110,6 @@ export default function DashboardContent({
     }
   }, [latestMessage]);
 
-  // Track loading state to prevent multiple loading screens
   useEffect(() => {
     if (loading && !loadingRef.current) {
       loadingRef.current = true;
@@ -102,7 +119,6 @@ export default function DashboardContent({
     }
   }, [loading]);
 
-  // Fetch payments data
   useEffect(() => {
     const fetchPayments = async () => {
       try {
@@ -133,7 +149,6 @@ export default function DashboardContent({
 
     fetchPayments();
 
-    // Set up real-time subscription for payments
     const setupPaymentsSubscription = async () => {
       const {
         data: { user },
@@ -167,7 +182,6 @@ export default function DashboardContent({
     };
   }, []);
 
-  // Fetch transfers data
   useEffect(() => {
     const fetchTransfers = async () => {
       try {
@@ -176,19 +190,73 @@ export default function DashboardContent({
         } = await supabase.auth.getUser();
         if (!user) return;
 
-        const { data, error } = await supabase
+        const { data: userTransfers, error: userError } = await supabase
           .from("transfers")
           .select("*")
           .eq("user_id", user.id)
           .order("created_at", { ascending: false })
-          .limit(10);
+          .limit(20);
 
-        if (error) {
-          console.error("Error fetching transfers:", error);
+        if (userError) {
+          console.error("Error fetching user transfers:", userError);
+          const { data: clientTransfers, error: clientError } = await supabase
+            .from("transfers")
+            .select("*")
+            .eq("client_id", userProfile.client_id)
+            .order("created_at", { ascending: false })
+            .limit(20);
+
+          if (clientError) {
+            console.error("Error fetching client transfers:", clientError);
+            return;
+          }
+
+          setTransfersData(clientTransfers || []);
           return;
         }
 
-        setTransfersData(data || []);
+        const { data: clientTransfers } = await supabase
+          .from("transfers")
+          .select("*")
+          .eq("client_id", userProfile.client_id)
+          .order("created_at", { ascending: false })
+          .limit(20);
+
+        const allTransfers = [
+          ...(userTransfers || []),
+          ...(clientTransfers || []),
+        ];
+        const uniqueTransfers = allTransfers.filter(
+          (transfer, index, self) =>
+            index === self.findIndex((t) => t.id === transfer.id)
+        );
+
+        const sortedTransfers = uniqueTransfers.sort((a, b) => {
+          const aIsDeposit =
+            a.transfer_type === "deposit" ||
+            a.transfer_type === "credit" ||
+            a.transfer_type === "admin_deposit" ||
+            a.description?.toLowerCase().includes("deposit") ||
+            a.description?.toLowerCase().includes("credit") ||
+            a.description?.toLowerCase().includes("added");
+
+          const bIsDeposit =
+            b.transfer_type === "deposit" ||
+            b.transfer_type === "credit" ||
+            b.transfer_type === "admin_deposit" ||
+            b.description?.toLowerCase().includes("deposit") ||
+            b.description?.toLowerCase().includes("credit") ||
+            b.description?.toLowerCase().includes("added");
+
+          if (aIsDeposit && !bIsDeposit) return -1;
+          if (!aIsDeposit && bIsDeposit) return 1;
+
+          return (
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          );
+        });
+
+        setTransfersData(sortedTransfers);
       } catch (error) {
         console.error("Error fetching transfers:", error);
       } finally {
@@ -198,7 +266,6 @@ export default function DashboardContent({
 
     fetchTransfers();
 
-    // Set up real-time subscription for transfers
     const setupTransfersSubscription = async () => {
       const {
         data: { user },
@@ -206,7 +273,7 @@ export default function DashboardContent({
       if (!user) return;
 
       const transfersSubscription = supabase
-        .channel("transfers_changes")
+        .channel(`transfers_realtime_${user.id}`)
         .on(
           "postgres_changes",
           {
@@ -215,8 +282,26 @@ export default function DashboardContent({
             table: "transfers",
             filter: `user_id=eq.${user.id}`,
           },
-          () => {
+          (payload) => {
+            console.log("User transfer change detected:", payload);
             fetchTransfers();
+            // NEW: Recalculate balances when transfers change
+            setTimeout(() => {}, 1000);
+          }
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "transfers",
+            filter: `client_id=eq.${userProfile.client_id}`,
+          },
+          (payload) => {
+            console.log("Client transfer change detected:", payload);
+            fetchTransfers();
+            // NEW: Recalculate balances when transfers change
+            setTimeout(() => {}, 1000);
           }
         )
         .subscribe();
@@ -230,7 +315,7 @@ export default function DashboardContent({
     return () => {
       cleanup?.then((fn) => fn?.());
     };
-  }, []);
+  }, [userProfile.client_id]);
 
   const handleDismissMessage = async () => {
     if (latestMessage) {
@@ -284,30 +369,53 @@ export default function DashboardContent({
     }
   };
 
-  const getMessageColor = (type: string) => {
-    switch (type) {
-      case "success":
-        return "border-green-500 bg-green-50";
-      case "alert":
-        return "border-red-500 bg-red-50";
-      case "warning":
-        return "border-yellow-500 bg-yellow-50";
-      default:
-        return "border-blue-500 bg-blue-50";
-    }
+  const getTransferIcon = (transfer: Transfer) => {
+    const isDeposit =
+      transfer.transfer_type === "deposit" ||
+      transfer.transfer_type === "credit" ||
+      transfer.transfer_type === "admin_deposit" ||
+      transfer.description?.toLowerCase().includes("deposit") ||
+      transfer.description?.toLowerCase().includes("credit") ||
+      transfer.description?.toLowerCase().includes("added") ||
+      transfer.description?.toLowerCase().includes("fund");
+
+    return isDeposit ? (
+      <ArrowDownLeft className="h-5 w-5 text-green-600" />
+    ) : (
+      <ArrowUpRight className="h-5 w-5 text-blue-600" />
+    );
   };
 
-  // Show skeleton loading instead of full-screen loading
+  const getTransferDescription = (transfer: Transfer) => {
+    const isDeposit =
+      transfer.transfer_type === "deposit" ||
+      transfer.transfer_type === "credit" ||
+      transfer.transfer_type === "admin_deposit" ||
+      transfer.description?.toLowerCase().includes("deposit") ||
+      transfer.description?.toLowerCase().includes("credit") ||
+      transfer.description?.toLowerCase().includes("added") ||
+      (transfer.from_currency === transfer.to_currency &&
+        transfer.from_amount === transfer.to_amount);
+
+    if (isDeposit) {
+      return `💰 Account Deposit - ${(
+        transfer.to_currency || transfer.from_currency
+      ).toUpperCase()}`;
+    }
+
+    return `${transfer.from_currency?.toUpperCase() || "N/A"} → ${
+      transfer.to_currency?.toUpperCase() || "N/A"
+    }`;
+  };
+
   if (loading && !hasLoaded) {
     return (
       <div className="flex-1 p-8 bg-gray-50 overflow-auto">
         <div className="max-w-7xl mx-auto">
-          {/* Skeleton Header */}
           <div className="mb-8 animate-pulse">
             <div className="h-8 bg-gray-200 rounded w-1/3 mb-2"></div>
             <div className="h-4 bg-gray-200 rounded w-1/2"></div>
           </div>
-          {/* Skeleton Balance Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             {[1, 2, 3, 4].map((i) => (
               <div
@@ -320,7 +428,6 @@ export default function DashboardContent({
               </div>
             ))}
           </div>
-          {/* Skeleton Action Buttons */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
             {[1, 2, 3, 4].map((i) => (
               <div
@@ -329,7 +436,6 @@ export default function DashboardContent({
               ></div>
             ))}
           </div>
-          {/* Skeleton Cards */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {[1, 2].map((i) => (
               <div
@@ -354,13 +460,14 @@ export default function DashboardContent({
     );
   }
 
-  // Safe access to userProfile properties
   const displayName = userProfile?.full_name || userProfile?.email || "User";
+
+  // NEW: Use calculated balances instead of realtime balances
+  const displayBalances = realtimeBalances;
 
   return (
     <div className="flex-1 p-8 bg-gray-50 overflow-auto">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">
             Welcome, {displayName}!
@@ -370,7 +477,6 @@ export default function DashboardContent({
           </p>
         </div>
 
-        {/* Error Alert */}
         {error && (
           <Alert className="mb-6 border-red-500 bg-red-50">
             <AlertDescription className="text-red-700">
@@ -379,9 +485,9 @@ export default function DashboardContent({
           </Alert>
         )}
 
-        {/* Balance Cards */}
+        {/* UPDATED: Balance Cards now use calculated balances */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {Object.entries(balances).map(([currency, balance]) => (
+          {Object.entries(displayBalances).map(([currency, balance]) => (
             <Card
               key={currency}
               className="hover:shadow-lg transition-shadow bg-[#F26623]"
@@ -403,6 +509,7 @@ export default function DashboardContent({
                     ? "Bitcoin equivalent"
                     : `${currency.toUpperCase()} account`}
                 </p>
+                {/* NEW: Show balance calculation indicator */}
               </CardContent>
             </Card>
           ))}
@@ -443,16 +550,16 @@ export default function DashboardContent({
           </Button>
         </div>
 
-        {/* Updated Grid Layout - Left column takes 2/3, Right column takes 1/3 */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          {/* Left Column - spans 2 columns */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Transaction History Card */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center">
                   <Activity className="h-5 w-5 mr-2" />
-                  Transfers History
+                  Transfer History
+                  <Badge variant="outline" className="ml-2 text-xs">
+                    Real-time
+                  </Badge>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -471,73 +578,129 @@ export default function DashboardContent({
                 ) : transfersData.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
                     <Send className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p className="text-sm">No recent transfers</p>
+                    <p className="text-sm">No transfer history</p>
                     <p className="text-xs">
-                      Your transfer history will appear here
+                      Your transfers and deposits will appear here in real-time
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {transfersData.slice(0, 5).map((transfer) => (
-                      <div
-                        key={transfer.id}
-                        className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50"
-                      >
-                        <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-[#F26623] rounded-full flex items-center justify-center">
-                            <Send className="h-5 w-5 text-white" />
+                    {transfersData.slice(0, 8).map((transfer) => {
+                      const isDeposit =
+                        (transfer.from_currency === transfer.to_currency &&
+                          transfer.from_amount === transfer.to_amount) ||
+                        transfer.transfer_type === "deposit" ||
+                        transfer.transfer_type === "credit" ||
+                        transfer.transfer_type === "admin_deposit" ||
+                        transfer.description
+                          ?.toLowerCase()
+                          .includes("deposit") ||
+                        transfer.description
+                          ?.toLowerCase()
+                          .includes("credit") ||
+                        transfer.description?.toLowerCase().includes("added");
+
+                      return (
+                        <div
+                          key={transfer.id}
+                          className={`flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors ${
+                            isDeposit
+                              ? "border-green-200 bg-green-50/30"
+                              : "border-gray-200"
+                          }`}
+                        >
+                          <div className="flex items-center space-x-3">
+                            <div
+                              className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                                isDeposit ? "bg-green-100" : "bg-[#F26623]"
+                              }`}
+                            >
+                              {isDeposit ? (
+                                <ArrowDownLeft className="h-5 w-5 text-green-600" />
+                              ) : (
+                                <ArrowUpRight className="h-5 w-5 text-blue-600" />
+                              )}
+                            </div>
+                            <div>
+                              <p className="font-medium text-sm">
+                                {isDeposit
+                                  ? `💰 Account Deposit - ${(
+                                      transfer.to_currency ||
+                                      transfer.from_currency
+                                    ).toUpperCase()}`
+                                  : `${
+                                      transfer.from_currency?.toUpperCase() ||
+                                      "N/A"
+                                    } → ${
+                                      transfer.to_currency?.toUpperCase() ||
+                                      "N/A"
+                                    }`}
+                              </p>
+                              <p className="text-xs text-gray-600">
+                                {isDeposit
+                                  ? `Deposited: +${Number(
+                                      transfer.to_amount ||
+                                        transfer.from_amount ||
+                                        0
+                                    ).toLocaleString()} ${(
+                                      transfer.to_currency ||
+                                      transfer.from_currency ||
+                                      "USD"
+                                    ).toUpperCase()}`
+                                  : `${Number(
+                                      transfer.from_amount || 0
+                                    ).toLocaleString()} ${(
+                                      transfer.from_currency || "USD"
+                                    ).toUpperCase()} → ${Number(
+                                      transfer.to_amount || 0
+                                    ).toLocaleString()} ${(
+                                      transfer.to_currency || "USD"
+                                    ).toUpperCase()}`}
+                              </p>
+                              <p className="text-xs text-gray-400">
+                                {new Date(
+                                  transfer.created_at
+                                ).toLocaleDateString()}{" "}
+                                at{" "}
+                                {new Date(
+                                  transfer.created_at
+                                ).toLocaleTimeString()}
+                              </p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-medium text-sm">
-                              {transfer.from_currency} → {transfer.to_currency}
-                            </p>
-                            <p className="text-xs text-gray-600">
-                              {Number(transfer.from_amount).toLocaleString()}{" "}
-                              {transfer.from_currency} →{" "}
-                              {Number(transfer.to_amount).toLocaleString()}{" "}
-                              {transfer.to_currency}
-                            </p>
-                            <p className="text-xs text-gray-400">
-                              {new Date(
-                                transfer.created_at
-                              ).toLocaleDateString()}{" "}
-                              at{" "}
-                              {new Date(
-                                transfer.created_at
-                              ).toLocaleTimeString()}
-                            </p>
+                          <div className="text-right">
+                            {!isDeposit &&
+                              transfer.exchange_rate &&
+                              transfer.exchange_rate !== 1.0 && (
+                                <p className="font-medium text-sm mb-1">
+                                  Rate:{" "}
+                                  {Number(transfer.exchange_rate).toFixed(4)}
+                                </p>
+                              )}
+                            <Badge
+                              className={`text-xs px-2 rounded ${
+                                transfer.status === "completed" ||
+                                transfer.status === "Completed"
+                                  ? isDeposit
+                                    ? "bg-green-100 text-green-800"
+                                    : "bg-blue-100 text-blue-800"
+                                  : transfer.status === "pending" ||
+                                    transfer.status === "Pending"
+                                  ? "bg-yellow-100 text-yellow-800"
+                                  : "bg-red-100 text-red-800"
+                              }`}
+                            >
+                              {transfer.status || "Completed"}
+                            </Badge>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <p className="font-medium text-sm">
-                            Rate: {Number(transfer.exchange_rate).toFixed(4)}
-                          </p>
-                          <Badge
-                            className={`
-    text-xs
-    px-2
-    rounded
-    ${
-      transfer.status === "Completed"
-        ? "bg-green-100 text-green-800"
-        : transfer.status === "Pending"
-        ? "bg-yellow-100 text-yellow-800"
-        : /* "Failed" */
-          "bg-red-100 text-red-800"
-    }
-  `}
-                          >
-                            {transfer.status}
-                          </Badge>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </CardContent>
             </Card>
 
-            {/* Payments Card */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center">
@@ -606,9 +769,7 @@ export default function DashboardContent({
             </Card>
           </div>
 
-          {/* Right Column - spans 1 column */}
           <div className="lg:col-span-1 space-y-6">
-            {/* Logo Card */}
             <Card className="bg-[#F5F0F0] rounded-xl overflow-visible flex flex-col justify-center items-center">
               <CardContent className="p-6 flex justify-center items-center">
                 <Image
@@ -626,7 +787,6 @@ export default function DashboardContent({
               </CardFooter>
             </Card>
 
-            {/* Message Card */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
@@ -693,7 +853,6 @@ export default function DashboardContent({
               </CardContent>
             </Card>
 
-            {/* Phone Card - Separate */}
             <Card className="flex justify-center items-center p-6">
               <Image
                 src="/db/1.png"

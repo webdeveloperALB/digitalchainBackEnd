@@ -81,7 +81,6 @@ export function useRealtimeData(): RealtimeData {
   };
 
   const fetchExchangeRates = async () => {
-    // Use simulated exchange rates since the table doesn't exist
     const baseRates = {
       usd_to_eur: 0.85,
       usd_to_cad: 1.35,
@@ -89,9 +88,7 @@ export function useRealtimeData(): RealtimeData {
       cad_to_usd: 0.74,
     };
 
-    // Add small random variations to simulate live rates
-    const variation = () => (Math.random() - 0.5) * 0.02; // ±1% variation
-
+    const variation = () => (Math.random() - 0.5) * 0.02;
     return {
       usd_to_eur: Math.max(0.01, baseRates.usd_to_eur + variation()),
       usd_to_cad: Math.max(0.01, baseRates.usd_to_cad + variation()),
@@ -101,15 +98,12 @@ export function useRealtimeData(): RealtimeData {
   };
 
   const fetchCryptoPrices = async () => {
-    // Use simulated crypto prices since the table doesn't exist
     const basePrices = {
       bitcoin: 45000,
       ethereum: 3000,
     };
 
-    // Add random variations to simulate live prices
-    const variation = () => (Math.random() - 0.5) * 0.1; // ±5% variation
-
+    const variation = () => (Math.random() - 0.5) * 0.1;
     return {
       bitcoin: Math.max(
         1000,
@@ -329,6 +323,7 @@ export function useRealtimeData(): RealtimeData {
       fetchExchangeRates().then((exchangeRates) => {
         setData((prev) => ({ ...prev, exchangeRates }));
       });
+
       fetchCryptoPrices().then((cryptoPrices) => {
         setData((prev) => ({ ...prev, cryptoPrices }));
       });
@@ -339,6 +334,7 @@ export function useRealtimeData(): RealtimeData {
 
   useEffect(() => {
     initializeData();
+
     const cleanup = setupRealtimeSubscriptions();
 
     return () => {

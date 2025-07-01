@@ -122,7 +122,7 @@ export default function CardSection() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-row items-center justify-between gap-14">
         <h2 className="text-2xl font-bold">My Cards</h2>
         <Button onClick={() => setShowCardForm(true)} className="bg-[#F26623] hover:bg-[#E55A1F]">
           <Plus className="w-4 h-4 mr-2" />

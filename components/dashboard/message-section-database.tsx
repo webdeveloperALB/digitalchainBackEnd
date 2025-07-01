@@ -1,118 +1,135 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { supabase } from "@/lib/supabase"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Mail, AlertTriangle, Info, CheckCircle, RefreshCw, Trash2 } from "lucide-react"
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import {
+  Mail,
+  AlertTriangle,
+  Info,
+  CheckCircle,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 
 export default function MessageSection() {
-  const [messages, setMessages] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [userProfile, setUserProfile] = useState<any>(null)
+  const [messages, setMessages] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [userProfile, setUserProfile] = useState<any>(null);
 
   useEffect(() => {
-    fetchUserProfile()
-    fetchMessages()
-  }, [])
+    fetchUserProfile();
+    fetchMessages();
+  }, []);
 
   const fetchUserProfile = async () => {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser()
+      } = await supabase.auth.getUser();
 
       if (user) {
-        const { data, error } = await supabase.from("profiles").select("*").eq("id", user.id).single()
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .single();
 
-        if (error) throw error
-        setUserProfile(data)
+        if (error) throw error;
+        setUserProfile(data);
       }
     } catch (error) {
-      console.error("Error fetching user profile:", error)
+      console.error("Error fetching user profile:", error);
     }
-  }
+  };
 
   const fetchMessages = async () => {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser()
+      } = await supabase.auth.getUser();
 
       if (user) {
         const { data, error } = await supabase
           .from("user_messages")
           .select("*")
           .eq("user_id", user.id)
-          .order("created_at", { ascending: false })
+          .order("created_at", { ascending: false });
 
-        if (error) throw error
-        setMessages(data || [])
-        console.log("Fetched messages from database:", data)
+        if (error) throw error;
+        setMessages(data || []);
+        console.log("Fetched messages from database:", data);
       }
     } catch (error) {
-      console.error("Error fetching messages:", error)
+      console.error("Error fetching messages:", error);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const markAsRead = async (messageId: string) => {
     try {
+      // Remove the updated_at field since it doesn't exist in your schema
       const { error } = await supabase
         .from("user_messages")
-        .update({ is_read: true, updated_at: new Date().toISOString() })
-        .eq("id", messageId)
+        .update({ is_read: true })
+        .eq("id", messageId);
 
-      if (error) throw error
-      fetchMessages() // Refresh messages
-      console.log("Message marked as read:", messageId)
+      if (error) throw error;
+
+      fetchMessages(); // Refresh messages
+      console.log("Message marked as read:", messageId);
     } catch (error: any) {
-      alert(`Error: ${error.message}`)
+      alert(`Error: ${error.message}`);
     }
-  }
+  };
 
   const deleteMessage = async (messageId: string) => {
     try {
-      const { error } = await supabase.from("user_messages").delete().eq("id", messageId)
+      const { error } = await supabase
+        .from("user_messages")
+        .delete()
+        .eq("id", messageId);
 
-      if (error) throw error
-      fetchMessages() // Refresh messages
-      console.log("Message deleted:", messageId)
+      if (error) throw error;
+
+      fetchMessages(); // Refresh messages
+      console.log("Message deleted:", messageId);
     } catch (error: any) {
-      alert(`Error: ${error.message}`)
+      alert(`Error: ${error.message}`);
     }
-  }
+  };
 
   const getMessageIcon = (type: string) => {
     switch (type) {
       case "alert":
-        return <AlertTriangle className="w-5 h-5 text-red-500" />
+        return <AlertTriangle className="w-5 h-5 text-red-500" />;
       case "info":
-        return <Info className="w-5 h-5 text-blue-500" />
+        return <Info className="w-5 h-5 text-blue-500" />;
       case "success":
-        return <CheckCircle className="w-5 h-5 text-green-500" />
+        return <CheckCircle className="w-5 h-5 text-green-500" />;
       case "warning":
-        return <AlertTriangle className="w-5 h-5 text-yellow-500" />
+        return <AlertTriangle className="w-5 h-5 text-yellow-500" />;
       default:
-        return <Mail className="w-5 h-5 text-gray-500" />
+        return <Mail className="w-5 h-5 text-gray-500" />;
     }
-  }
+  };
 
   const getMessageBorderColor = (type: string) => {
     switch (type) {
       case "alert":
-        return "border-l-red-500"
+        return "border-l-red-500";
       case "info":
-        return "border-l-blue-500"
+        return "border-l-blue-500";
       case "success":
-        return "border-l-green-500"
+        return "border-l-green-500";
       case "warning":
-        return "border-l-yellow-500"
+        return "border-l-yellow-500";
       default:
-        return "border-l-gray-500"
+        return "border-l-gray-500";
     }
-  }
+  };
 
   if (loading) {
     return (
@@ -122,7 +139,7 @@ export default function MessageSection() {
           <span className="ml-2">Loading messages from database...</span>
         </div>
       </div>
-    )
+    );
   }
 
   return (
@@ -132,12 +149,15 @@ export default function MessageSection() {
           <h2 className="text-2xl font-bold">Messages</h2>
           {userProfile && (
             <p className="text-sm text-gray-600">
-              Welcome {userProfile.full_name} (Client ID: {userProfile.client_id})
+              Welcome {userProfile.full_name} (Client ID:{" "}
+              {userProfile.client_id})
             </p>
           )}
         </div>
         <div className="flex items-center gap-4">
-          <span className="text-sm text-gray-600">{messages.filter((m) => !m.is_read).length} unread</span>
+          <span className="text-sm text-gray-600">
+            {messages.filter((m) => !m.is_read).length} unread
+          </span>
           <Button variant="outline" size="sm" onClick={fetchMessages}>
             <RefreshCw className="w-4 h-4 mr-2" />
             Refresh
@@ -152,13 +172,19 @@ export default function MessageSection() {
               <Mail className="w-12 h-12 mx-auto mb-4 text-gray-400" />
               <p className="text-gray-500">No messages in database</p>
               <p className="text-sm text-gray-400 mt-2">
-                Messages will appear here automatically when you register or when admin sends them
+                Messages will appear here automatically when you register or
+                when admin sends them
               </p>
             </CardContent>
           </Card>
         ) : (
           messages.map((message) => (
-            <Card key={message.id} className={`border-l-4 ${getMessageBorderColor(message.message_type)}`}>
+            <Card
+              key={message.id}
+              className={`border-l-4 ${getMessageBorderColor(
+                message.message_type
+              )}`}
+            >
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
@@ -172,27 +198,43 @@ export default function MessageSection() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {!message.is_read && <div className="w-2 h-2 bg-[#F26623] rounded-full"></div>}
-                    <Button variant="ghost" size="icon" onClick={() => deleteMessage(message.id)}>
+                    {!message.is_read && (
+                      <div className="w-2 h-2 bg-[#F26623] rounded-full"></div>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => deleteMessage(message.id)}
+                    >
                       <Trash2 className="w-4 h-4 text-red-500" />
                     </Button>
                   </div>
                 </div>
               </CardHeader>
+
               <CardContent className="space-y-3">
                 <p className="text-gray-700">{message.content}</p>
+
                 <div className="flex gap-2 pt-2">
                   {!message.is_read && (
-                    <Button variant="outline" size="sm" onClick={() => markAsRead(message.id)}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => markAsRead(message.id)}
+                    >
                       Mark as Read
                     </Button>
                   )}
                   {message.message_type === "alert" && (
-                    <Button size="sm" className="bg-[#F26623] hover:bg-[#E55A1F]">
+                    <Button
+                      size="sm"
+                      className="bg-[#F26623] hover:bg-[#E55A1F]"
+                    >
                       Take Action
                     </Button>
                   )}
                 </div>
+
                 <div className="text-xs text-gray-500 border-t pt-2">
                   <p>Message ID: {message.id}</p>
                   <p>Type: {message.message_type}</p>
@@ -204,42 +246,35 @@ export default function MessageSection() {
         )}
       </div>
 
-      {/* Database Info */}
-      <Card className="bg-blue-50 border-blue-200">
-        <CardHeader>
-          <CardTitle className="text-blue-800">Database Messages Info</CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-blue-700">
-          <p>✅ Messages are automatically created when you register</p>
-          <p>✅ All messages are stored in Supabase user_messages table</p>
-          <p>✅ Messages are personalized with your name and client ID</p>
-          <p>✅ Admin can add custom messages directly in the database</p>
-          <p className="mt-2 font-medium">
-            Total messages in database: {messages.length} | Unread: {messages.filter((m) => !m.is_read).length}
-          </p>
-        </CardContent>
-      </Card>
-
       {/* Quick Actions */}
       <Card>
         <CardHeader>
           <CardTitle>Quick Actions</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Button variant="outline" className="w-full justify-start bg-transparent">
+          <Button
+            variant="outline"
+            className="w-full justify-start bg-transparent"
+          >
             <Mail className="w-4 h-4 mr-2" />
             Contact Support
           </Button>
-          <Button variant="outline" className="w-full justify-start bg-transparent">
+          <Button
+            variant="outline"
+            className="w-full justify-start bg-transparent"
+          >
             <AlertTriangle className="w-4 h-4 mr-2" />
             Report Issue
           </Button>
-          <Button variant="outline" className="w-full justify-start bg-transparent">
+          <Button
+            variant="outline"
+            className="w-full justify-start bg-transparent"
+          >
             <Info className="w-4 h-4 mr-2" />
             Account Information
           </Button>
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }
