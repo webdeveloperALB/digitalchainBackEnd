@@ -382,7 +382,7 @@ export default function DashboardContent({
     return isDeposit ? (
       <ArrowDownLeft className="h-5 w-5 text-green-600" />
     ) : (
-      <ArrowUpRight className="h-5 w-5 text-blue-600" />
+      <ArrowUpRight className="h-5 w-5 text-black-600" />
     );
   };
 
@@ -618,7 +618,7 @@ export default function DashboardContent({
                               {isDeposit ? (
                                 <ArrowDownLeft className="h-5 w-5 text-green-600" />
                               ) : (
-                                <ArrowUpRight className="h-5 w-5 text-blue-600" />
+                                <ArrowUpRight className="h-5 w-5 text-black-600" />
                               )}
                             </div>
                             <div>

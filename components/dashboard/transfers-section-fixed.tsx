@@ -1,17 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-
 import { supabase } from "@/lib/supabase";
-
+import { useRealtimeData } from "@/hooks/use-realtime-data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
 import { Button } from "@/components/ui/button";
-
 import { Input } from "@/components/ui/input";
-
 import { Label } from "@/components/ui/label";
-
 import {
   Select,
   SelectContent,
@@ -19,14 +14,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
 import { ArrowLeftRight } from "lucide-react";
 
 export default function TransfersSection() {
+  const { balances, exchangeRates, loading, error } = useRealtimeData();
   const [transfers, setTransfers] = useState<any[]>([]);
-  const [balances, setBalances] = useState<any>({});
   const [currencies, setCurrencies] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [formData, setFormData] = useState({
     from_currency: "",
     to_currency: "",
@@ -37,7 +30,6 @@ export default function TransfersSection() {
 
   useEffect(() => {
     fetchTransfers();
-    fetchBalances();
     fetchCurrencies();
   }, []);
 
@@ -45,7 +37,7 @@ export default function TransfersSection() {
     if (formData.from_currency && formData.to_currency && formData.amount) {
       calculateExchange();
     }
-  }, [formData]);
+  }, [formData, exchangeRates]);
 
   const fetchCurrencies = async () => {
     try {
@@ -59,69 +51,46 @@ export default function TransfersSection() {
       setCurrencies(data || []);
     } catch (error) {
       console.error("Error fetching currencies:", error);
+      // Fallback currencies if database fetch fails
+      setCurrencies([
+        { code: "USD", name: "US Dollar", symbol: "$" },
+        { code: "EUR", name: "Euro", symbol: "€" },
+        { code: "CAD", name: "Canadian Dollar", symbol: "C$" },
+        { code: "CRYPTO", name: "Crypto", symbol: "₿" },
+      ]);
     }
   };
 
-  const calculateExchange = async () => {
-    try {
-      const { data, error } = await supabase.rpc("get_exchange_rate", {
-        from_currency: formData.from_currency,
-        to_currency: formData.to_currency,
-      });
+  const calculateExchange = () => {
+    const fromCurrency = formData.from_currency.toLowerCase();
+    const toCurrency = formData.to_currency.toLowerCase();
+    const amount = Number(formData.amount);
 
-      if (error) throw error;
-
-      const rate = Number(data) || 1;
-      setExchangeRate(rate);
-      setEstimatedAmount(Number(formData.amount) * rate);
-    } catch (error) {
-      console.error("Error calculating exchange rate:", error);
+    if (!amount || fromCurrency === toCurrency) {
       setExchangeRate(1);
-      setEstimatedAmount(Number(formData.amount));
+      setEstimatedAmount(amount);
+      return;
     }
-  };
 
-  const fetchBalances = async () => {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+    let rate = 1;
 
-      if (user) {
-        const [cryptoResult, euroResult, cadResult, usdResult] =
-          await Promise.all([
-            supabase
-              .from("crypto_balances")
-              .select("balance")
-              .eq("user_id", user.id)
-              .single(),
-            supabase
-              .from("euro_balances")
-              .select("balance")
-              .eq("user_id", user.id)
-              .single(),
-            supabase
-              .from("cad_balances")
-              .select("balance")
-              .eq("user_id", user.id)
-              .single(),
-            supabase
-              .from("usd_balances")
-              .select("balance")
-              .eq("user_id", user.id)
-              .single(),
-          ]);
-
-        setBalances({
-          CRYPTO: cryptoResult.data?.balance || 0,
-          EUR: euroResult.data?.balance || 0,
-          CAD: cadResult.data?.balance || 0,
-          USD: usdResult.data?.balance || 0,
-        });
-      }
-    } catch (error) {
-      console.error("Error fetching balances:", error);
+    // Use real-time exchange rates
+    if (fromCurrency === "usd" && toCurrency === "euro") {
+      rate = exchangeRates.usd_to_eur;
+    } else if (fromCurrency === "usd" && toCurrency === "cad") {
+      rate = exchangeRates.usd_to_cad;
+    } else if (fromCurrency === "euro" && toCurrency === "usd") {
+      rate = exchangeRates.eur_to_usd;
+    } else if (fromCurrency === "cad" && toCurrency === "usd") {
+      rate = exchangeRates.cad_to_usd;
+    } else if (fromCurrency === "euro" && toCurrency === "cad") {
+      rate = exchangeRates.eur_to_usd * exchangeRates.usd_to_cad;
+    } else if (fromCurrency === "cad" && toCurrency === "euro") {
+      rate = exchangeRates.cad_to_usd * exchangeRates.usd_to_eur;
     }
+
+    setExchangeRate(rate);
+    setEstimatedAmount(amount * rate);
   };
 
   const fetchTransfers = async () => {
@@ -142,20 +111,31 @@ export default function TransfersSection() {
       }
     } catch (error) {
       console.error("Error fetching transfers:", error);
-    } finally {
-      setLoading(false);
     }
   };
 
   // Helper function to get the correct table name for each currency
   const getTableName = (currencyCode: string) => {
     const tableMap: { [key: string]: string } = {
-      CRYPTO: "crypto_balances",
-      EUR: "euro_balances",
-      CAD: "cad_balances",
       USD: "usd_balances",
+      EUR: "euro_balances",
+      EURO: "euro_balances",
+      CAD: "cad_balances",
+      CRYPTO: "crypto_balances",
     };
     return tableMap[currencyCode.toUpperCase()];
+  };
+
+  // Helper function to get balance key for real-time data
+  const getBalanceKey = (currencyCode: string): keyof typeof balances => {
+    const keyMap: { [key: string]: keyof typeof balances } = {
+      USD: "usd",
+      EUR: "euro",
+      EURO: "euro",
+      CAD: "cad",
+      CRYPTO: "crypto",
+    };
+    return keyMap[currencyCode.toUpperCase()] || "usd";
   };
 
   const executeTransfer = async () => {
@@ -170,9 +150,12 @@ export default function TransfersSection() {
       const fromCurrency = formData.from_currency.toUpperCase();
       const toCurrency = formData.to_currency.toUpperCase();
 
-      // Check balance using the correct currency code
-      const currentFromBalance = balances[fromCurrency] || 0;
-      const currentToBalance = balances[toCurrency] || 0;
+      // Get current balances from real-time data
+      const fromBalanceKey = getBalanceKey(fromCurrency);
+      const toBalanceKey = getBalanceKey(toCurrency);
+
+      const currentFromBalance = balances[fromBalanceKey] || 0;
+      const currentToBalance = balances[toBalanceKey] || 0;
 
       if (currentFromBalance < amount) {
         alert("Insufficient balance");
@@ -254,8 +237,8 @@ export default function TransfersSection() {
       setExchangeRate(1);
       setEstimatedAmount(0);
 
-      // Refresh data
-      await Promise.all([fetchTransfers(), fetchBalances()]);
+      // Refresh transfers (balances will update automatically via real-time)
+      await fetchTransfers();
 
       alert("Transfer completed successfully!");
     } catch (error: any) {
@@ -268,6 +251,10 @@ export default function TransfersSection() {
     return <div className="p-6">Loading transfers...</div>;
   }
 
+  if (error) {
+    return <div className="p-6 text-red-500">Error: {error}</div>;
+  }
+
   return (
     <div className="p-8">
       <style jsx>{`
@@ -275,22 +262,18 @@ export default function TransfersSection() {
           scrollbar-width: thin;
           scrollbar-color: #f26623 #f1f5f9;
         }
-
         .custom-scrollbar::-webkit-scrollbar {
           width: 8px;
         }
-
         .custom-scrollbar::-webkit-scrollbar-track {
           background: #f1f5f9;
           border-radius: 4px;
         }
-
         .custom-scrollbar::-webkit-scrollbar-thumb {
           background: #f26623;
           border-radius: 4px;
           transition: background 0.2s ease;
         }
-
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
           background: #e55a1f;
         }
@@ -301,21 +284,43 @@ export default function TransfersSection() {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
         {/* Left Column - Balances and Transfer Form */}
         <div className="xl:col-span-2 space-y-8">
-          {/* Current Balances */}
+          {/* Current Balances - Using Real-time Data */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-            {currencies.slice(0, 4).map((currency) => (
-              <Card key={currency.code} className="shadow-lg">
-                <CardContent className="p-8 text-center">
-                  <p className="text-lg text-gray-600 mb-2">{currency.name}</p>
-                  <p className="text-3xl font-bold text-gray-900">
-                    {currency.symbol}
-                    {Number(
-                      balances[currency.code.toUpperCase()] || 0
-                    ).toLocaleString()}
-                  </p>
-                </CardContent>
-              </Card>
-            ))}
+            <Card className="shadow-lg">
+              <CardContent className="p-8 text-center">
+                <p className="text-lg text-gray-600 mb-2">US Dollar</p>
+                <p className="text-3xl font-bold text-gray-900">
+                  ${Number(balances.usd || 0).toLocaleString()}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-lg">
+              <CardContent className="p-8 text-center">
+                <p className="text-lg text-gray-600 mb-2">Euro</p>
+                <p className="text-3xl font-bold text-gray-900">
+                  €{Number(balances.euro || 0).toLocaleString()}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-lg">
+              <CardContent className="p-8 text-center">
+                <p className="text-lg text-gray-600 mb-2">Canadian Dollar</p>
+                <p className="text-3xl font-bold text-gray-900">
+                  C${Number(balances.cad || 0).toLocaleString()}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-lg">
+              <CardContent className="p-8 text-center">
+                <p className="text-lg text-gray-600 mb-2">Crypto</p>
+                <p className="text-3xl font-bold text-gray-900">
+                  ₿{Number(balances.crypto || 0).toLocaleString()}
+                </p>
+              </CardContent>
+            </Card>
           </div>
 
           {/* Transfer Form */}
@@ -351,12 +356,14 @@ export default function TransfersSection() {
                     </SelectContent>
                   </Select>
                 </div>
+
                 <div className="text-center">
                   <ArrowLeftRight className="w-8 h-8 mx-auto text-[#F26623] mb-2" />
                   <p className="text-sm text-gray-500">
                     Rate: {exchangeRate.toFixed(4)}
                   </p>
                 </div>
+
                 <div>
                   <Label className="text-lg font-medium mb-3 block">
                     To Currency
@@ -384,6 +391,7 @@ export default function TransfersSection() {
                   </Select>
                 </div>
               </div>
+
               <div className="grid grid-cols-2 gap-6">
                 <div>
                   <Label className="text-lg font-medium mb-3 block">
@@ -411,12 +419,14 @@ export default function TransfersSection() {
                   />
                 </div>
               </div>
+
               <Button
                 onClick={executeTransfer}
                 disabled={
                   !formData.from_currency ||
                   !formData.to_currency ||
-                  !formData.amount
+                  !formData.amount ||
+                  loading
                 }
                 className="w-full bg-[#F26623] hover:bg-[#E55A1F] h-14 text-lg font-semibold"
               >

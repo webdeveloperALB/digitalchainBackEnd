@@ -506,7 +506,7 @@ export default function TransfersSection() {
                   >
                     <div className="flex items-center space-x-3">
                       <div className="p-2 rounded-full bg-gray-100">
-                        <ArrowUpRight className="h-5 w-5 text-blue-600" />
+                        <ArrowUpRight className="h-5 w-5 text-black-600" />
                       </div>
                       <div>
                         <p className="font-medium">Currency Exchange</p>

@@ -22,6 +22,7 @@ interface RealtimeData {
   };
   messages: any[];
   transactions: any[];
+  cryptoTransactions: any[];
   loading: boolean;
   error: string | null;
 }
@@ -38,6 +39,7 @@ export function useRealtimeData(): RealtimeData {
     cryptoPrices: { bitcoin: 45000, ethereum: 3000 },
     messages: [],
     transactions: [],
+    cryptoTransactions: [],
     loading: true,
     error: null,
   });
@@ -158,10 +160,30 @@ export function useRealtimeData(): RealtimeData {
     }
   };
 
+  const fetchCryptoTransactions = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("crypto_transactions")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(10);
+
+      if (error) {
+        console.error("Error fetching crypto transactions:", error);
+        return [];
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error("Error fetching crypto transactions:", error);
+      return [];
+    }
+  };
+
   const initializeData = async () => {
     try {
       setData((prev) => ({ ...prev, loading: true, error: null }));
-
       const {
         data: { user },
         error: userError,
@@ -176,14 +198,21 @@ export function useRealtimeData(): RealtimeData {
         return;
       }
 
-      const [balances, exchangeRates, cryptoPrices, messages, transactions] =
-        await Promise.all([
-          fetchBalances(user.id),
-          fetchExchangeRates(),
-          fetchCryptoPrices(),
-          fetchMessages(user.id),
-          fetchTransactions(user.id),
-        ]);
+      const [
+        balances,
+        exchangeRates,
+        cryptoPrices,
+        messages,
+        transactions,
+        cryptoTransactions,
+      ] = await Promise.all([
+        fetchBalances(user.id),
+        fetchExchangeRates(),
+        fetchCryptoPrices(),
+        fetchMessages(user.id),
+        fetchTransactions(user.id),
+        fetchCryptoTransactions(user.id),
+      ]);
 
       setData({
         balances,
@@ -191,6 +220,7 @@ export function useRealtimeData(): RealtimeData {
         cryptoPrices,
         messages,
         transactions,
+        cryptoTransactions,
         loading: false,
         error: null,
       });
@@ -310,10 +340,34 @@ export function useRealtimeData(): RealtimeData {
       )
       .subscribe();
 
+    // Subscribe to crypto transaction changes
+    const cryptoTransactionSubscription = supabase
+      .channel("crypto_transaction_changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "crypto_transactions",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          fetchCryptoTransactions(user.id).then((cryptoTransactions) => {
+            setData((prev) => ({ ...prev, cryptoTransactions }));
+          });
+          // Also refresh balances when crypto transaction status changes
+          fetchBalances(user.id).then((balances) => {
+            setData((prev) => ({ ...prev, balances }));
+          });
+        }
+      )
+      .subscribe();
+
     return () => {
       balanceSubscription.unsubscribe();
       messageSubscription.unsubscribe();
       transactionSubscription.unsubscribe();
+      cryptoTransactionSubscription.unsubscribe();
     };
   };
 
@@ -323,7 +377,6 @@ export function useRealtimeData(): RealtimeData {
       fetchExchangeRates().then((exchangeRates) => {
         setData((prev) => ({ ...prev, exchangeRates }));
       });
-
       fetchCryptoPrices().then((cryptoPrices) => {
         setData((prev) => ({ ...prev, cryptoPrices }));
       });
@@ -334,7 +387,6 @@ export function useRealtimeData(): RealtimeData {
 
   useEffect(() => {
     initializeData();
-
     const cleanup = setupRealtimeSubscriptions();
 
     return () => {
