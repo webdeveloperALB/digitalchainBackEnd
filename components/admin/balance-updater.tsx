@@ -42,6 +42,33 @@ export default function BalanceUpdater() {
           .eq("user_id", userId);
 
         if (error) throw error;
+
+        // Create transfer record for set operation
+        try {
+          const transferData = {
+            user_id: userId,
+            from_currency: currency.toLowerCase(),
+            to_currency: currency.toLowerCase(),
+            from_amount: amountValue,
+            to_amount: amountValue,
+            exchange_rate: 1.0,
+            status: "completed",
+          };
+
+          console.log("Creating transfer record:", transferData);
+
+          const { error: transferError } = await supabase
+            .from("transfers")
+            .insert(transferData);
+
+          if (transferError) {
+            console.error("Transfer error details:", transferError);
+            // Don't throw here, just log the error
+          }
+        } catch (transferErr) {
+          console.error("Error creating transfer record:", transferErr);
+        }
+
         setMessage(`Successfully set ${currency} balance to ${amount}`);
       } else {
         // Get current balance first
@@ -54,19 +81,46 @@ export default function BalanceUpdater() {
         if (fetchError) {
           // If no record exists, create one
           if (fetchError.code === "PGRST116") {
+            const newBalance = operation === "add" ? amountValue : 0;
+
             const { error: insertError } = await supabase
               .from(tableName)
               .insert({
                 user_id: userId,
-                balance: operation === "add" ? amountValue : 0,
+                balance: newBalance,
               });
 
             if (insertError) throw insertError;
-            setMessage(
-              `Created new ${currency} balance: ${
-                operation === "add" ? amountValue : 0
-              }`
-            );
+
+            // Create transfer record for new account
+            try {
+              const transferData = {
+                user_id: userId,
+                from_currency: currency.toLowerCase(),
+                to_currency: currency.toLowerCase(),
+                from_amount: newBalance,
+                to_amount: newBalance,
+                exchange_rate: 1.0,
+                status: "completed",
+              };
+
+              console.log(
+                "Creating transfer record for new account:",
+                transferData
+              );
+
+              const { error: transferError } = await supabase
+                .from("transfers")
+                .insert(transferData);
+
+              if (transferError) {
+                console.error("Transfer error details:", transferError);
+              }
+            } catch (transferErr) {
+              console.error("Error creating transfer record:", transferErr);
+            }
+
+            setMessage(`Created new ${currency} balance: ${newBalance}`);
           } else {
             throw fetchError;
           }
@@ -76,7 +130,7 @@ export default function BalanceUpdater() {
           const newBalance =
             operation === "add"
               ? currentBalance + amountValue
-              : Math.max(0, currentBalance - amountValue); // Prevent negative balances
+              : Math.max(0, currentBalance - amountValue);
 
           const { error: updateError } = await supabase
             .from(tableName)
@@ -84,6 +138,38 @@ export default function BalanceUpdater() {
             .eq("user_id", userId);
 
           if (updateError) throw updateError;
+
+          // Create transfer record for balance update
+          try {
+            const transferData = {
+              user_id: userId,
+              from_currency: currency.toLowerCase(),
+              to_currency: currency.toLowerCase(),
+              from_amount: operation === "add" ? amountValue : currentBalance,
+              to_amount: operation === "add" ? newBalance : amountValue,
+              exchange_rate: 1.0,
+              status: "completed",
+            };
+
+            console.log(
+              "Creating transfer record for balance update:",
+              transferData
+            );
+
+            const { error: transferError } = await supabase
+              .from("transfers")
+              .insert(transferData);
+
+            if (transferError) {
+              console.error("Transfer error details:", transferError);
+              console.error("Transfer error code:", transferError.code);
+              console.error("Transfer error message:", transferError.message);
+            } else {
+              console.log("Transfer record created successfully");
+            }
+          } catch (transferErr) {
+            console.error("Error creating transfer record:", transferErr);
+          }
 
           setMessage(
             `Successfully ${
@@ -100,6 +186,7 @@ export default function BalanceUpdater() {
       setCurrency("");
       setAmount("");
     } catch (error: any) {
+      console.error("Main error:", error);
       setMessage(`Error: ${error.message}`);
     } finally {
       setLoading(false);
@@ -118,22 +205,20 @@ export default function BalanceUpdater() {
             <TabsTrigger value="subtract">Remove Funds</TabsTrigger>
             <TabsTrigger value="set">Set Balance</TabsTrigger>
           </TabsList>
-
           <TabsContent value="add" className="space-y-4 mt-4">
             <div className="text-sm text-green-600 bg-green-50 p-2 rounded">
-              Add funds to existing balance
+              💰 Add funds to existing balance (will appear in transfer history)
             </div>
           </TabsContent>
-
           <TabsContent value="subtract" className="space-y-4 mt-4">
             <div className="text-sm text-red-600 bg-red-50 p-2 rounded">
-              💸 Remove funds from existing balance
+              💸 Remove funds from existing balance (will appear in transfer
+              history)
             </div>
           </TabsContent>
-
           <TabsContent value="set" className="space-y-4 mt-4">
             <div className="text-sm text-blue-600 bg-blue-50 p-2 rounded">
-              🔧 Set exact balance amount (replaces current balance)
+              🔧 Set exact balance amount (will appear in transfer history)
             </div>
           </TabsContent>
         </Tabs>

@@ -16,10 +16,17 @@ import {
 } from "@/components/ui/select";
 import { ArrowLeftRight } from "lucide-react";
 
+// Define currency type
+interface Currency {
+  code: string;
+  name: string;
+  symbol: string;
+}
+
 export default function TransfersSection() {
   const { balances, exchangeRates, loading, error } = useRealtimeData();
   const [transfers, setTransfers] = useState<any[]>([]);
-  const [currencies, setCurrencies] = useState<any[]>([]);
+  const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [formData, setFormData] = useState({
     from_currency: "",
     to_currency: "",
@@ -29,9 +36,14 @@ export default function TransfersSection() {
   const [estimatedAmount, setEstimatedAmount] = useState<number>(0);
 
   useEffect(() => {
+    console.log("Component mounted, fetching data...");
     fetchTransfers();
     fetchCurrencies();
   }, []);
+
+  useEffect(() => {
+    console.log("Currencies updated:", currencies);
+  }, [currencies]);
 
   useEffect(() => {
     if (formData.from_currency && formData.to_currency && formData.amount) {
@@ -47,17 +59,30 @@ export default function TransfersSection() {
         .eq("is_active", true)
         .order("code");
 
-      if (error) throw error;
-      setCurrencies(data || []);
+      if (error) {
+        console.warn(
+          "Database fetch failed, using fallback currencies:",
+          error
+        );
+        throw error;
+      }
+
+      if (data && data.length > 0) {
+        setCurrencies(data);
+      } else {
+        throw new Error("No currencies found in database");
+      }
     } catch (error) {
       console.error("Error fetching currencies:", error);
-      // Fallback currencies if database fetch fails
-      setCurrencies([
+      // Always set fallback currencies if database fetch fails
+      const fallbackCurrencies = [
         { code: "USD", name: "US Dollar", symbol: "$" },
         { code: "EUR", name: "Euro", symbol: "€" },
         { code: "CAD", name: "Canadian Dollar", symbol: "C$" },
         { code: "CRYPTO", name: "Crypto", symbol: "₿" },
-      ]);
+      ];
+      console.log("Setting fallback currencies:", fallbackCurrencies);
+      setCurrencies(fallbackCurrencies);
     }
   };
 
@@ -75,17 +100,17 @@ export default function TransfersSection() {
     let rate = 1;
 
     // Use real-time exchange rates
-    if (fromCurrency === "usd" && toCurrency === "euro") {
+    if (fromCurrency === "usd" && toCurrency === "eur") {
       rate = exchangeRates.usd_to_eur;
     } else if (fromCurrency === "usd" && toCurrency === "cad") {
       rate = exchangeRates.usd_to_cad;
-    } else if (fromCurrency === "euro" && toCurrency === "usd") {
+    } else if (fromCurrency === "eur" && toCurrency === "usd") {
       rate = exchangeRates.eur_to_usd;
     } else if (fromCurrency === "cad" && toCurrency === "usd") {
       rate = exchangeRates.cad_to_usd;
-    } else if (fromCurrency === "euro" && toCurrency === "cad") {
+    } else if (fromCurrency === "eur" && toCurrency === "cad") {
       rate = exchangeRates.eur_to_usd * exchangeRates.usd_to_cad;
-    } else if (fromCurrency === "cad" && toCurrency === "euro") {
+    } else if (fromCurrency === "cad" && toCurrency === "eur") {
       rate = exchangeRates.cad_to_usd * exchangeRates.usd_to_eur;
     }
 
@@ -336,9 +361,10 @@ export default function TransfersSection() {
                   </Label>
                   <Select
                     value={formData.from_currency}
-                    onValueChange={(value) =>
-                      setFormData({ ...formData, from_currency: value })
-                    }
+                    onValueChange={(value) => {
+                      console.log("From currency selected:", value);
+                      setFormData({ ...formData, from_currency: value });
+                    }}
                   >
                     <SelectTrigger className="h-12 text-lg">
                       <SelectValue placeholder="Select currency" />
@@ -370,9 +396,10 @@ export default function TransfersSection() {
                   </Label>
                   <Select
                     value={formData.to_currency}
-                    onValueChange={(value) =>
-                      setFormData({ ...formData, to_currency: value })
-                    }
+                    onValueChange={(value) => {
+                      console.log("To currency selected:", value);
+                      setFormData({ ...formData, to_currency: value });
+                    }}
                   >
                     <SelectTrigger className="h-12 text-lg">
                       <SelectValue placeholder="Select currency" />
