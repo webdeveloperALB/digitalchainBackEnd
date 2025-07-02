@@ -46,7 +46,7 @@ export default function CardSection() {
     daily_limit: "1000",
     international_enabled: false,
     delivery_address: "",
-    card_design: "orange-gradient", // Add card design to form data
+    card_design: "orange-gradient",
   });
 
   useEffect(() => {
@@ -126,7 +126,7 @@ export default function CardSection() {
           pin: generatePIN(),
           account_number: generateAccountNumber(),
           card_type: formData.card_type,
-          card_design: formData.card_design, // Include card design in creation
+          card_design: formData.card_design,
           spending_limit: Number.parseFloat(formData.spending_limit),
           daily_limit: Number.parseFloat(formData.daily_limit),
           international_enabled: formData.international_enabled,
@@ -137,7 +137,7 @@ export default function CardSection() {
           expected_delivery:
             formData.card_type === "Physical"
               ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-              : null, // 7 days from now
+              : null,
           status: "Pending",
           is_activated: false,
         };
@@ -168,7 +168,6 @@ export default function CardSection() {
       const newStatus = currentStatus === "Active" ? "Frozen" : "Active";
       const updateData: any = { status: newStatus };
 
-      // If activating for the first time, set activation data
       if (
         newStatus === "Active" &&
         !cards.find((c) => c.id === cardId)?.is_activated
@@ -212,7 +211,6 @@ export default function CardSection() {
     return "**** **** **** " + cardNumber.slice(-4);
   };
 
-  // Updated function to use card_design from database instead of network
   const getCardColor = (cardDesign: string) => {
     switch (cardDesign?.toLowerCase()) {
       case "orange-gradient":
@@ -232,21 +230,21 @@ export default function CardSection() {
       case "gold-gradient":
         return "from-yellow-400 to-yellow-600";
       default:
-        return "from-[#F26623] to-[#E55A1F]"; // Default orange
+        return "from-[#F26623] to-[#E55A1F]";
     }
   };
 
   if (loading) {
     return (
-      <div className="h-full overflow-y-auto scrollbar-hide">
+      <div className="flex-1 overflow-y-auto">
         <div className="p-6">Loading cards...</div>
       </div>
     );
   }
 
   return (
-    <div className="h-full overflow-y-auto scrollbar-hide">
-      <div className="p-6 space-y-6 max-w-4xl">
+    <div className="flex-1 overflow-y-auto">
+      <div className="p-6 space-y-6 max-w-4xl min-h-full">
         <div className="flex flex-row items-center justify-between">
           <h2 className="text-2xl font-bold">My Cards</h2>
           <Button
@@ -406,7 +404,7 @@ export default function CardSection() {
         )}
 
         {/* Cards Display */}
-        <div className="space-y-6">
+        <div className="space-y-6 pb-6">
           {cards.length === 0 ? (
             <Card>
               <CardContent className="p-6 text-center">
@@ -420,11 +418,11 @@ export default function CardSection() {
             cards.map((card) => (
               <div key={card.id} className="space-y-4">
                 {/* Card Visual */}
-                <div className="flex justify-center">
+                <div className="flex ">
                   <div
                     className={`w-full max-w-sm bg-gradient-to-r ${getCardColor(
                       card.card_design
-                    )} rounded-xl p-6 text-white shadow-lg`}
+                    )} rounded-xl p-6 text-white shadow-lg pointer-events-none`}
                   >
                     <div className="flex justify-between items-start mb-8">
                       <div>
@@ -466,7 +464,7 @@ export default function CardSection() {
                 </div>
 
                 {/* Card Controls */}
-                <Card>
+                <Card className="relative">
                   <CardContent className="p-4">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
                       <div className="min-w-0 flex-1">
