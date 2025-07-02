@@ -163,204 +163,206 @@ export default function PaymentsSection() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">Payments</h2>
-        <Button
-          onClick={() => setShowPaymentForm(true)}
-          className="bg-[#F26623] hover:bg-[#E55A1F]"
-        >
-          <Receipt className="w-4 h-4 mr-2" />
-          New Payment
-        </Button>
-      </div>
-
-      {/* Payment Categories - Now Horizontal */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {paymentTypes.map((type) => (
-          <Card
-            key={type.id}
-            className="cursor-pointer hover:shadow-md transition-shadow"
+    <div className="h-full overflow-y-auto">
+      <div className="p-6 space-y-6">
+        <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-bold">Payments</h2>
+          <Button
+            onClick={() => setShowPaymentForm(true)}
+            className="bg-[#F26623] hover:bg-[#E55A1F]"
           >
-            <CardContent className="p-4">
-              <div className="flex items-start gap-4">
-                <type.icon className="w-6 h-6 text-[#F26623] mt-1 flex-shrink-0" />
-                <div className="min-w-0">
-                  <h3 className="font-medium">{type.name}</h3>
-                  <p className="text-sm text-gray-600 line-clamp-2">
-                    {type.description}
-                  </p>
+            <Receipt className="w-4 h-4 mr-2" />
+            New Payment
+          </Button>
+        </div>
+
+        {/* Payment Categories - Now Horizontal */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {paymentTypes.map((type) => (
+            <Card
+              key={type.id}
+              className="cursor-pointer hover:shadow-md transition-shadow"
+            >
+              <CardContent className="p-4">
+                <div className="flex items-start gap-4">
+                  <type.icon className="w-6 h-6 text-[#F26623] mt-1 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <h3 className="font-medium">{type.name}</h3>
+                    <p className="text-sm text-gray-600 line-clamp-2">
+                      {type.description}
+                    </p>
+                  </div>
                 </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {showPaymentForm && (
+          <Card>
+            <CardHeader>
+              <CardTitle>New Payment</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Payment Type</Label>
+                  <Select
+                    value={formData.payment_type}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, payment_type: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select payment type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {paymentTypes.map((type) => (
+                        <SelectItem key={type.id} value={type.name}>
+                          {type.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Currency</Label>
+                  <Select
+                    value={formData.currency}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, currency: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="EUR">Euro (EUR)</SelectItem>
+                      <SelectItem value="USD">US Dollar (USD)</SelectItem>
+                      <SelectItem value="CAD">Canadian Dollar (CAD)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Amount</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={formData.amount}
+                    onChange={(e) =>
+                      setFormData({ ...formData, amount: e.target.value })
+                    }
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <Label>Due Date (Optional)</Label>
+                  <Input
+                    type="date"
+                    value={formData.due_date}
+                    onChange={(e) =>
+                      setFormData({ ...formData, due_date: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+              <div>
+                <Label>Recipient/Payee</Label>
+                <Input
+                  value={formData.recipient}
+                  onChange={(e) =>
+                    setFormData({ ...formData, recipient: e.target.value })
+                  }
+                  placeholder="Enter recipient name or organization"
+                />
+              </div>
+              <div>
+                <Label>Description</Label>
+                <Textarea
+                  value={formData.description}
+                  onChange={(e) =>
+                    setFormData({ ...formData, description: e.target.value })
+                  }
+                  placeholder="Enter payment description..."
+                  rows={3}
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  onClick={submitPayment}
+                  className="bg-[#F26623] hover:bg-[#E55A1F]"
+                >
+                  Submit Payment
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowPaymentForm(false)}
+                >
+                  Cancel
+                </Button>
               </div>
             </CardContent>
           </Card>
-        ))}
-      </div>
+        )}
 
-      {showPaymentForm && (
+        {/* Payment History */}
         <Card>
           <CardHeader>
-            <CardTitle>New Payment</CardTitle>
+            <CardTitle>Payment History</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Payment Type</Label>
-                <Select
-                  value={formData.payment_type}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, payment_type: value })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select payment type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {paymentTypes.map((type) => (
-                      <SelectItem key={type.id} value={type.name}>
-                        {type.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+          <CardContent>
+            {payments.length === 0 ? (
+              <p className="text-gray-500 text-center py-4">No payments yet</p>
+            ) : (
+              <div className="space-y-4">
+                {payments.map((payment) => (
+                  <div
+                    key={payment.id}
+                    className="flex justify-between items-center p-4 border rounded-lg"
+                  >
+                    <div>
+                      <p className="font-medium">{payment.payment_type}</p>
+                      <p className="text-sm text-gray-600">
+                        {payment.description}
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        To: {payment.recipient}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {new Date(payment.created_at).toLocaleString()}
+                      </p>
+                      {payment.due_date && (
+                        <p className="text-xs text-gray-500">
+                          Due: {new Date(payment.due_date).toLocaleDateString()}
+                        </p>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <p className="font-medium">
+                        {Number(payment.amount).toLocaleString()}{" "}
+                        {payment.currency}
+                      </p>
+                      <p
+                        className={`text-sm font-medium ${
+                          payment.status === "Success"
+                            ? "text-green-600"
+                            : payment.status === "Pending"
+                            ? "text-yellow-600"
+                            : "text-red-600"
+                        }`}
+                      >
+                        {payment.status}
+                      </p>
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div>
-                <Label>Currency</Label>
-                <Select
-                  value={formData.currency}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, currency: value })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="EUR">Euro (EUR)</SelectItem>
-                    <SelectItem value="USD">US Dollar (USD)</SelectItem>
-                    <SelectItem value="CAD">Canadian Dollar (CAD)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Amount</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={formData.amount}
-                  onChange={(e) =>
-                    setFormData({ ...formData, amount: e.target.value })
-                  }
-                  placeholder="0.00"
-                />
-              </div>
-              <div>
-                <Label>Due Date (Optional)</Label>
-                <Input
-                  type="date"
-                  value={formData.due_date}
-                  onChange={(e) =>
-                    setFormData({ ...formData, due_date: e.target.value })
-                  }
-                />
-              </div>
-            </div>
-            <div>
-              <Label>Recipient/Payee</Label>
-              <Input
-                value={formData.recipient}
-                onChange={(e) =>
-                  setFormData({ ...formData, recipient: e.target.value })
-                }
-                placeholder="Enter recipient name or organization"
-              />
-            </div>
-            <div>
-              <Label>Description</Label>
-              <Textarea
-                value={formData.description}
-                onChange={(e) =>
-                  setFormData({ ...formData, description: e.target.value })
-                }
-                placeholder="Enter payment description..."
-                rows={3}
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button
-                onClick={submitPayment}
-                className="bg-[#F26623] hover:bg-[#E55A1F]"
-              >
-                Submit Payment
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => setShowPaymentForm(false)}
-              >
-                Cancel
-              </Button>
-            </div>
+            )}
           </CardContent>
         </Card>
-      )}
-
-      {/* Payment History */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Payment History</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {payments.length === 0 ? (
-            <p className="text-gray-500 text-center py-4">No payments yet</p>
-          ) : (
-            <div className="space-y-4">
-              {payments.map((payment) => (
-                <div
-                  key={payment.id}
-                  className="flex justify-between items-center p-4 border rounded-lg"
-                >
-                  <div>
-                    <p className="font-medium">{payment.payment_type}</p>
-                    <p className="text-sm text-gray-600">
-                      {payment.description}
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      To: {payment.recipient}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {new Date(payment.created_at).toLocaleString()}
-                    </p>
-                    {payment.due_date && (
-                      <p className="text-xs text-gray-500">
-                        Due: {new Date(payment.due_date).toLocaleDateString()}
-                      </p>
-                    )}
-                  </div>
-                  <div className="text-right">
-                    <p className="font-medium">
-                      {Number(payment.amount).toLocaleString()}{" "}
-                      {payment.currency}
-                    </p>
-                    <p
-                      className={`text-sm font-medium ${
-                        payment.status === "Success"
-                          ? "text-green-600"
-                          : payment.status === "Pending"
-                          ? "text-yellow-600"
-                          : "text-red-600"
-                      }`}
-                    >
-                      {payment.status}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      </div>
     </div>
   );
 }
