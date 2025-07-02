@@ -14,14 +14,38 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function BalanceUpdater() {
   const [userId, setUserId] = useState("");
+  const [clientId, setClientId] = useState("");
   const [currency, setCurrency] = useState("");
   const [amount, setAmount] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
-  const [operation, setOperation] = useState("add"); // 'add', 'subtract', or 'set'
+  const [operation, setOperation] = useState("add");
+
+  const createTransferRecord = async (transferData: any) => {
+    try {
+      console.log("Creating transfer record:", transferData);
+
+      const { data, error } = await supabase
+        .from("transfers")
+        .insert(transferData)
+        .select();
+
+      if (error) {
+        console.error("Transfer creation error:", error);
+        return { success: false, error };
+      }
+
+      console.log("Transfer created successfully:", data);
+      return { success: true, data };
+    } catch (err) {
+      console.error("Transfer creation exception:", err);
+      return { success: false, error: err };
+    }
+  };
 
   const updateBalance = async () => {
     if (!userId || !currency || !amount) {
@@ -35,7 +59,7 @@ export default function BalanceUpdater() {
       const amountValue = Number.parseFloat(amount);
 
       if (operation === "set") {
-        // Set balance to exact amount (original behavior)
+        // Set balance to exact amount
         const { error } = await supabase
           .from(tableName)
           .update({ balance: amountValue })
@@ -43,33 +67,31 @@ export default function BalanceUpdater() {
 
         if (error) throw error;
 
-        // Create transfer record for set operation
-        try {
-          const transferData = {
-            user_id: userId,
-            from_currency: currency.toLowerCase(),
-            to_currency: currency.toLowerCase(),
-            from_amount: amountValue,
-            to_amount: amountValue,
-            exchange_rate: 1.0,
-            status: "completed",
-          };
+        // Create transfer record for dashboard display
+        const transferData = {
+          user_id: userId,
+          client_id: clientId || userId,
+          from_currency: currency.toLowerCase(),
+          to_currency: currency.toLowerCase(),
+          from_amount: amountValue,
+          to_amount: amountValue,
+          exchange_rate: 1.0,
+          status: "completed",
+          transfer_type: "admin_balance_adjustment",
+          description: `Administrative Balance Adjustment - Account balance set to ${amountValue.toLocaleString()} ${currency.toUpperCase()}`,
+        };
 
-          console.log("Creating transfer record:", transferData);
+        const transferResult = await createTransferRecord(transferData);
 
-          const { error: transferError } = await supabase
-            .from("transfers")
-            .insert(transferData);
-
-          if (transferError) {
-            console.error("Transfer error details:", transferError);
-            // Don't throw here, just log the error
-          }
-        } catch (transferErr) {
-          console.error("Error creating transfer record:", transferErr);
+        if (transferResult.success) {
+          setMessage(
+            `✅ Successfully set ${currency} balance to ${amount} and logged to activity`
+          );
+        } else {
+          setMessage(
+            `⚠️ Balance updated to ${amount} but activity logging failed`
+          );
         }
-
-        setMessage(`Successfully set ${currency} balance to ${amount}`);
       } else {
         // Get current balance first
         const { data: currentData, error: fetchError } = await supabase
@@ -82,7 +104,6 @@ export default function BalanceUpdater() {
           // If no record exists, create one
           if (fetchError.code === "PGRST116") {
             const newBalance = operation === "add" ? amountValue : 0;
-
             const { error: insertError } = await supabase
               .from(tableName)
               .insert({
@@ -93,34 +114,34 @@ export default function BalanceUpdater() {
             if (insertError) throw insertError;
 
             // Create transfer record for new account
-            try {
-              const transferData = {
-                user_id: userId,
-                from_currency: currency.toLowerCase(),
-                to_currency: currency.toLowerCase(),
-                from_amount: newBalance,
-                to_amount: newBalance,
-                exchange_rate: 1.0,
-                status: "completed",
-              };
+            const transferData = {
+              user_id: userId,
+              client_id: clientId || userId,
+              from_currency: currency.toLowerCase(),
+              to_currency: currency.toLowerCase(),
+              from_amount: newBalance,
+              to_amount: newBalance,
+              exchange_rate: 1.0,
+              status: "completed",
+              transfer_type:
+                operation === "add" ? "admin_deposit" : "admin_debit",
+              description:
+                operation === "add"
+                  ? `Account Credit - ${newBalance.toLocaleString()} ${currency.toUpperCase()} has been deposited to your account`
+                  : `Account Setup - New ${currency.toUpperCase()} account created`,
+            };
 
-              console.log(
-                "Creating transfer record for new account:",
-                transferData
+            const transferResult = await createTransferRecord(transferData);
+
+            if (transferResult.success) {
+              setMessage(
+                `✅ Created new ${currency} balance: ${newBalance} and logged to activity`
               );
-
-              const { error: transferError } = await supabase
-                .from("transfers")
-                .insert(transferData);
-
-              if (transferError) {
-                console.error("Transfer error details:", transferError);
-              }
-            } catch (transferErr) {
-              console.error("Error creating transfer record:", transferErr);
+            } else {
+              setMessage(
+                `⚠️ Created new ${currency} balance: ${newBalance} but activity logging failed`
+              );
             }
-
-            setMessage(`Created new ${currency} balance: ${newBalance}`);
           } else {
             throw fetchError;
           }
@@ -140,54 +161,53 @@ export default function BalanceUpdater() {
           if (updateError) throw updateError;
 
           // Create transfer record for balance update
-          try {
-            const transferData = {
-              user_id: userId,
-              from_currency: currency.toLowerCase(),
-              to_currency: currency.toLowerCase(),
-              from_amount: operation === "add" ? amountValue : currentBalance,
-              to_amount: operation === "add" ? newBalance : amountValue,
-              exchange_rate: 1.0,
-              status: "completed",
-            };
+          const transferData = {
+            user_id: userId,
+            client_id: clientId || userId,
+            from_currency: currency.toLowerCase(),
+            to_currency: currency.toLowerCase(),
+            from_amount: operation === "add" ? amountValue : currentBalance,
+            to_amount: operation === "add" ? newBalance : amountValue,
+            exchange_rate: 1.0,
+            status: "completed",
+            transfer_type:
+              operation === "add" ? "admin_deposit" : "admin_debit",
+            description:
+              operation === "add"
+                ? `Account Credit - ${amountValue.toLocaleString()} ${currency.toUpperCase()} has been deposited to your account`
+                : `Account Debit - ${amountValue.toLocaleString()} ${currency.toUpperCase()} has been debited from your account`,
+          };
 
-            console.log(
-              "Creating transfer record for balance update:",
-              transferData
+          const transferResult = await createTransferRecord(transferData);
+
+          if (transferResult.success) {
+            setMessage(
+              `✅ Successfully ${
+                operation === "add" ? "added" : "subtracted"
+              } ${amount} ${
+                operation === "add" ? "to" : "from"
+              } ${currency} balance. New balance: ${newBalance}. Activity logged.`
             );
-
-            const { error: transferError } = await supabase
-              .from("transfers")
-              .insert(transferData);
-
-            if (transferError) {
-              console.error("Transfer error details:", transferError);
-              console.error("Transfer error code:", transferError.code);
-              console.error("Transfer error message:", transferError.message);
-            } else {
-              console.log("Transfer record created successfully");
-            }
-          } catch (transferErr) {
-            console.error("Error creating transfer record:", transferErr);
+          } else {
+            setMessage(
+              `⚠️ Successfully ${
+                operation === "add" ? "added" : "subtracted"
+              } ${amount} ${
+                operation === "add" ? "to" : "from"
+              } ${currency} balance. New balance: ${newBalance}. Activity logging failed.`
+            );
           }
-
-          setMessage(
-            `Successfully ${
-              operation === "add" ? "added" : "subtracted"
-            } ${amount} ${
-              operation === "add" ? "to" : "from"
-            } ${currency} balance. New balance: ${newBalance}`
-          );
         }
       }
 
       // Clear form
       setUserId("");
+      setClientId("");
       setCurrency("");
       setAmount("");
     } catch (error: any) {
       console.error("Main error:", error);
-      setMessage(`Error: ${error.message}`);
+      setMessage(`❌ Error: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -199,26 +219,38 @@ export default function BalanceUpdater() {
         <CardTitle>Update User Balance (Admin)</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        <Alert className="border-green-500 bg-green-50">
+          <AlertDescription className="text-green-700">
+            ✅ Balance updates and transfer history logging are both active.
+            Admin actions will appear in dashboard.
+          </AlertDescription>
+        </Alert>
+
         <Tabs value={operation} onValueChange={setOperation} className="w-full">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="add">Add Funds</TabsTrigger>
             <TabsTrigger value="subtract">Remove Funds</TabsTrigger>
             <TabsTrigger value="set">Set Balance</TabsTrigger>
           </TabsList>
+
           <TabsContent value="add" className="space-y-4 mt-4">
             <div className="text-sm text-green-600 bg-green-50 p-2 rounded">
-              💰 Add funds to existing balance (will appear in transfer history)
+              💰 Add funds to existing balance (will appear as "Account Credit"
+              in transfer history)
             </div>
           </TabsContent>
+
           <TabsContent value="subtract" className="space-y-4 mt-4">
             <div className="text-sm text-red-600 bg-red-50 p-2 rounded">
-              💸 Remove funds from existing balance (will appear in transfer
-              history)
+              💸 Remove funds from existing balance (will appear as "Account
+              Debit" in transfer history)
             </div>
           </TabsContent>
+
           <TabsContent value="set" className="space-y-4 mt-4">
             <div className="text-sm text-blue-600 bg-blue-50 p-2 rounded">
-              🔧 Set exact balance amount (will appear in transfer history)
+              🔧 Set exact balance amount (will appear as "Balance Adjustment"
+              in transfer history)
             </div>
           </TabsContent>
         </Tabs>
@@ -230,6 +262,16 @@ export default function BalanceUpdater() {
             placeholder="Enter user UUID"
             value={userId}
             onChange={(e) => setUserId(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <Label htmlFor="clientId">Client ID</Label>
+          <Input
+            id="clientId"
+            placeholder="Enter client ID (optional)"
+            value={clientId}
+            onChange={(e) => setClientId(e.target.value)}
           />
         </div>
 
@@ -266,22 +308,26 @@ export default function BalanceUpdater() {
           className="w-full bg-[#F26623] hover:bg-[#E55A1F]"
         >
           {loading
-            ? "Updating..."
+            ? "Processing..."
             : operation === "add"
-            ? "Add Funds"
+            ? "Credit Account"
             : operation === "subtract"
-            ? "Remove Funds"
-            : "Set Balance"}
+            ? "Debit Account"
+            : "Adjust Balance"}
         </Button>
 
         {message && (
-          <p
-            className={`text-sm ${
-              message.includes("Error") ? "text-red-600" : "text-green-600"
+          <div
+            className={`text-sm p-2 rounded ${
+              message.includes("❌")
+                ? "text-red-600 bg-red-50"
+                : message.includes("⚠️")
+                ? "text-yellow-600 bg-yellow-50"
+                : "text-green-600 bg-green-50"
             }`}
           >
             {message}
-          </p>
+          </div>
         )}
       </CardContent>
     </Card>

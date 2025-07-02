@@ -31,6 +31,8 @@ import {
   Info,
   ArrowDownLeft,
   ArrowUpRight,
+  Building2,
+  AlertTriangle,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -226,30 +228,18 @@ export default function DashboardContent({
           ...(userTransfers || []),
           ...(clientTransfers || []),
         ];
+
         const uniqueTransfers = allTransfers.filter(
           (transfer, index, self) =>
             index === self.findIndex((t) => t.id === transfer.id)
         );
 
         const sortedTransfers = uniqueTransfers.sort((a, b) => {
-          const aIsDeposit =
-            a.transfer_type === "deposit" ||
-            a.transfer_type === "credit" ||
-            a.transfer_type === "admin_deposit" ||
-            a.description?.toLowerCase().includes("deposit") ||
-            a.description?.toLowerCase().includes("credit") ||
-            a.description?.toLowerCase().includes("added");
+          const aIsCredit = isAdminCredit(a);
+          const bIsCredit = isAdminCredit(b);
 
-          const bIsDeposit =
-            b.transfer_type === "deposit" ||
-            b.transfer_type === "credit" ||
-            b.transfer_type === "admin_deposit" ||
-            b.description?.toLowerCase().includes("deposit") ||
-            b.description?.toLowerCase().includes("credit") ||
-            b.description?.toLowerCase().includes("added");
-
-          if (aIsDeposit && !bIsDeposit) return -1;
-          if (!aIsDeposit && bIsDeposit) return 1;
+          if (aIsCredit && !bIsCredit) return -1;
+          if (!aIsCredit && bIsCredit) return 1;
 
           return (
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -285,7 +275,6 @@ export default function DashboardContent({
           (payload) => {
             console.log("User transfer change detected:", payload);
             fetchTransfers();
-            // NEW: Recalculate balances when transfers change
             setTimeout(() => {}, 1000);
           }
         )
@@ -300,7 +289,6 @@ export default function DashboardContent({
           (payload) => {
             console.log("Client transfer change detected:", payload);
             fetchTransfers();
-            // NEW: Recalculate balances when transfers change
             setTimeout(() => {}, 1000);
           }
         )
@@ -369,43 +357,147 @@ export default function DashboardContent({
     }
   };
 
-  const getTransferIcon = (transfer: Transfer) => {
-    const isDeposit =
-      transfer.transfer_type === "deposit" ||
-      transfer.transfer_type === "credit" ||
+  // Enhanced function to identify admin actions
+  const isAdminCredit = (transfer: Transfer) => {
+    return (
       transfer.transfer_type === "admin_deposit" ||
-      transfer.description?.toLowerCase().includes("deposit") ||
-      transfer.description?.toLowerCase().includes("credit") ||
-      transfer.description?.toLowerCase().includes("added") ||
-      transfer.description?.toLowerCase().includes("fund");
-
-    return isDeposit ? (
-      <ArrowDownLeft className="h-5 w-5 text-green-600" />
-    ) : (
-      <ArrowUpRight className="h-5 w-5 text-black-600" />
+      transfer.transfer_type === "admin_debit" ||
+      transfer.transfer_type === "admin_balance_adjustment" ||
+      transfer.description?.toLowerCase().includes("account credit") ||
+      transfer.description?.toLowerCase().includes("account debit") ||
+      transfer.description?.toLowerCase().includes("administrative") ||
+      transfer.description?.toLowerCase().includes("balance adjustment")
     );
   };
 
-  const getTransferDescription = (transfer: Transfer) => {
-    const isDeposit =
-      transfer.transfer_type === "deposit" ||
-      transfer.transfer_type === "credit" ||
-      transfer.transfer_type === "admin_deposit" ||
-      transfer.description?.toLowerCase().includes("deposit") ||
-      transfer.description?.toLowerCase().includes("credit") ||
-      transfer.description?.toLowerCase().includes("added") ||
-      (transfer.from_currency === transfer.to_currency &&
-        transfer.from_amount === transfer.to_amount);
+  const isAdminDebit = (transfer: Transfer) => {
+    return (
+      transfer.transfer_type === "admin_debit" ||
+      transfer.description?.toLowerCase().includes("account debit") ||
+      transfer.description?.toLowerCase().includes("debited from your account")
+    );
+  };
 
-    if (isDeposit) {
+  const isRegularDeposit = (transfer: Transfer) => {
+    return (
+      !isAdminCredit(transfer) &&
+      (transfer.transfer_type === "deposit" ||
+        transfer.transfer_type === "credit" ||
+        transfer.description?.toLowerCase().includes("deposit") ||
+        transfer.description?.toLowerCase().includes("credit") ||
+        transfer.description?.toLowerCase().includes("added") ||
+        transfer.description?.toLowerCase().includes("fund"))
+    );
+  };
+
+  const getTransferIcon = (transfer: Transfer) => {
+    if (isAdminCredit(transfer)) {
+      if (isAdminDebit(transfer)) {
+        return <AlertTriangle className="h-5 w-5 text-orange-600" />;
+      }
+      return <Building2 className="h-5 w-5 text-blue-600" />;
+    }
+
+    if (isRegularDeposit(transfer)) {
+      return <ArrowDownLeft className="h-5 w-5 text-green-600" />;
+    }
+
+    return <ArrowUpRight className="h-5 w-5 text-gray-600" />;
+  };
+
+  const getTransferDescription = (transfer: Transfer) => {
+    // Admin actions - show professional banking messages
+    if (transfer.transfer_type === "admin_deposit") {
+      return "Account Credit";
+    }
+
+    if (transfer.transfer_type === "admin_debit") {
+      return "Account Debit";
+    }
+
+    if (transfer.transfer_type === "admin_balance_adjustment") {
+      return "Balance Adjustment";
+    }
+
+    // Check description for admin actions
+    if (transfer.description?.toLowerCase().includes("account credit")) {
+      return "Account Credit";
+    }
+
+    if (transfer.description?.toLowerCase().includes("account debit")) {
+      return "Account Debit";
+    }
+
+    if (transfer.description?.toLowerCase().includes("administrative")) {
+      return "Administrative Transaction";
+    }
+
+    // Regular deposits
+    if (isRegularDeposit(transfer)) {
       return `Account Deposit - ${(
         transfer.to_currency || transfer.from_currency
       ).toUpperCase()}`;
     }
 
+    // Regular transfers
     return `${transfer.from_currency?.toUpperCase() || "N/A"} → ${
       transfer.to_currency?.toUpperCase() || "N/A"
     }`;
+  };
+
+  const getTransferAmount = (transfer: Transfer) => {
+    if (transfer.transfer_type === "admin_deposit") {
+      return `+${Number(transfer.from_amount || 0).toLocaleString()} ${(
+        transfer.from_currency || "USD"
+      ).toUpperCase()}`;
+    }
+
+    if (transfer.transfer_type === "admin_debit") {
+      return `-${Number(transfer.from_amount || 0).toLocaleString()} ${(
+        transfer.from_currency || "USD"
+      ).toUpperCase()}`;
+    }
+
+    if (transfer.transfer_type === "admin_balance_adjustment") {
+      return `${Number(transfer.to_amount || 0).toLocaleString()} ${(
+        transfer.to_currency || "USD"
+      ).toUpperCase()}`;
+    }
+
+    // Check description for admin actions
+    if (
+      transfer.description?.toLowerCase().includes("credited to your account")
+    ) {
+      const match = transfer.description.match(/(\d+(?:,\d{3})*(?:\.\d{2})?)/);
+      const amount = match ? match[1] : transfer.from_amount;
+      return `+${amount} ${(transfer.from_currency || "USD").toUpperCase()}`;
+    }
+
+    if (
+      transfer.description?.toLowerCase().includes("debited from your account")
+    ) {
+      const match = transfer.description.match(/(\d+(?:,\d{3})*(?:\.\d{2})?)/);
+      const amount = match ? match[1] : transfer.from_amount;
+      return `-${amount} ${(transfer.from_currency || "USD").toUpperCase()}`;
+    }
+
+    // Regular deposits
+    if (isRegularDeposit(transfer)) {
+      return `+${Number(
+        transfer.to_amount || transfer.from_amount || 0
+      ).toLocaleString()} ${(
+        transfer.to_currency ||
+        transfer.from_currency ||
+        "USD"
+      ).toUpperCase()}`;
+    }
+
+    // Regular transfers
+    return `${Number(transfer.from_amount || 0).toLocaleString()} ${(
+      transfer.from_currency || "USD"
+    ).toUpperCase()} → ${Number(transfer.to_amount || 0).toLocaleString()} ${(
+      transfer.to_currency || "USD"
+    ).toUpperCase()}`;
   };
 
   if (loading && !hasLoaded) {
@@ -461,8 +553,6 @@ export default function DashboardContent({
   }
 
   const displayName = userProfile?.full_name || userProfile?.email || "User";
-
-  // NEW: Use calculated balances instead of realtime balances
   const displayBalances = realtimeBalances;
 
   return (
@@ -485,7 +575,7 @@ export default function DashboardContent({
           </Alert>
         )}
 
-        {/* UPDATED: Balance Cards now use calculated balances */}
+        {/* Balance Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           {Object.entries(displayBalances).map(([currency, balance]) => (
             <Card
@@ -509,7 +599,6 @@ export default function DashboardContent({
                     ? "Bitcoin equivalent"
                     : `${currency.toUpperCase()} account`}
                 </p>
-                {/* NEW: Show balance calculation indicator */}
               </CardContent>
             </Card>
           ))}
@@ -556,7 +645,7 @@ export default function DashboardContent({
               <CardHeader>
                 <CardTitle className="flex items-center">
                   <Activity className="h-5 w-5 mr-2" />
-                  Transfer History
+                  Account Activity
                   <Badge variant="outline" className="ml-2 text-xs">
                     Real-time
                   </Badge>
@@ -578,33 +667,32 @@ export default function DashboardContent({
                 ) : transfersData.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
                     <Send className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p className="text-sm">No transfer history</p>
+                    <p className="text-sm">No account activity</p>
                     <p className="text-xs">
-                      Your transfers and deposits will appear here in real-time
+                      Your transactions will appear here in real-time
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-3">
                     {transfersData.slice(0, 8).map((transfer) => {
-                      const isDeposit =
-                        (transfer.from_currency === transfer.to_currency &&
-                          transfer.from_amount === transfer.to_amount) ||
-                        transfer.transfer_type === "deposit" ||
-                        transfer.transfer_type === "credit" ||
-                        transfer.transfer_type === "admin_deposit" ||
-                        transfer.description
-                          ?.toLowerCase()
-                          .includes("deposit") ||
-                        transfer.description
-                          ?.toLowerCase()
-                          .includes("credit") ||
-                        transfer.description?.toLowerCase().includes("added");
+                      const isCredit =
+                        isAdminCredit(transfer) && !isAdminDebit(transfer);
+                      const isDebit = isAdminDebit(transfer);
+                      const isAdjustment =
+                        transfer.transfer_type === "admin_balance_adjustment";
+                      const isRegularDep = isRegularDeposit(transfer);
 
                       return (
                         <div
                           key={transfer.id}
                           className={`flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors ${
-                            isDeposit
+                            isCredit
+                              ? "border-blue-200 bg-blue-50/30"
+                              : isDebit
+                              ? "border-orange-200 bg-orange-50/30"
+                              : isAdjustment
+                              ? "border-purple-200 bg-purple-50/30"
+                              : isRegularDep
                               ? "border-green-200 bg-green-50/30"
                               : "border-gray-200"
                           }`}
@@ -612,51 +700,31 @@ export default function DashboardContent({
                           <div className="flex items-center space-x-3">
                             <div
                               className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                                isDeposit ? "bg-green-100" : "bg-[#F26623]"
+                                isCredit
+                                  ? "bg-blue-100"
+                                  : isDebit
+                                  ? "bg-orange-100"
+                                  : isAdjustment
+                                  ? "bg-purple-100"
+                                  : isRegularDep
+                                  ? "bg-green-100"
+                                  : "bg-gray-100"
                               }`}
                             >
-                              {isDeposit ? (
-                                <ArrowDownLeft className="h-5 w-5 text-green-600" />
-                              ) : (
-                                <ArrowUpRight className="h-5 w-5 text-black-600" />
-                              )}
+                              {getTransferIcon(transfer)}
                             </div>
                             <div>
                               <p className="font-medium text-sm">
-                                {isDeposit
-                                  ? `Account Deposit - ${(
-                                      transfer.to_currency ||
-                                      transfer.from_currency
-                                    ).toUpperCase()}`
-                                  : `${
-                                      transfer.from_currency?.toUpperCase() ||
-                                      "N/A"
-                                    } → ${
-                                      transfer.to_currency?.toUpperCase() ||
-                                      "N/A"
-                                    }`}
+                                {getTransferDescription(transfer)}
                               </p>
                               <p className="text-xs text-gray-600">
-                                {isDeposit
-                                  ? `Deposited: +${Number(
-                                      transfer.to_amount ||
-                                        transfer.from_amount ||
-                                        0
-                                    ).toLocaleString()} ${(
-                                      transfer.to_currency ||
-                                      transfer.from_currency ||
-                                      "USD"
-                                    ).toUpperCase()}`
-                                  : `${Number(
-                                      transfer.from_amount || 0
-                                    ).toLocaleString()} ${(
-                                      transfer.from_currency || "USD"
-                                    ).toUpperCase()} → ${Number(
-                                      transfer.to_amount || 0
-                                    ).toLocaleString()} ${(
-                                      transfer.to_currency || "USD"
-                                    ).toUpperCase()}`}
+                                {getTransferAmount(transfer)}
                               </p>
+                              {transfer.description && (
+                                <p className="text-xs text-gray-500 mt-1 max-w-xs truncate">
+                                  {transfer.description}
+                                </p>
+                              )}
                               <p className="text-xs text-gray-400">
                                 {new Date(
                                   transfer.created_at
@@ -669,7 +737,8 @@ export default function DashboardContent({
                             </div>
                           </div>
                           <div className="text-right">
-                            {!isDeposit &&
+                            {!isAdminCredit(transfer) &&
+                              !isRegularDeposit(transfer) &&
                               transfer.exchange_rate &&
                               transfer.exchange_rate !== 1.0 && (
                                 <p className="font-medium text-sm mb-1">
@@ -681,9 +750,15 @@ export default function DashboardContent({
                               className={`text-xs px-2 rounded ${
                                 transfer.status === "completed" ||
                                 transfer.status === "Completed"
-                                  ? isDeposit
+                                  ? isCredit
+                                    ? "bg-blue-100 text-blue-800"
+                                    : isDebit
+                                    ? "bg-orange-100 text-orange-800"
+                                    : isAdjustment
+                                    ? "bg-purple-100 text-purple-800"
+                                    : isRegularDep
                                     ? "bg-green-100 text-green-800"
-                                    : "bg-blue-100 text-blue-800"
+                                    : "bg-gray-100 text-gray-800"
                                   : transfer.status === "pending" ||
                                     transfer.status === "Pending"
                                   ? "bg-yellow-100 text-yellow-800"

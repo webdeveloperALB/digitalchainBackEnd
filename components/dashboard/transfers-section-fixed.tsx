@@ -281,7 +281,7 @@ export default function TransfersSection() {
   }
 
   return (
-    <div className="p-8">
+    <div className="p-6 max-w-7xl mx-auto">
       <style jsx>{`
         .custom-scrollbar {
           scrollbar-width: thin;
@@ -304,44 +304,46 @@ export default function TransfersSection() {
         }
       `}</style>
 
-      <h2 className="text-3xl font-bold mb-8">Currency Transfers</h2>
+      <h2 className="text-2xl font-bold mb-6 text-gray-800">
+        Currency Transfers
+      </h2>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-        {/* Left Column - Balances and Transfer Form */}
-        <div className="xl:col-span-2 space-y-8">
-          {/* Current Balances - Using Real-time Data */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-            <Card className="shadow-lg">
-              <CardContent className="p-8 text-center">
-                <p className="text-lg text-gray-600 mb-2">US Dollar</p>
-                <p className="text-3xl font-bold text-gray-900">
+      <div className="flex flex-col lg:flex-row gap-6">
+        {/* Main Content - Left Side */}
+        <div className="flex-1 space-y-6">
+          {/* Current Balances */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card className="border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+              <CardContent className="p-4 text-center">
+                <p className="text-sm text-gray-600 mb-1">US Dollar</p>
+                <p className="text-xl font-semibold text-gray-900">
                   ${Number(balances.usd || 0).toLocaleString()}
                 </p>
               </CardContent>
             </Card>
 
-            <Card className="shadow-lg">
-              <CardContent className="p-8 text-center">
-                <p className="text-lg text-gray-600 mb-2">Euro</p>
-                <p className="text-3xl font-bold text-gray-900">
+            <Card className="border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+              <CardContent className="p-4 text-center">
+                <p className="text-sm text-gray-600 mb-1">Euro</p>
+                <p className="text-xl font-semibold text-gray-900">
                   €{Number(balances.euro || 0).toLocaleString()}
                 </p>
               </CardContent>
             </Card>
 
-            <Card className="shadow-lg">
-              <CardContent className="p-8 text-center">
-                <p className="text-lg text-gray-600 mb-2">Canadian Dollar</p>
-                <p className="text-3xl font-bold text-gray-900">
+            <Card className="border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+              <CardContent className="p-4 text-center">
+                <p className="text-sm text-gray-600 mb-1">Canadian Dollar</p>
+                <p className="text-xl font-semibold text-gray-900">
                   C${Number(balances.cad || 0).toLocaleString()}
                 </p>
               </CardContent>
             </Card>
 
-            <Card className="shadow-lg">
-              <CardContent className="p-8 text-center">
-                <p className="text-lg text-gray-600 mb-2">Crypto</p>
-                <p className="text-3xl font-bold text-gray-900">
+            <Card className="border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+              <CardContent className="p-4 text-center">
+                <p className="text-sm text-gray-600 mb-1">Crypto</p>
+                <p className="text-xl font-semibold text-gray-900">
                   ₿{Number(balances.crypto || 0).toLocaleString()}
                 </p>
               </CardContent>
@@ -349,14 +351,17 @@ export default function TransfersSection() {
           </div>
 
           {/* Transfer Form */}
-          <Card className="shadow-lg">
-            <CardHeader className="pb-6">
-              <CardTitle className="text-2xl">New Transfer</CardTitle>
+          <Card className="border border-gray-200 shadow-sm">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-xl font-semibold text-gray-800">
+                New Transfer
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-8 p-8">
-              <div className="grid grid-cols-3 gap-6 items-end">
-                <div>
-                  <Label className="text-lg font-medium mb-3 block">
+            <CardContent className="space-y-6">
+              {/* Currency Selection Row */}
+              <div className="flex flex-col sm:flex-row items-center gap-4">
+                <div className="flex-1 w-full">
+                  <Label className="text-sm font-medium mb-2 block text-gray-700">
                     From Currency
                   </Label>
                   <Select
@@ -366,7 +371,7 @@ export default function TransfersSection() {
                       setFormData({ ...formData, from_currency: value });
                     }}
                   >
-                    <SelectTrigger className="h-12 text-lg">
+                    <SelectTrigger className="h-10 w-full">
                       <SelectValue placeholder="Select currency" />
                     </SelectTrigger>
                     <SelectContent>
@@ -374,7 +379,7 @@ export default function TransfersSection() {
                         <SelectItem
                           key={currency.code}
                           value={currency.code}
-                          className="text-lg py-3"
+                          className="py-2"
                         >
                           {currency.symbol} {currency.name} ({currency.code})
                         </SelectItem>
@@ -383,15 +388,15 @@ export default function TransfersSection() {
                   </Select>
                 </div>
 
-                <div className="text-center">
-                  <ArrowLeftRight className="w-8 h-8 mx-auto text-[#F26623] mb-2" />
-                  <p className="text-sm text-gray-500">
+                <div className="flex flex-col items-center justify-center px-4 py-2">
+                  <ArrowLeftRight className="w-6 h-6 text-[#F26623] mb-1" />
+                  <p className="text-xs text-gray-500 whitespace-nowrap">
                     Rate: {exchangeRate.toFixed(4)}
                   </p>
                 </div>
 
-                <div>
-                  <Label className="text-lg font-medium mb-3 block">
+                <div className="flex-1 w-full">
+                  <Label className="text-sm font-medium mb-2 block text-gray-700">
                     To Currency
                   </Label>
                   <Select
@@ -401,7 +406,7 @@ export default function TransfersSection() {
                       setFormData({ ...formData, to_currency: value });
                     }}
                   >
-                    <SelectTrigger className="h-12 text-lg">
+                    <SelectTrigger className="h-10 w-full">
                       <SelectValue placeholder="Select currency" />
                     </SelectTrigger>
                     <SelectContent>
@@ -409,7 +414,7 @@ export default function TransfersSection() {
                         <SelectItem
                           key={currency.code}
                           value={currency.code}
-                          className="text-lg py-3"
+                          className="py-2"
                         >
                           {currency.symbol} {currency.name} ({currency.code})
                         </SelectItem>
@@ -419,9 +424,10 @@ export default function TransfersSection() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-6">
+              {/* Amount Input Row */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-lg font-medium mb-3 block">
+                  <Label className="text-sm font-medium mb-2 block text-gray-700">
                     Amount to Transfer
                   </Label>
                   <Input
@@ -432,17 +438,17 @@ export default function TransfersSection() {
                       setFormData({ ...formData, amount: e.target.value })
                     }
                     placeholder="0.00"
-                    className="h-12 text-lg"
+                    className="h-10"
                   />
                 </div>
                 <div>
-                  <Label className="text-lg font-medium mb-3 block">
+                  <Label className="text-sm font-medium mb-2 block text-gray-700">
                     You Will Receive
                   </Label>
                   <Input
                     value={estimatedAmount.toFixed(2)}
                     readOnly
-                    className="bg-gray-50 font-medium h-12 text-lg"
+                    className="bg-gray-50 font-medium h-10"
                   />
                 </div>
               </div>
@@ -455,7 +461,7 @@ export default function TransfersSection() {
                   !formData.amount ||
                   loading
                 }
-                className="w-full bg-[#F26623] hover:bg-[#E55A1F] h-14 text-lg font-semibold"
+                className="w-full bg-[#F26623] hover:bg-[#E55A1F] h-11 font-semibold"
               >
                 Execute Transfer
               </Button>
@@ -463,46 +469,50 @@ export default function TransfersSection() {
           </Card>
         </div>
 
-        {/* Right Column - Transfer History */}
-        <div className="xl:col-span-1">
-          <Card className="shadow-lg h-fit">
-            <CardHeader className="pb-6">
-              <CardTitle className="text-2xl">Transfer History</CardTitle>
+        {/* Transfer History - Right Side */}
+        <div className="w-full lg:w-80 xl:w-96">
+          <Card className="border border-gray-200 shadow-sm h-fit">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-xl font-semibold text-gray-800">
+                Transfer History
+              </CardTitle>
             </CardHeader>
-            <CardContent className="p-6">
+            <CardContent className="p-4">
               {transfers.length === 0 ? (
-                <p className="text-gray-500 text-center py-8 text-lg">
+                <p className="text-gray-500 text-center py-8">
                   No transfers yet
                 </p>
               ) : (
-                <div className="space-y-4 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
+                <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar pr-2">
                   {transfers.map((transfer) => (
                     <div
                       key={transfer.id}
-                      className="p-5 border rounded-lg space-y-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+                      className="p-4 border border-gray-100 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
                     >
-                      <div>
-                        <p className="font-semibold text-base text-gray-900">
-                          {transfer.from_currency} → {transfer.to_currency}
-                        </p>
-                        <p className="text-sm text-gray-600 mt-1">
-                          {Number(transfer.from_amount).toLocaleString()}{" "}
-                          {transfer.from_currency} →{" "}
-                          {Number(transfer.to_amount).toLocaleString()}{" "}
-                          {transfer.to_currency}
-                        </p>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <p className="text-sm text-gray-500">
-                          {new Date(transfer.created_at).toLocaleDateString()}
-                        </p>
-                        <p className="text-sm font-semibold text-green-600 bg-green-100 px-2 py-1 rounded">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <p className="font-medium text-sm text-gray-900">
+                            {transfer.from_currency} → {transfer.to_currency}
+                          </p>
+                          <p className="text-xs text-gray-600 mt-1">
+                            {Number(transfer.from_amount).toLocaleString()}{" "}
+                            {transfer.from_currency} →{" "}
+                            {Number(transfer.to_amount).toLocaleString()}{" "}
+                            {transfer.to_currency}
+                          </p>
+                        </div>
+                        <span className="text-xs font-medium text-green-600 bg-green-100 px-2 py-1 rounded-full">
                           {transfer.status}
-                        </p>
+                        </span>
                       </div>
-                      <p className="text-sm text-gray-500 bg-white px-2 py-1 rounded">
-                        Rate: {Number(transfer.exchange_rate).toFixed(4)}
-                      </p>
+                      <div className="flex justify-between items-center text-xs text-gray-500">
+                        <span>
+                          {new Date(transfer.created_at).toLocaleDateString()}
+                        </span>
+                        <span>
+                          Rate: {Number(transfer.exchange_rate).toFixed(4)}
+                        </span>
+                      </div>
                     </div>
                   ))}
                 </div>

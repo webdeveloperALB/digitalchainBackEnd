@@ -50,7 +50,7 @@ export default function Sidebar({
   return (
     <div className="w-64 bg-[#F5F0F0] h-screen flex flex-col">
       {/* Logo Section */}
-      <div className="px-6 py-8">
+      <div className="px-6">
         <div className="flex items-center">
           <Image
             src="/logo.svg"
