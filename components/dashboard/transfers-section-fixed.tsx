@@ -366,7 +366,7 @@ export default function TransfersSection() {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
             <Card className="balance-card">
               <CardContent className="p-4 text-center">
-                <div className="w-10 h-10 bg-gradient-to-br from-green-400 to-green-500 rounded-full flex items-center justify-center mx-auto mb-3">
+                <div className="w-10 h-10 bg-[#F26623] rounded-full flex items-center justify-center mx-auto mb-3">
                   <span className="text-white text-lg font-bold">$</span>
                 </div>
                 <p className="text-xs text-slate-600 mb-1 font-medium">
@@ -380,7 +380,7 @@ export default function TransfersSection() {
 
             <Card className="balance-card">
               <CardContent className="p-4 text-center">
-                <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-500 rounded-full flex items-center justify-center mx-auto mb-3">
+                <div className="w-10 h-10 bg-[#F26623] rounded-full flex items-center justify-center mx-auto mb-3">
                   <span className="text-white text-lg font-bold">€</span>
                 </div>
                 <p className="text-xs text-slate-600 mb-1 font-medium">Euro</p>
@@ -392,7 +392,7 @@ export default function TransfersSection() {
 
             <Card className="balance-card">
               <CardContent className="p-4 text-center">
-                <div className="w-10 h-10 bg-gradient-to-br from-red-400 to-red-500 rounded-full flex items-center justify-center mx-auto mb-3">
+                <div className="w-10 h-10 bg-[#F26623] rounded-full flex items-center justify-center mx-auto mb-3">
                   <span className="text-white text-lg font-bold">C$</span>
                 </div>
                 <p className="text-xs text-slate-600 mb-1 font-medium">
@@ -406,7 +406,7 @@ export default function TransfersSection() {
 
             <Card className="balance-card">
               <CardContent className="p-4 text-center">
-                <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-orange-500 rounded-full flex items-center justify-center mx-auto mb-3">
+                <div className="w-10 h-10 bg-[#F26623] rounded-full flex items-center justify-center mx-auto mb-3">
                   <span className="text-white text-lg font-bold">₿</span>
                 </div>
                 <p className="text-xs text-slate-600 mb-1 font-medium">
@@ -423,7 +423,7 @@ export default function TransfersSection() {
           <Card className="transfer-form">
             <CardHeader className="pb-4">
               <CardTitle className="text-xl font-bold text-slate-800 flex items-center gap-3">
-                <div className="w-8 h-8 bg-gradient-to-br from-[#F26623] to-[#E55A1F] rounded-lg flex items-center justify-center">
+                <div className="w-8 h-8 bg-[#F26623] rounded-lg flex items-center justify-center">
                   <ArrowLeftRight className="w-4 h-4 text-white" />
                 </div>
                 New Transfer
@@ -470,7 +470,7 @@ export default function TransfersSection() {
                 </div>
 
                 <div className="flex flex-col items-center justify-center px-6 py-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-[#F26623] to-[#E55A1F] rounded-full flex items-center justify-center mb-2">
+                  <div className="w-12 h-12 bg-[#F26623] rounded-full flex items-center justify-center mb-2">
                     <ArrowLeftRight className="w-6 h-6 text-white" />
                   </div>
                   <div className="currency-badge text-white px-3 py-1 rounded-full text-sm font-medium">
@@ -550,7 +550,7 @@ export default function TransfersSection() {
                   !formData.amount ||
                   loading
                 }
-                className="w-full h-14 text-lg font-semibold bg-gradient-to-r from-[#F26623] to-[#E55A1F] hover:from-[#E55A1F] hover:to-[#D4501B] transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl"
+                className="w-full h-14 text-lg font-semibold bg-[#F26623] hover:from-[#E55A1F] hover:to-[#D4501B] transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl"
               >
                 Execute Transfer
               </Button>
@@ -563,9 +563,6 @@ export default function TransfersSection() {
           <Card className="history-card sticky top-8">
             <CardHeader className="pb-6">
               <CardTitle className="text-2xl font-bold text-slate-800 flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-purple-500 rounded-lg flex items-center justify-center">
-                  <span className="text-white text-sm font-bold">📊</span>
-                </div>
                 Transfer History
               </CardTitle>
               <p className="text-slate-600 mt-2">Your recent transactions</p>
