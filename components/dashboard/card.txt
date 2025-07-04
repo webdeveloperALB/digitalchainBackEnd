@@ -1,10 +1,25 @@
 "use client";
+
 import { useState, useEffect } from "react";
+
 import { supabase } from "@/lib/supabase";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
 import { Button } from "@/components/ui/button";
+
 import { Input } from "@/components/ui/input";
+
 import { Label } from "@/components/ui/label";
+
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
 import {
   CreditCard,
   Eye,
@@ -26,9 +41,12 @@ export default function CardSection() {
     [key: string]: boolean;
   }>({});
   const [formData, setFormData] = useState({
+    card_type: "Virtual",
     spending_limit: "5000",
     daily_limit: "1000",
     international_enabled: false,
+    delivery_address: "",
+    card_design: "orange-gradient",
   });
 
   useEffect(() => {
@@ -40,13 +58,16 @@ export default function CardSection() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
+
       if (user) {
         const { data, error } = await supabase
           .from("cards")
           .select("*")
           .eq("user_id", user.id)
           .order("created_at", { ascending: false });
+
         if (error) throw error;
+
         setCards(data || []);
       }
     } catch (error) {
@@ -87,6 +108,7 @@ export default function CardSection() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
+
       if (user) {
         const { data: profile } = await supabase
           .from("profiles")
@@ -103,24 +125,34 @@ export default function CardSection() {
           cvv: generateCVV(),
           pin: generatePIN(),
           account_number: generateAccountNumber(),
-          card_type: "Virtual",
-          card_design: "orange-gradient",
+          card_type: formData.card_type,
+          card_design: formData.card_design,
           spending_limit: Number.parseFloat(formData.spending_limit),
           daily_limit: Number.parseFloat(formData.daily_limit),
           international_enabled: formData.international_enabled,
-          delivery_address: null,
-          expected_delivery: null,
+          delivery_address:
+            formData.card_type === "Physical"
+              ? formData.delivery_address
+              : null,
+          expected_delivery:
+            formData.card_type === "Physical"
+              ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+              : null,
           status: "Pending",
           is_activated: false,
         };
 
         const { error } = await supabase.from("cards").insert(cardData);
+
         if (error) throw error;
 
         setFormData({
+          card_type: "Virtual",
           spending_limit: "5000",
           daily_limit: "1000",
           international_enabled: false,
+          delivery_address: "",
+          card_design: "orange-gradient",
         });
         setShowCardForm(false);
         fetchCards();
@@ -135,6 +167,7 @@ export default function CardSection() {
     try {
       const newStatus = currentStatus === "Active" ? "Frozen" : "Active";
       const updateData: any = { status: newStatus };
+
       if (
         newStatus === "Active" &&
         !cards.find((c) => c.id === cardId)?.is_activated
@@ -226,10 +259,64 @@ export default function CardSection() {
         {showCardForm && (
           <Card>
             <CardHeader>
-              <CardTitle>Request New Virtual Card</CardTitle>
+              <CardTitle>Request New Card</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label>Card Type</Label>
+                  <Select
+                    value={formData.card_type}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, card_type: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Virtual">Virtual Card</SelectItem>
+                      <SelectItem value="Physical">Physical Card</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Card Design</Label>
+                  <Select
+                    value={formData.card_design}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, card_design: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="orange-gradient">
+                        Orange Gradient
+                      </SelectItem>
+                      <SelectItem value="blue-gradient">
+                        Blue Gradient
+                      </SelectItem>
+                      <SelectItem value="red-gradient">Red Gradient</SelectItem>
+                      <SelectItem value="green-gradient">
+                        Green Gradient
+                      </SelectItem>
+                      <SelectItem value="purple-gradient">
+                        Purple Gradient
+                      </SelectItem>
+                      <SelectItem value="pink-gradient">
+                        Pink Gradient
+                      </SelectItem>
+                      <SelectItem value="black-gradient">
+                        Black Gradient
+                      </SelectItem>
+                      <SelectItem value="gold-gradient">
+                        Gold Gradient
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div>
                   <Label>Spending Limit</Label>
                   <Input
@@ -276,10 +363,32 @@ export default function CardSection() {
                   </Label>
                 </div>
               </div>
+
+              {formData.card_type === "Physical" && (
+                <div>
+                  <Label>Delivery Address</Label>
+                  <Input
+                    value={formData.delivery_address}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        delivery_address: e.target.value,
+                      })
+                    }
+                    placeholder="Enter your delivery address"
+                    required
+                  />
+                </div>
+              )}
+
               <div className="flex gap-2">
                 <Button
                   onClick={createCard}
                   className="bg-[#F26623] hover:bg-[#E55A1F]"
+                  disabled={
+                    formData.card_type === "Physical" &&
+                    !formData.delivery_address
+                  }
                 >
                   Create Card
                 </Button>
@@ -308,51 +417,51 @@ export default function CardSection() {
           ) : (
             cards.map((card) => (
               <div key={card.id} className="space-y-4">
-                {/* Card Visual - Only show if status is Approved */}
-                {card.status !== "Pending" && (
-                  <div className="flex ">
-                    <div
-                      className={`w-full max-w-sm bg-gradient-to-r ${getCardColor(
-                        card.card_design
-                      )} rounded-xl p-6 text-white shadow-lg pointer-events-none`}
-                    >
-                      <div className="flex justify-between items-start mb-8">
-                        <div>
-                          <p className="text-sm opacity-80">
-                            {card.issuer || "Digital Chain Bank"}
-                          </p>
-                          <p className="text-xs opacity-60">
-                            {card.card_type} • {card.network || "Visa"}
-                          </p>
-                        </div>
-                        <div className="w-8 h-8 bg-white rounded-full opacity-80"></div>
-                      </div>
-                      <div className="mb-6">
-                        <p className="text-lg font-mono tracking-wider break-all">
-                          {formatCardNumber(
-                            card.card_number,
-                            showCardDetails[card.id]
-                          )}
+                {/* Card Visual */}
+                <div className="flex ">
+                  <div
+                    className={`w-full max-w-sm bg-gradient-to-r ${getCardColor(
+                      card.card_design
+                    )} rounded-xl p-6 text-white shadow-lg pointer-events-none`}
+                  >
+                    <div className="flex justify-between items-start mb-8">
+                      <div>
+                        <p className="text-sm opacity-80">
+                          {card.issuer || "Digital Chain Bank"}
+                        </p>
+                        <p className="text-xs opacity-60">
+                          {card.card_type} • {card.network || "Visa"}
                         </p>
                       </div>
-                      <div className="flex justify-between items-end">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs opacity-60">CARD HOLDER</p>
-                          <p className="text-sm font-medium truncate">
-                            {card.card_holder_name}
-                          </p>
-                        </div>
-                        <div className="ml-4">
-                          <p className="text-xs opacity-60">EXPIRES</p>
-                          <p className="text-sm font-medium">
-                            {card.expiry_month.toString().padStart(2, "0")}/
-                            {card.expiry_year.toString().slice(-2)}
-                          </p>
-                        </div>
+                      <div className="w-8 h-8 bg-white rounded-full opacity-80"></div>
+                    </div>
+
+                    <div className="mb-6">
+                      <p className="text-lg font-mono tracking-wider break-all">
+                        {formatCardNumber(
+                          card.card_number,
+                          showCardDetails[card.id]
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="flex justify-between items-end">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs opacity-60">CARD HOLDER</p>
+                        <p className="text-sm font-medium truncate">
+                          {card.card_holder_name}
+                        </p>
+                      </div>
+                      <div className="ml-4">
+                        <p className="text-xs opacity-60">EXPIRES</p>
+                        <p className="text-sm font-medium">
+                          {card.expiry_month.toString().padStart(2, "0")}/
+                          {card.expiry_year.toString().slice(-2)}
+                        </p>
                       </div>
                     </div>
                   </div>
-                )}
+                </div>
 
                 {/* Card Controls */}
                 <Card className="relative">
@@ -371,8 +480,6 @@ export default function CardSection() {
                               ? "text-green-600"
                               : card.status === "Pending"
                               ? "text-yellow-600"
-                              : card.status === "Approved"
-                              ? "text-blue-600"
                               : "text-red-600"
                           }`}
                         >
@@ -464,6 +571,10 @@ export default function CardSection() {
                           Card Settings:
                         </p>
                         <p className="text-sm">
+                          <span className="font-medium">Design:</span>{" "}
+                          {card.card_design}
+                        </p>
+                        <p className="text-sm">
                           <span className="font-medium">International:</span>{" "}
                           {card.international_enabled ? "Enabled" : "Disabled"}
                         </p>
@@ -474,6 +585,10 @@ export default function CardSection() {
                         <p className="text-sm">
                           <span className="font-medium">Online Payments:</span>{" "}
                           {card.online_enabled ? "Enabled" : "Disabled"}
+                        </p>
+                        <p className="text-sm">
+                          <span className="font-medium">ATM Limit:</span> $
+                          {Number(card.atm_limit).toLocaleString()}
                         </p>
                         {card.delivery_address && (
                           <p className="text-sm break-words">

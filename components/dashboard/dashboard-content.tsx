@@ -627,7 +627,7 @@ export default function DashboardContent({
             className="h-16"
           >
             <Bitcoin className="h-5 w-5 mr-2" />
-            Trade Crypto
+            Withdrawl Crypto
           </Button>
           <Button
             onClick={() => setActiveTab("card")}
