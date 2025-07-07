@@ -1,39 +1,55 @@
 // Real-time exchange rate service
 export interface ExchangeRates {
-  fiat: { [key: string]: number }
-  crypto: { [key: string]: number }
-  lastUpdated: number
+  fiat: { [key: string]: number };
+  crypto: { [key: string]: number };
+  lastUpdated: number;
 }
 
 export class ExchangeRateService {
-  private static instance: ExchangeRateService
-  private rates: ExchangeRates = { fiat: {}, crypto: {}, lastUpdated: 0 }
-  private updateInterval: NodeJS.Timeout | null = null
-  private listeners: ((rates: ExchangeRates) => void)[] = []
+  private static instance: ExchangeRateService;
+  private rates: ExchangeRates = { fiat: {}, crypto: {}, lastUpdated: 0 };
+  private updateInterval: NodeJS.Timeout | null = null;
+  private listeners: ((rates: ExchangeRates) => void)[] = [];
 
   static getInstance(): ExchangeRateService {
     if (!ExchangeRateService.instance) {
-      ExchangeRateService.instance = new ExchangeRateService()
+      ExchangeRateService.instance = new ExchangeRateService();
     }
-    return ExchangeRateService.instance
+    return ExchangeRateService.instance;
   }
 
   async initialize() {
-    await this.updateRates()
-    this.startAutoUpdate()
+    await this.updateRates();
+    this.startAutoUpdate();
   }
 
   private async updateRates() {
     try {
-      // Fetch fiat exchange rates (using ExchangeRate-API - free tier)
-      const fiatResponse = await fetch('https://api.exchangerate-api.com/v4/latest/USD')
-      const fiatData = await fiatResponse.json()
-      
-      // Fetch crypto prices (using CoinGecko API - free)
+      // --- Fetch fiat exchange rates ---
+      const fiatResponse = await fetch(
+        "https://api.exchangerate-api.com/v4/latest/USD"
+      );
+
+      if (!fiatResponse.ok) {
+        throw new Error(
+          `ExchangeRate-API error: ${fiatResponse.status} ${fiatResponse.statusText}`
+        );
+      }
+
+      const fiatData = await fiatResponse.json();
+
+      // --- Fetch crypto prices ---
       const cryptoResponse = await fetch(
-        'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,cardano,polkadot,chainlink&vs_currencies=usd'
-      )
-      const cryptoData = await cryptoResponse.json()
+        "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,cardano,polkadot,chainlink&vs_currencies=usd"
+      );
+
+      if (!cryptoResponse.ok) {
+        throw new Error(
+          `CoinGecko API error: ${cryptoResponse.status} ${cryptoResponse.statusText}`
+        );
+      }
+
+      const cryptoData = await cryptoResponse.json();
 
       this.rates = {
         fiat: {
@@ -44,7 +60,7 @@ export class ExchangeRateService {
           JPY: 1 / fiatData.rates.JPY,
           AUD: 1 / fiatData.rates.AUD,
           CHF: 1 / fiatData.rates.CHF,
-          ...fiatData.rates
+          ...fiatData.rates,
         },
         crypto: {
           BTC: cryptoData.bitcoin?.usd || 50000,
@@ -53,80 +69,83 @@ export class ExchangeRateService {
           DOT: cryptoData.polkadot?.usd || 7,
           LINK: cryptoData.chainlink?.usd || 15,
         },
-        lastUpdated: Date.now()
-      }
+        lastUpdated: Date.now(),
+      };
 
-      // Notify all listeners
-      this.listeners.forEach(listener => listener(this.rates))
-      
-      console.log('Exchange rates updated:', new Date().toLocaleTimeString())
-    } catch (error) {
-      console.error('Failed to update exchange rates:', error)
+      // Notify listeners
+      this.listeners.forEach((listener) => listener(this.rates));
+      console.log("Exchange rates updated:", new Date().toLocaleTimeString());
+    } catch (error: any) {
+      console.error("Failed to update exchange rates:", error.message || error);
     }
   }
 
   private startAutoUpdate() {
     // Update every 30 seconds for real-time rates
     this.updateInterval = setInterval(() => {
-      this.updateRates()
-    }, 30000)
+      this.updateRates();
+    }, 30000);
   }
 
   subscribe(listener: (rates: ExchangeRates) => void) {
-    this.listeners.push(listener)
+    this.listeners.push(listener);
     // Immediately call with current rates
     if (this.rates.lastUpdated > 0) {
-      listener(this.rates)
+      listener(this.rates);
     }
-    
+
     // Return unsubscribe function
     return () => {
-      this.listeners = this.listeners.filter(l => l !== listener)
-    }
+      this.listeners = this.listeners.filter((l) => l !== listener);
+    };
   }
 
   getRates(): ExchangeRates {
-    return this.rates
+    return this.rates;
   }
 
-  convertCurrency(amount: number, fromCurrency: string, toCurrency: string): number {
-    if (fromCurrency === toCurrency) return amount
+  convertCurrency(
+    amount: number,
+    fromCurrency: string,
+    toCurrency: string
+  ): number {
+    if (fromCurrency === toCurrency) return amount;
 
-    const fromUpper = fromCurrency.toUpperCase()
-    const toUpper = toCurrency.toUpperCase()
+    const fromUpper = fromCurrency.toUpperCase();
+    const toUpper = toCurrency.toUpperCase();
 
     // Get USD value first
-    let usdValue = amount
+    let usdValue = amount;
 
     // Convert from source currency to USD
-    if (fromUpper !== 'USD') {
+    if (fromUpper !== "USD") {
       if (this.rates.fiat[fromUpper]) {
-        usdValue = amount / this.rates.fiat[fromUpper]
+        usdValue = amount / this.rates.fiat[fromUpper];
       } else if (this.rates.crypto[fromUpper]) {
-        usdValue = amount * this.rates.crypto[fromUpper]
+        usdValue = amount * this.rates.crypto[fromUpper];
       }
     }
 
     // Convert from USD to target currency
-    if (toUpper === 'USD') {
-      return usdValue
+    if (toUpper === "USD") {
+      return usdValue;
     } else if (this.rates.fiat[toUpper]) {
-      return usdValue * this.rates.fiat[toUpper]
+      return usdValue * this.rates.fiat[toUpper];
     } else if (this.rates.crypto[toUpper]) {
-      return usdValue / this.rates.crypto[toUpper]
+      return usdValue / this.rates.crypto[toUpper];
     }
 
-    return amount // Fallback
+    return amount; // Fallback
   }
 
   getExchangeRate(fromCurrency: string, toCurrency: string): number {
-    return this.convertCurrency(1, fromCurrency, toCurrency)
+    return this.convertCurrency(1, fromCurrency, toCurrency);
   }
 
   cleanup() {
     if (this.updateInterval) {
-      clearInterval(this.updateInterval)
+      clearInterval(this.updateInterval);
     }
-    this.listeners = []
+    this.listeners = [];
   }
 }

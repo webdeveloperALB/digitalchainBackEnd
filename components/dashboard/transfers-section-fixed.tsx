@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRealtimeData } from "@/hooks/use-realtime-data";
@@ -105,7 +104,6 @@ export default function TransfersSection() {
   });
 
   const [activeTab, setActiveTab] = useState("internal");
-
   const [exchangeRate, setExchangeRate] = useState<number>(1);
   const [estimatedAmount, setEstimatedAmount] = useState<number>(0);
   const [transferFee, setTransferFee] = useState<number>(0);
@@ -114,7 +112,6 @@ export default function TransfersSection() {
     fetchTransfers();
     initializeCurrencies();
     initializeExchangeRates();
-
     return () => {
       exchangeRateService.cleanup();
     };
@@ -122,12 +119,10 @@ export default function TransfersSection() {
 
   const initializeExchangeRates = async () => {
     await exchangeRateService.initialize();
-
     // Subscribe to rate updates
     const unsubscribe = exchangeRateService.subscribe((rates) => {
       setLiveRates(rates);
     });
-
     return unsubscribe;
   };
 
@@ -158,12 +153,14 @@ export default function TransfersSection() {
 
   const getDatabaseCurrencies = () => {
     return currencies.filter((c) =>
-      ["USD", "EUR", "CAD", "BTC", "ETH", "ADA", "DOT", "LINK"].includes(c.code)
+      ["USD", "EUR", "CAD", "BTC"].includes(c.code)
     );
   };
 
   const getBankTransferCurrencies = () => {
-    return currencies.filter((c) => c.type === "fiat");
+    return currencies.filter((c) =>
+      ["USD", "EUR", "CAD", "BTC"].includes(c.code)
+    );
   };
 
   // Modify the existing useEffect to handle both forms
@@ -246,6 +243,8 @@ export default function TransfersSection() {
           .from("transfers")
           .select("*")
           .eq("user_id", user.id)
+          // Filter to only show transfers created by this component
+          .in("transfer_type", ["internal", "bank_transfer"])
           .order("created_at", { ascending: false });
 
         if (error) throw error;
@@ -311,6 +310,7 @@ export default function TransfersSection() {
 
       const fromBalanceKey = getBalanceKey(fromCurrency);
       const toBalanceKey = getBalanceKey(toCurrency);
+
       const currentFromBalance = balances[fromBalanceKey] || 0;
       const currentToBalance = balances[toBalanceKey] || 0;
 
@@ -668,6 +668,7 @@ export default function TransfersSection() {
                   </p>
                 </CardContent>
               </Card>
+
               <Card className="balance-card">
                 <CardContent className="p-4 text-center">
                   <div className="w-10 h-10 bg-[#F26623] rounded-full flex items-center justify-center mx-auto mb-3">
@@ -681,6 +682,7 @@ export default function TransfersSection() {
                   </p>
                 </CardContent>
               </Card>
+
               <Card className="balance-card">
                 <CardContent className="p-4 text-center">
                   <div className="w-10 h-10 bg-[#F26623] rounded-full flex items-center justify-center mx-auto mb-3">
@@ -694,6 +696,7 @@ export default function TransfersSection() {
                   </p>
                 </CardContent>
               </Card>
+
               <Card className="balance-card">
                 <CardContent className="p-4 text-center">
                   <div className="w-10 h-10 bg-gradient-to-r from-orange-500 to-yellow-500 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -779,6 +782,7 @@ export default function TransfersSection() {
                           </SelectContent>
                         </Select>
                       </div>
+
                       <div className="flex flex-col items-center justify-center px-6 py-4">
                         <div className="w-12 h-12 bg-[#F26623] rounded-full flex items-center justify-center mb-2">
                           <ArrowLeftRight className="w-6 h-6 text-white" />
@@ -793,6 +797,7 @@ export default function TransfersSection() {
                           </div>
                         )}
                       </div>
+
                       <div className="flex-1 w-full">
                         <Label className="text-sm font-semibold mb-3 block text-slate-700">
                           To Currency
@@ -911,6 +916,7 @@ export default function TransfersSection() {
                           </SelectContent>
                         </Select>
                       </div>
+
                       <div className="flex flex-col items-center justify-center px-6 py-4">
                         <div className="w-12 h-12 bg-[#F26623] rounded-full flex items-center justify-center mb-2">
                           <Building2 className="w-6 h-6 text-white" />
@@ -925,6 +931,7 @@ export default function TransfersSection() {
                           </div>
                         )}
                       </div>
+
                       <div className="flex-1 w-full">
                         <Label className="text-sm font-semibold mb-3 block text-slate-700">
                           To Currency
@@ -1003,7 +1010,6 @@ export default function TransfersSection() {
                       <h3 className="text-lg font-semibold text-slate-800 mb-4">
                         Bank Details
                       </h3>
-
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <Label className="text-sm font-semibold mb-2 block text-slate-700">
@@ -1102,7 +1108,6 @@ export default function TransfersSection() {
                           />
                         </div>
                       </div>
-
                       <div>
                         <Label className="text-sm font-semibold mb-2 block text-slate-700">
                           Bank Address
@@ -1120,7 +1125,6 @@ export default function TransfersSection() {
                           rows={2}
                         />
                       </div>
-
                       <div>
                         <Label className="text-sm font-semibold mb-2 block text-slate-700">
                           Recipient Address
@@ -1138,7 +1142,6 @@ export default function TransfersSection() {
                           rows={2}
                         />
                       </div>
-
                       <div>
                         <Label className="text-sm font-semibold mb-2 block text-slate-700">
                           Purpose of Transfer

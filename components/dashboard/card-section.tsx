@@ -1,4 +1,5 @@
 "use client";
+
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -135,6 +136,7 @@ export default function CardSection() {
     try {
       const newStatus = currentStatus === "Active" ? "Frozen" : "Active";
       const updateData: any = { status: newStatus };
+
       if (
         newStatus === "Active" &&
         !cards.find((c) => c.id === cardId)?.is_activated
@@ -171,7 +173,36 @@ export default function CardSection() {
     }));
   };
 
-  const formatCardNumber = (cardNumber: string, show: boolean) => {
+  // Function to mask card information for pending cards
+  const getMaskedCardInfo = (card: any, field: string) => {
+    if (card.status === "Pending") {
+      switch (field) {
+        case "cardNumber":
+          return "**** **** **** ****";
+        case "cvv":
+          return "***";
+        case "pin":
+          return "****";
+        case "expiryMonth":
+          return "**";
+        case "expiryYear":
+          return "**";
+        case "accountNumber":
+          return "************";
+        default:
+          return "****";
+      }
+    }
+    return null; // Return null for approved cards to show real data
+  };
+
+  const formatCardNumber = (cardNumber: string, show: boolean, card: any) => {
+    // If card is pending, always show masked version
+    if (card.status === "Pending") {
+      return "**** **** **** ****";
+    }
+
+    // For approved cards, follow the show/hide logic
     if (show) {
       return cardNumber.replace(/(.{4})/g, "$1 ").trim();
     }
@@ -308,51 +339,71 @@ export default function CardSection() {
           ) : (
             cards.map((card) => (
               <div key={card.id} className="space-y-4">
-                {/* Card Visual - Only show if status is Approved */}
-                {card.status !== "Pending" && (
-                  <div className="flex ">
-                    <div
-                      className={`w-full max-w-sm bg-gradient-to-r ${getCardColor(
-                        card.card_design
-                      )} rounded-xl p-6 text-white shadow-lg pointer-events-none`}
-                    >
-                      <div className="flex justify-between items-start mb-8">
-                        <div>
-                          <p className="text-sm opacity-80">
-                            {card.issuer || "Digital Chain Bank"}
-                          </p>
-                          <p className="text-xs opacity-60">
-                            {card.card_type} • {card.network || "Visa"}
+                {/* Card Visual - Now shows for all cards */}
+                <div className="flex">
+                  <div
+                    className={`w-full max-w-sm bg-gradient-to-r ${getCardColor(
+                      card.card_design
+                    )} rounded-xl p-6 text-white shadow-lg pointer-events-none relative`}
+                  >
+                    {/* Pending overlay */}
+                    {card.status === "Pending" && (
+                      <div className="absolute inset-0 bg-black bg-opacity-30 rounded-xl flex items-center justify-center">
+                        <div className="text-center">
+                          <Lock className="w-8 h-8 mx-auto mb-2 opacity-80" />
+                          <p className="text-sm font-medium opacity-90">
+                            PENDING APPROVAL
                           </p>
                         </div>
-                        <div className="w-8 h-8 bg-white rounded-full opacity-80"></div>
                       </div>
-                      <div className="mb-6">
-                        <p className="text-lg font-mono tracking-wider break-all">
-                          {formatCardNumber(
-                            card.card_number,
-                            showCardDetails[card.id]
-                          )}
+                    )}
+
+                    <div className="flex justify-between items-start mb-8">
+                      <div>
+                        <p className="text-sm opacity-80">
+                          {card.issuer || "Digital Chain Bank"}
+                        </p>
+                        <p className="text-xs opacity-60">
+                          {card.card_type} • {card.network || "Visa"}
                         </p>
                       </div>
-                      <div className="flex justify-between items-end">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs opacity-60">CARD HOLDER</p>
-                          <p className="text-sm font-medium truncate">
-                            {card.card_holder_name}
-                          </p>
-                        </div>
-                        <div className="ml-4">
-                          <p className="text-xs opacity-60">EXPIRES</p>
-                          <p className="text-sm font-medium">
-                            {card.expiry_month.toString().padStart(2, "0")}/
-                            {card.expiry_year.toString().slice(-2)}
-                          </p>
-                        </div>
+                      <div className="w-8 h-8 bg-white rounded-full opacity-80"></div>
+                    </div>
+
+                    <div className="mb-6">
+                      <p className="text-lg font-mono tracking-wider break-all">
+                        {formatCardNumber(
+                          card.card_number,
+                          showCardDetails[card.id],
+                          card
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="flex justify-between items-end">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs opacity-60">CARD HOLDER</p>
+                        <p className="text-sm font-medium truncate">
+                          {card.status === "Pending"
+                            ? "******* ******"
+                            : card.card_holder_name}
+                        </p>
+                      </div>
+                      <div className="ml-4">
+                        <p className="text-xs opacity-60">EXPIRES</p>
+                        <p className="text-sm font-medium">
+                          {card.status === "Pending"
+                            ? "**/**"
+                            : `${card.expiry_month
+                                .toString()
+                                .padStart(2, "0")}/${card.expiry_year
+                                .toString()
+                                .slice(-2)}`}
+                        </p>
                       </div>
                     </div>
                   </div>
-                )}
+                </div>
 
                 {/* Card Controls */}
                 <Card className="relative">
@@ -387,6 +438,12 @@ export default function CardSection() {
                           variant="outline"
                           size="icon"
                           onClick={() => toggleCardDetails(card.id)}
+                          disabled={card.status === "Pending"}
+                          className={
+                            card.status === "Pending"
+                              ? "opacity-50 cursor-not-allowed"
+                              : ""
+                          }
                         >
                           {showCardDetails[card.id] ? (
                             <EyeOff className="w-4 h-4" />
@@ -425,7 +482,7 @@ export default function CardSection() {
                       </div>
                     </div>
 
-                    {showCardDetails[card.id] && (
+                    {showCardDetails[card.id] && card.status !== "Pending" && (
                       <div className="border-t pt-4 space-y-2">
                         <p className="text-sm break-all">
                           <span className="font-medium">Full Number:</span>{" "}
@@ -455,6 +512,20 @@ export default function CardSection() {
                             {new Date(card.activated_at).toLocaleDateString()}
                           </p>
                         )}
+                      </div>
+                    )}
+
+                    {card.status === "Pending" && (
+                      <div className="border-t pt-4">
+                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                          <div className="flex items-center">
+                            <Lock className="w-4 h-4 text-yellow-600 mr-2" />
+                            <p className="text-sm text-yellow-800">
+                              Card details will be available once approved by
+                              admin
+                            </p>
+                          </div>
+                        </div>
                       </div>
                     )}
 
