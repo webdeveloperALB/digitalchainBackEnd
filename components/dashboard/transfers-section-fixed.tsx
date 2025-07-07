@@ -699,7 +699,7 @@ export default function TransfersSection() {
 
               <Card className="balance-card">
                 <CardContent className="p-4 text-center">
-                  <div className="w-10 h-10 bg-gradient-to-r from-orange-500 to-yellow-500 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <div className="w-10 h-10 bg-[#F26623] rounded-full flex items-center justify-center mx-auto mb-3">
                     <span className="text-white text-lg font-bold">₿</span>
                   </div>
                   <p className="text-xs text-slate-600 mb-1 font-medium">
