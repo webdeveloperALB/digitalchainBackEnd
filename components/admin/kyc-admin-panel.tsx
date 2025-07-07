@@ -297,6 +297,11 @@ export default function KYCAdminPanel() {
 
       // Extract just the filename from the path
       const fileName = cleanPath.split("/").pop();
+      if (!fileName) {
+        console.error("Could not extract filename from path:", cleanPath);
+        alert("Invalid file path - could not extract filename");
+        return;
+      }
       console.log("Extracted filename:", fileName);
 
       // Determine document type from path
@@ -325,8 +330,8 @@ export default function KYCAdminPanel() {
       // Try different path combinations based on your storage structure
       const pathsToTry = [
         cleanPath, // Original path
-        fileName, // Just filename
-        `${documentType}/${fileName}`, // document-type/filename
+        fileName, // Just filename (now guaranteed to exist)
+        documentType ? `${documentType}/${fileName}` : fileName, // document-type/filename
         cleanPath.replace(/^[^/]+\//, ""), // Remove first folder (user ID)
       ].filter(Boolean);
 
