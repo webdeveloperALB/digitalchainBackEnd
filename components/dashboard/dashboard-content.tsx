@@ -789,13 +789,6 @@ export default function DashboardContent({
               key={currency}
               className="hover:shadow-lg transition-shadow bg-[#F26623] relative overflow-hidden"
             >
-              {isNewUser && (
-                <div className="absolute top-2 right-2">
-                  <Badge className="bg-white text-[#F26623] text-xs">
-                    New!
-                  </Badge>
-                </div>
-              )}
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm text-white font-medium capitalize">
                   {currency} Balance

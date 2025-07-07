@@ -1,5 +1,4 @@
 "use client";
-
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -16,6 +15,7 @@ import BalanceUpdater from "./balance-updater";
 import MessageManager from "./message-manager";
 import DatabaseTest from "./database-test";
 import UserManagementTest from "./user-management-test";
+import KYCAdminPanel from "./kyc-admin-panel";
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState("overview");
@@ -40,17 +40,20 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Tabs
           value={activeTab}
           onValueChange={setActiveTab}
           className="space-y-6"
         >
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="overview" className="flex items-center">
               <Settings className="w-4 h-4 mr-2" />
               Overview
+            </TabsTrigger>
+            <TabsTrigger value="kyc" className="flex items-center">
+              <Shield className="w-4 h-4 mr-2" />
+              KYC
             </TabsTrigger>
             <TabsTrigger value="balances" className="flex items-center">
               <DollarSign className="w-4 h-4 mr-2" />
@@ -69,7 +72,6 @@ export default function AdminDashboard() {
               Database
             </TabsTrigger>
           </TabsList>
-
           <TabsContent value="overview" className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <Card>
@@ -86,7 +88,6 @@ export default function AdminDashboard() {
                   </p>
                 </CardContent>
               </Card>
-
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">
@@ -103,7 +104,6 @@ export default function AdminDashboard() {
                   </p>
                 </CardContent>
               </Card>
-
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">
@@ -120,7 +120,6 @@ export default function AdminDashboard() {
                   </p>
                 </CardContent>
               </Card>
-
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">
@@ -136,7 +135,6 @@ export default function AdminDashboard() {
                 </CardContent>
               </Card>
             </div>
-
             <Card>
               <CardHeader>
                 <CardTitle>Admin Panel Features</CardTitle>
@@ -171,19 +169,18 @@ export default function AdminDashboard() {
               </CardContent>
             </Card>
           </TabsContent>
-
+          <TabsContent value="kyc">
+            <KYCAdminPanel />
+          </TabsContent>
           <TabsContent value="balances">
             <BalanceUpdater />
           </TabsContent>
-
           <TabsContent value="messages">
             <MessageManager />
           </TabsContent>
-
           <TabsContent value="users">
             <UserManagementTest />
           </TabsContent>
-
           <TabsContent value="database">
             <DatabaseTest />
           </TabsContent>

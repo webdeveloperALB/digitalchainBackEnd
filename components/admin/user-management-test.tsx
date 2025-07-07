@@ -30,10 +30,11 @@ export default function UserManagementTest() {
   const fetchAllUsers = async () => {
     setLoading(true);
     try {
-      // Fetch all users
+      // Fetch all users ordered by created_at descending (newest first)
       const { data: usersData, error: usersError } = await supabase
         .from("profiles")
-        .select("*");
+        .select("*")
+        .order("created_at", { ascending: false });
 
       if (usersError) {
         console.error("Error fetching users:", usersError);
@@ -44,7 +45,6 @@ export default function UserManagementTest() {
 
       // Fetch balances for each user separately
       const balances: UserBalance[] = [];
-
       for (const user of usersData || []) {
         try {
           const [cryptoResult, euroResult, cadResult, usdResult] =
@@ -162,7 +162,6 @@ export default function UserManagementTest() {
               </h3>
               <Badge variant="outline">{users.length} users loaded</Badge>
             </div>
-
             <div className="grid grid-cols-1 gap-4">
               {users.map((user) => {
                 const balance = getUserBalance(user.id);
@@ -180,7 +179,6 @@ export default function UserManagementTest() {
                       </div>
                       <Badge variant="secondary">Active</Badge>
                     </div>
-
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
                       <div className="bg-orange-50 p-3 rounded-lg">
                         <div className="flex items-center justify-between">
@@ -194,7 +192,6 @@ export default function UserManagementTest() {
                           <Bitcoin className="w-5 h-5 text-orange-500" />
                         </div>
                       </div>
-
                       <div className="bg-blue-50 p-3 rounded-lg">
                         <div className="flex items-center justify-between">
                           <div>
@@ -207,7 +204,6 @@ export default function UserManagementTest() {
                           <Euro className="w-5 h-5 text-blue-500" />
                         </div>
                       </div>
-
                       <div className="bg-green-50 p-3 rounded-lg">
                         <div className="flex items-center justify-between">
                           <div>
@@ -220,7 +216,6 @@ export default function UserManagementTest() {
                           <DollarSign className="w-5 h-5 text-green-500" />
                         </div>
                       </div>
-
                       <div className="bg-purple-50 p-3 rounded-lg">
                         <div className="flex items-center justify-between">
                           <div>
