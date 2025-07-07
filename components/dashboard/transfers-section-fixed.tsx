@@ -3,10 +3,12 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRealtimeData } from "@/hooks/use-realtime-data";
+import { ExchangeRateService } from "@/lib/exchange-rates";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -14,108 +16,224 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeftRight } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import {
+  ArrowLeftRight,
+  Building2,
+  Coins,
+  Clock,
+  CheckCircle,
+  XCircle,
+  TrendingUp,
+} from "lucide-react";
 
-// Define currency type
+// Define interfaces
 interface Currency {
   code: string;
   name: string;
   symbol: string;
+  type: "fiat" | "crypto";
+}
+
+interface BankDetails {
+  bank_name: string;
+  account_holder_name: string;
+  account_number: string;
+  routing_number: string;
+  swift_code: string;
+  iban: string;
+  bank_address: string;
+  recipient_address: string;
+  purpose_of_transfer: string;
+}
+
+interface Transfer {
+  id: string;
+  from_currency: string;
+  to_currency: string;
+  from_amount: number;
+  to_amount: number;
+  exchange_rate: number;
+  status: string;
+  transfer_type: string;
+  description: string;
+  reference_number: string;
+  created_at: string;
+  processed_at: string;
+  admin_notes: string;
+  fee_amount: number;
 }
 
 export default function TransfersSection() {
-  const { balances, exchangeRates, loading, error } = useRealtimeData();
-  const [transfers, setTransfers] = useState<any[]>([]);
+  const { balances, loading, error } = useRealtimeData();
+  const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [currencies, setCurrencies] = useState<Currency[]>([]);
-  const [formData, setFormData] = useState({
+  const [exchangeRateService] = useState(() =>
+    ExchangeRateService.getInstance()
+  );
+  const [liveRates, setLiveRates] = useState({
+    fiat: {},
+    crypto: {},
+    lastUpdated: 0,
+  });
+
+  // Internal transfer form
+  const [internalFormData, setInternalFormData] = useState({
     from_currency: "",
     to_currency: "",
     amount: "",
   });
+
+  // Add after existing formData state
+  const [bankFormData, setBankFormData] = useState({
+    from_currency: "",
+    to_currency: "",
+    amount: "",
+  });
+
+  const [bankDetails, setBankDetails] = useState<BankDetails>({
+    bank_name: "",
+    account_holder_name: "",
+    account_number: "",
+    routing_number: "",
+    swift_code: "",
+    iban: "",
+    bank_address: "",
+    recipient_address: "",
+    purpose_of_transfer: "",
+  });
+
+  const [activeTab, setActiveTab] = useState("internal");
+
   const [exchangeRate, setExchangeRate] = useState<number>(1);
   const [estimatedAmount, setEstimatedAmount] = useState<number>(0);
+  const [transferFee, setTransferFee] = useState<number>(0);
 
   useEffect(() => {
-    console.log("Component mounted, fetching data...");
     fetchTransfers();
-    fetchCurrencies();
+    initializeCurrencies();
+    initializeExchangeRates();
+
+    return () => {
+      exchangeRateService.cleanup();
+    };
   }, []);
 
-  useEffect(() => {
-    console.log("Currencies updated:", currencies);
-  }, [currencies]);
+  const initializeExchangeRates = async () => {
+    await exchangeRateService.initialize();
 
-  useEffect(() => {
-    if (formData.from_currency && formData.to_currency && formData.amount) {
-      calculateExchange();
-    }
-  }, [formData, exchangeRates]);
+    // Subscribe to rate updates
+    const unsubscribe = exchangeRateService.subscribe((rates) => {
+      setLiveRates(rates);
+    });
 
-  const fetchCurrencies = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("currencies")
-        .select("*")
-        .eq("is_active", true)
-        .order("code");
-
-      if (error) {
-        console.warn(
-          "Database fetch failed, using fallback currencies:",
-          error
-        );
-        throw error;
-      }
-
-      if (data && data.length > 0) {
-        setCurrencies(data);
-      } else {
-        throw new Error("No currencies found in database");
-      }
-    } catch (error) {
-      console.error("Error fetching currencies:", error);
-      // Always set fallback currencies if database fetch fails
-      const fallbackCurrencies = [
-        { code: "USD", name: "US Dollar", symbol: "$" },
-        { code: "EUR", name: "Euro", symbol: "€" },
-        { code: "CAD", name: "Canadian Dollar", symbol: "C$" },
-        { code: "CRYPTO", name: "Crypto", symbol: "₿" },
-      ];
-      console.log("Setting fallback currencies:", fallbackCurrencies);
-      setCurrencies(fallbackCurrencies);
-    }
+    return unsubscribe;
   };
 
-  const calculateExchange = () => {
-    const fromCurrency = formData.from_currency.toLowerCase();
-    const toCurrency = formData.to_currency.toLowerCase();
-    const amount = Number(formData.amount);
+  const initializeCurrencies = () => {
+    // Database currencies (for internal transfers)
+    const databaseCurrencies: Currency[] = [
+      { code: "USD", name: "US Dollar", symbol: "$", type: "fiat" },
+      { code: "EUR", name: "Euro", symbol: "€", type: "fiat" },
+      { code: "CAD", name: "Canadian Dollar", symbol: "C$", type: "fiat" },
+      { code: "BTC", name: "Bitcoin", symbol: "₿", type: "crypto" },
+      { code: "ETH", name: "Ethereum", symbol: "Ξ", type: "crypto" },
+      { code: "ADA", name: "Cardano", symbol: "₳", type: "crypto" },
+      { code: "DOT", name: "Polkadot", symbol: "●", type: "crypto" },
+      { code: "LINK", name: "Chainlink", symbol: "🔗", type: "crypto" },
+    ];
+
+    // All available currencies (includes additional fiat for bank transfers)
+    const allCurrencies: Currency[] = [
+      ...databaseCurrencies,
+      { code: "GBP", name: "British Pound", symbol: "£", type: "fiat" },
+      { code: "JPY", name: "Japanese Yen", symbol: "¥", type: "fiat" },
+      { code: "AUD", name: "Australian Dollar", symbol: "A$", type: "fiat" },
+      { code: "CHF", name: "Swiss Franc", symbol: "CHF", type: "fiat" },
+    ];
+
+    setCurrencies(allCurrencies);
+  };
+
+  const getDatabaseCurrencies = () => {
+    return currencies.filter((c) =>
+      ["USD", "EUR", "CAD", "BTC", "ETH", "ADA", "DOT", "LINK"].includes(c.code)
+    );
+  };
+
+  const getBankTransferCurrencies = () => {
+    return currencies.filter((c) => c.type === "fiat");
+  };
+
+  // Modify the existing useEffect to handle both forms
+  useEffect(() => {
+    const formData = activeTab === "internal" ? internalFormData : bankFormData;
+    if (
+      formData.from_currency &&
+      formData.to_currency &&
+      formData.amount &&
+      liveRates.lastUpdated > 0
+    ) {
+      calculateRealTimeExchange();
+    }
+  }, [internalFormData, bankFormData, liveRates, activeTab]);
+
+  const calculateRealTimeExchange = () => {
+    const currentFormData =
+      activeTab === "internal" ? internalFormData : bankFormData;
+    const fromCurrency = currentFormData.from_currency;
+    const toCurrency = currentFormData.to_currency;
+    const amount = Number(currentFormData.amount);
 
     if (!amount || fromCurrency === toCurrency) {
       setExchangeRate(1);
       setEstimatedAmount(amount);
+      setTransferFee(calculateTransferFee(amount, fromCurrency, toCurrency));
       return;
     }
 
-    let rate = 1;
-
-    // Use real-time exchange rates
-    if (fromCurrency === "usd" && toCurrency === "eur") {
-      rate = exchangeRates.usd_to_eur;
-    } else if (fromCurrency === "usd" && toCurrency === "cad") {
-      rate = exchangeRates.usd_to_cad;
-    } else if (fromCurrency === "eur" && toCurrency === "usd") {
-      rate = exchangeRates.eur_to_usd;
-    } else if (fromCurrency === "cad" && toCurrency === "usd") {
-      rate = exchangeRates.cad_to_usd;
-    } else if (fromCurrency === "eur" && toCurrency === "cad") {
-      rate = exchangeRates.eur_to_usd * exchangeRates.usd_to_cad;
-    } else if (fromCurrency === "cad" && toCurrency === "eur") {
-      rate = exchangeRates.cad_to_usd * exchangeRates.usd_to_eur;
-    }
+    // Get real-time exchange rate
+    const rate = exchangeRateService.getExchangeRate(fromCurrency, toCurrency);
+    const convertedAmount = exchangeRateService.convertCurrency(
+      amount,
+      fromCurrency,
+      toCurrency
+    );
+    const fee = calculateTransferFee(amount, fromCurrency, toCurrency);
 
     setExchangeRate(rate);
-    setEstimatedAmount(amount * rate);
+    setEstimatedAmount(convertedAmount);
+    setTransferFee(fee);
+  };
+
+  const calculateTransferFee = (
+    amount: number,
+    fromCurrency: string,
+    toCurrency: string
+  ): number => {
+    const fromCurrencyInfo = currencies.find((c) => c.code === fromCurrency);
+    const toCurrencyInfo = currencies.find((c) => c.code === toCurrency);
+
+    if (activeTab === "bank") {
+      // Bank transfer fees: 2% + fixed fee (higher for crypto)
+      const baseFee = amount * 0.02;
+      const fixedFee =
+        fromCurrencyInfo?.type === "crypto" || toCurrencyInfo?.type === "crypto"
+          ? 50
+          : 25;
+      return baseFee + fixedFee;
+    } else {
+      // Internal transfer fees
+      if (
+        fromCurrencyInfo?.type === "crypto" ||
+        toCurrencyInfo?.type === "crypto"
+      ) {
+        return amount * 0.01; // 1% for crypto
+      } else {
+        return amount * 0.005; // 0.5% for fiat
+      }
+    }
   };
 
   const fetchTransfers = async () => {
@@ -123,7 +241,6 @@ export default function TransfersSection() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-
       if (user) {
         const { data, error } = await supabase
           .from("transfers")
@@ -139,102 +256,112 @@ export default function TransfersSection() {
     }
   };
 
-  // Helper function to get the correct table name for each currency
   const getTableName = (currencyCode: string) => {
     const tableMap: { [key: string]: string } = {
       USD: "usd_balances",
       EUR: "euro_balances",
-      EURO: "euro_balances",
       CAD: "cad_balances",
-      CRYPTO: "crypto_balances",
+      BTC: "crypto_balances",
+      ETH: "crypto_balances",
+      ADA: "crypto_balances",
+      DOT: "crypto_balances",
+      LINK: "crypto_balances",
+      GBP: "usd_balances", // Fallback to USD table for now
+      JPY: "usd_balances",
+      AUD: "usd_balances",
+      CHF: "usd_balances",
     };
     return tableMap[currencyCode.toUpperCase()];
   };
 
-  // Helper function to get balance key for real-time data
   const getBalanceKey = (currencyCode: string): keyof typeof balances => {
     const keyMap: { [key: string]: keyof typeof balances } = {
       USD: "usd",
       EUR: "euro",
-      EURO: "euro",
       CAD: "cad",
-      CRYPTO: "crypto",
+      BTC: "crypto",
+      ETH: "crypto",
+      ADA: "crypto",
+      DOT: "crypto",
+      LINK: "crypto",
+      GBP: "usd", // Fallback
+      JPY: "usd",
+      AUD: "usd",
+      CHF: "usd",
     };
     return keyMap[currencyCode.toUpperCase()] || "usd";
   };
 
-  const executeTransfer = async () => {
+  const generateReferenceNumber = () => {
+    const timestamp = Date.now().toString();
+    const random = Math.random().toString(36).substring(2, 8).toUpperCase();
+    return `TXN-${timestamp.slice(-6)}-${random}`;
+  };
+
+  const executeInternalTransfer = async () => {
     try {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-
       if (!user) return;
 
-      const amount = Number.parseFloat(formData.amount);
-      const fromCurrency = formData.from_currency.toUpperCase();
-      const toCurrency = formData.to_currency.toUpperCase();
+      const amount = Number.parseFloat(internalFormData.amount);
+      const fromCurrency = internalFormData.from_currency.toUpperCase();
+      const toCurrency = internalFormData.to_currency.toUpperCase();
 
-      // Get current balances from real-time data
       const fromBalanceKey = getBalanceKey(fromCurrency);
       const toBalanceKey = getBalanceKey(toCurrency);
-
       const currentFromBalance = balances[fromBalanceKey] || 0;
       const currentToBalance = balances[toBalanceKey] || 0;
 
-      if (currentFromBalance < amount) {
-        alert("Insufficient balance");
+      if (currentFromBalance < amount + transferFee) {
+        alert("Insufficient balance including fees");
         return;
       }
 
       const toAmount = estimatedAmount;
+      const referenceNumber = generateReferenceNumber();
 
       // Create transfer record
-      const { error: transferError } = await supabase.from("transfers").insert({
-        user_id: user.id,
-        from_currency: formData.from_currency,
-        to_currency: formData.to_currency,
-        from_amount: amount,
-        to_amount: toAmount,
-        exchange_rate: exchangeRate,
-        status: "Completed",
-      });
+      const { data: transferData, error: transferError } = await supabase
+        .from("transfers")
+        .insert({
+          user_id: user.id,
+          from_currency: internalFormData.from_currency,
+          to_currency: internalFormData.to_currency,
+          from_amount: amount,
+          to_amount: toAmount,
+          exchange_rate: exchangeRate,
+          status: "Completed",
+          transfer_type: "internal",
+          description: `Internal transfer from ${fromCurrency} to ${toCurrency}`,
+          reference_number: referenceNumber,
+          fee_amount: transferFee,
+          processed_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
 
       if (transferError) throw transferError;
 
-      // Get correct table names
+      // Update balances
       const fromTable = getTableName(fromCurrency);
       const toTable = getTableName(toCurrency);
 
-      if (!fromTable || !toTable) {
-        throw new Error("Invalid currency table mapping");
-      }
+      if (fromTable && toTable) {
+        const newFromBalance = currentFromBalance - amount - transferFee;
+        const newToBalance = currentToBalance + toAmount;
 
-      // Calculate new balances
-      const newFromBalance = currentFromBalance - amount;
-      const newToBalance = currentToBalance + toAmount;
-
-      // Update balances in parallel
-      const [fromUpdateResult, toUpdateResult] = await Promise.all([
-        supabase
-          .from(fromTable)
-          .update({ balance: newFromBalance })
-          .eq("user_id", user.id),
-        supabase
-          .from(toTable)
-          .update({ balance: newToBalance })
-          .eq("user_id", user.id),
-      ]);
-
-      // Check for errors in balance updates
-      if (fromUpdateResult.error) {
-        console.error("Error updating from balance:", fromUpdateResult.error);
-        throw fromUpdateResult.error;
-      }
-
-      if (toUpdateResult.error) {
-        console.error("Error updating to balance:", toUpdateResult.error);
-        throw toUpdateResult.error;
+        await Promise.all([
+          supabase
+            .from(fromTable)
+            .update({ balance: newFromBalance })
+            .eq("user_id", user.id),
+          supabase
+            .from(toTable)
+            .update({ balance: newToBalance })
+            .eq("user_id", user.id),
+        ]);
       }
 
       // Add transaction records
@@ -242,35 +369,187 @@ export default function TransfersSection() {
         {
           user_id: user.id,
           type: "Transfer Out",
-          amount: amount,
-          currency: formData.from_currency,
-          description: `Transfer to ${formData.to_currency}`,
+          amount: amount + transferFee,
+          currency: internalFormData.from_currency,
+          description: `Internal transfer to ${internalFormData.to_currency} (Ref: ${referenceNumber})`,
           status: "Successful",
         },
         {
           user_id: user.id,
           type: "Transfer In",
           amount: toAmount,
-          currency: formData.to_currency,
-          description: `Transfer from ${formData.from_currency}`,
+          currency: internalFormData.to_currency,
+          description: `Internal transfer from ${internalFormData.from_currency} (Ref: ${referenceNumber})`,
           status: "Successful",
         },
       ]);
 
       // Reset form
-      setFormData({ from_currency: "", to_currency: "", amount: "" });
+      setInternalFormData({ from_currency: "", to_currency: "", amount: "" });
       setExchangeRate(1);
       setEstimatedAmount(0);
+      setTransferFee(0);
 
-      // Refresh transfers (balances will update automatically via real-time)
       await fetchTransfers();
-
-      alert("Transfer completed successfully!");
+      alert(
+        `Internal transfer completed successfully! Reference: ${referenceNumber}`
+      );
     } catch (error: any) {
       console.error("Transfer error:", error);
       alert(`Error: ${error.message}`);
     }
   };
+
+  const executeBankTransfer = async () => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const amount = Number.parseFloat(bankFormData.amount);
+      const fromCurrency = bankFormData.from_currency.toUpperCase();
+      const toCurrency = bankFormData.to_currency.toUpperCase();
+
+      const fromBalanceKey = getBalanceKey(fromCurrency);
+      const currentFromBalance = balances[fromBalanceKey] || 0;
+
+      if (currentFromBalance < amount + transferFee) {
+        alert("Insufficient balance including fees");
+        return;
+      }
+
+      const toAmount = estimatedAmount;
+      const referenceNumber = generateReferenceNumber();
+
+      // Create transfer record
+      const { data: transferData, error: transferError } = await supabase
+        .from("transfers")
+        .insert({
+          user_id: user.id,
+          from_currency: bankFormData.from_currency,
+          to_currency: bankFormData.to_currency,
+          from_amount: amount,
+          to_amount: toAmount,
+          exchange_rate: exchangeRate,
+          status: "Pending", // Make sure this is "Pending" for bank transfers
+          transfer_type: "bank_transfer",
+          description: `Bank transfer to ${bankDetails.bank_name}`,
+          reference_number: referenceNumber,
+          fee_amount: transferFee,
+        })
+        .select()
+        .single();
+
+      if (transferError) throw transferError;
+
+      // Create bank transfer details
+      const { error: bankError } = await supabase
+        .from("bank_transfers")
+        .insert({
+          transfer_id: transferData.id,
+          ...bankDetails,
+        });
+
+      if (bankError) throw bankError;
+
+      // Deduct amount from balance (hold it until approved)
+      const fromTable = getTableName(fromCurrency);
+      if (fromTable) {
+        const newFromBalance = currentFromBalance - amount - transferFee;
+        await supabase
+          .from(fromTable)
+          .update({ balance: newFromBalance })
+          .eq("user_id", user.id);
+      }
+
+      // Add transaction record
+      await supabase.from("transactions").insert({
+        user_id: user.id,
+        type: "Bank Transfer",
+        amount: amount + transferFee,
+        currency: bankFormData.from_currency,
+        description: `Bank transfer to ${bankDetails.bank_name} (Ref: ${referenceNumber}) - Pending Approval`,
+        status: "Pending",
+      });
+
+      // Reset forms
+      setBankFormData({ from_currency: "", to_currency: "", amount: "" });
+      setBankDetails({
+        bank_name: "",
+        account_holder_name: "",
+        account_number: "",
+        routing_number: "",
+        swift_code: "",
+        iban: "",
+        bank_address: "",
+        recipient_address: "",
+        purpose_of_transfer: "",
+      });
+      setExchangeRate(1);
+      setEstimatedAmount(0);
+      setTransferFee(0);
+
+      await fetchTransfers();
+      alert(
+        `Bank transfer request submitted successfully! Reference: ${referenceNumber}. Your transfer is pending approval.`
+      );
+    } catch (error: any) {
+      console.error("Bank transfer error:", error);
+      alert(`Error: ${error.message}`);
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    const statusConfig = {
+      Pending: {
+        color: "bg-yellow-100 text-yellow-800 border-yellow-200",
+        icon: Clock,
+      },
+      Approved: {
+        color: "bg-blue-100 text-blue-800 border-blue-200",
+        icon: CheckCircle,
+      },
+      Completed: {
+        color: "bg-green-100 text-green-800 border-green-200",
+        icon: CheckCircle,
+      },
+      Rejected: {
+        color: "bg-red-100 text-red-800 border-red-200",
+        icon: XCircle,
+      },
+      Processing: {
+        color: "bg-purple-100 text-purple-800 border-purple-200",
+        icon: Clock,
+      },
+    };
+
+    const config =
+      statusConfig[status as keyof typeof statusConfig] || statusConfig.Pending;
+    const Icon = config.icon;
+
+    return (
+      <Badge className={`${config.color} flex items-center gap-1 border`}>
+        <Icon className="w-3 h-3" />
+        {status}
+      </Badge>
+    );
+  };
+
+  const renderCurrencyOption = (currency: Currency) => (
+    <div className="flex items-center gap-3">
+      <span className="text-lg">{currency.symbol}</span>
+      <div className="flex flex-col">
+        <span className="font-medium">{currency.name}</span>
+        <span className="text-xs text-slate-500">
+          {currency.code} • {currency.type === "crypto" ? "Crypto" : "Fiat"}
+        </span>
+      </div>
+      {currency.type === "crypto" && (
+        <Coins className="w-4 h-4 text-orange-500" />
+      )}
+    </div>
+  );
 
   if (loading) {
     return (
@@ -293,26 +572,14 @@ export default function TransfersSection() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex flex-col">
       <style jsx>{`
         .custom-scrollbar {
-          scrollbar-width: thin;
-          scrollbar-color: #f26623 #f1f5f9;
+          scrollbar-width: none; /* Firefox */
+          -ms-overflow-style: none; /* Internet Explorer 10+ */
         }
         .custom-scrollbar::-webkit-scrollbar {
-          width: 8px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: #f1f5f9;
-          border-radius: 4px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #f26623;
-          border-radius: 4px;
-          transition: background 0.2s ease;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #e55a1f;
+          display: none; /* WebKit */
         }
         .balance-card {
           background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
@@ -348,255 +615,621 @@ export default function TransfersSection() {
           background: linear-gradient(135deg, #f26623 0%, #e55a1f 100%);
           box-shadow: 0 2px 8px rgba(242, 102, 35, 0.3);
         }
+        .live-rate-indicator {
+          animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+          0%,
+          100% {
+            opacity: 1;
+          }
+          50% {
+            opacity: 0.7;
+          }
+        }
       `}</style>
 
-      <div className="text-center mb-6">
+      {/* Header - Fixed */}
+      <div className="text-center py-6 px-6 flex-shrink-0">
         <h2 className="text-3xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent mb-1">
           Currency Transfers
         </h2>
         <p className="text-slate-600">
-          Seamlessly exchange between your currencies
+          Real-time rates • Crypto & Fiat • Internal & Bank transfers
         </p>
+        {liveRates.lastUpdated > 0 && (
+          <div className="flex items-center justify-center gap-2 mt-2">
+            <TrendingUp className="w-4 h-4 text-green-600 live-rate-indicator" />
+            <span className="text-xs text-green-600 font-medium">
+              Live rates updated{" "}
+              {new Date(liveRates.lastUpdated).toLocaleTimeString()}
+            </span>
+          </div>
+        )}
       </div>
 
-      <div className="flex flex-col xl:flex-row gap-6">
-        {/* Main Content - Left Side */}
-        <div className="flex-1 space-y-6">
-          {/* Current Balances */}
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-            <Card className="balance-card">
-              <CardContent className="p-4 text-center">
-                <div className="w-10 h-10 bg-[#F26623] rounded-full flex items-center justify-center mx-auto mb-3">
-                  <span className="text-white text-lg font-bold">$</span>
-                </div>
-                <p className="text-xs text-slate-600 mb-1 font-medium">
-                  US Dollar
-                </p>
-                <p className="text-xl font-bold text-slate-800">
-                  ${Number(balances.usd || 0).toLocaleString()}
-                </p>
-              </CardContent>
-            </Card>
+      {/* Main Layout - Fixed Height */}
+      <div className="flex flex-1 overflow-hidden px-6 pb-6 gap-6">
+        {/* Main Content - Scrollable */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
+          <div className="space-y-6 pr-4">
+            {/* Current Balances - Enhanced with more currencies */}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+              <Card className="balance-card">
+                <CardContent className="p-4 text-center">
+                  <div className="w-10 h-10 bg-[#F26623] rounded-full flex items-center justify-center mx-auto mb-3">
+                    <span className="text-white text-lg font-bold">$</span>
+                  </div>
+                  <p className="text-xs text-slate-600 mb-1 font-medium">
+                    US Dollar
+                  </p>
+                  <p className="text-xl font-bold text-slate-800">
+                    ${Number(balances.usd || 0).toLocaleString()}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className="balance-card">
+                <CardContent className="p-4 text-center">
+                  <div className="w-10 h-10 bg-[#F26623] rounded-full flex items-center justify-center mx-auto mb-3">
+                    <span className="text-white text-lg font-bold">€</span>
+                  </div>
+                  <p className="text-xs text-slate-600 mb-1 font-medium">
+                    Euro
+                  </p>
+                  <p className="text-xl font-bold text-slate-800">
+                    €{Number(balances.euro || 0).toLocaleString()}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className="balance-card">
+                <CardContent className="p-4 text-center">
+                  <div className="w-10 h-10 bg-[#F26623] rounded-full flex items-center justify-center mx-auto mb-3">
+                    <span className="text-white text-lg font-bold">C$</span>
+                  </div>
+                  <p className="text-xs text-slate-600 mb-1 font-medium">
+                    Canadian Dollar
+                  </p>
+                  <p className="text-xl font-bold text-slate-800">
+                    C${Number(balances.cad || 0).toLocaleString()}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className="balance-card">
+                <CardContent className="p-4 text-center">
+                  <div className="w-10 h-10 bg-gradient-to-r from-orange-500 to-yellow-500 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <span className="text-white text-lg font-bold">₿</span>
+                  </div>
+                  <p className="text-xs text-slate-600 mb-1 font-medium">
+                    Crypto Portfolio
+                  </p>
+                  <p className="text-xl font-bold text-slate-800">
+                    ₿{Number(balances.crypto || 0).toLocaleString()}
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
 
-            <Card className="balance-card">
-              <CardContent className="p-4 text-center">
-                <div className="w-10 h-10 bg-[#F26623] rounded-full flex items-center justify-center mx-auto mb-3">
-                  <span className="text-white text-lg font-bold">€</span>
-                </div>
-                <p className="text-xs text-slate-600 mb-1 font-medium">Euro</p>
-                <p className="text-xl font-bold text-slate-800">
-                  €{Number(balances.euro || 0).toLocaleString()}
-                </p>
-              </CardContent>
-            </Card>
+            {/* Transfer Forms */}
+            <Card className="transfer-form">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-xl font-bold text-slate-800 flex items-center gap-3">
+                  <div className="w-8 h-8 bg-[#F26623] rounded-lg flex items-center justify-center">
+                    <ArrowLeftRight className="w-4 h-4 text-white" />
+                  </div>
+                  New Transfer
+                  {liveRates.lastUpdated > 0 && (
+                    <Badge className="bg-green-100 text-green-800 text-xs">
+                      <TrendingUp className="w-3 h-3 mr-1" />
+                      Live Rates
+                    </Badge>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Tabs
+                  value={activeTab}
+                  onValueChange={setActiveTab}
+                  className="w-full"
+                >
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger
+                      value="internal"
+                      className="flex items-center gap-2"
+                    >
+                      <Coins className="w-4 h-4" />
+                      Internal Transfer
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="bank"
+                      className="flex items-center gap-2"
+                    >
+                      <Building2 className="w-4 h-4" />
+                      Bank Transfer
+                    </TabsTrigger>
+                  </TabsList>
 
-            <Card className="balance-card">
-              <CardContent className="p-4 text-center">
-                <div className="w-10 h-10 bg-[#F26623] rounded-full flex items-center justify-center mx-auto mb-3">
-                  <span className="text-white text-lg font-bold">C$</span>
-                </div>
-                <p className="text-xs text-slate-600 mb-1 font-medium">
-                  Canadian Dollar
-                </p>
-                <p className="text-xl font-bold text-slate-800">
-                  C${Number(balances.cad || 0).toLocaleString()}
-                </p>
-              </CardContent>
-            </Card>
+                  <TabsContent value="internal" className="space-y-6 mt-6">
+                    <div className="flex flex-col lg:flex-row items-center gap-6">
+                      <div className="flex-1 w-full">
+                        <Label className="text-sm font-semibold mb-3 block text-slate-700">
+                          From Currency
+                        </Label>
+                        <Select
+                          value={internalFormData.from_currency}
+                          onValueChange={(value) =>
+                            setInternalFormData({
+                              ...internalFormData,
+                              from_currency: value,
+                            })
+                          }
+                        >
+                          <SelectTrigger className="h-12 w-full border-slate-300 hover:border-[#F26623] transition-colors">
+                            <SelectValue placeholder="Select currency" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {getDatabaseCurrencies().map((currency) => (
+                              <SelectItem
+                                key={currency.code}
+                                value={currency.code}
+                                className="py-3 hover:bg-slate-50"
+                              >
+                                {renderCurrencyOption(currency)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex flex-col items-center justify-center px-6 py-4">
+                        <div className="w-12 h-12 bg-[#F26623] rounded-full flex items-center justify-center mb-2">
+                          <ArrowLeftRight className="w-6 h-6 text-white" />
+                        </div>
+                        <div className="currency-badge text-white px-3 py-1 rounded-full text-sm font-medium">
+                          {exchangeRate === 1 ? "1:1" : exchangeRate.toFixed(6)}
+                        </div>
+                        {liveRates.lastUpdated > 0 && exchangeRate !== 1 && (
+                          <div className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                            <TrendingUp className="w-3 h-3" />
+                            Live
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 w-full">
+                        <Label className="text-sm font-semibold mb-3 block text-slate-700">
+                          To Currency
+                        </Label>
+                        <Select
+                          value={internalFormData.to_currency}
+                          onValueChange={(value) =>
+                            setInternalFormData({
+                              ...internalFormData,
+                              to_currency: value,
+                            })
+                          }
+                        >
+                          <SelectTrigger className="h-12 w-full border-slate-300 hover:border-[#F26623] transition-colors">
+                            <SelectValue placeholder="Select currency" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {getDatabaseCurrencies().map((currency) => (
+                              <SelectItem
+                                key={currency.code}
+                                value={currency.code}
+                                className="py-3 hover:bg-slate-50"
+                              >
+                                {renderCurrencyOption(currency)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
 
-            <Card className="balance-card">
-              <CardContent className="p-4 text-center">
-                <div className="w-10 h-10 bg-[#F26623] rounded-full flex items-center justify-center mx-auto mb-3">
-                  <span className="text-white text-lg font-bold">₿</span>
-                </div>
-                <p className="text-xs text-slate-600 mb-1 font-medium">
-                  Crypto
-                </p>
-                <p className="text-xl font-bold text-slate-800">
-                  ₿{Number(balances.crypto || 0).toLocaleString()}
-                </p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div>
+                        <Label className="text-sm font-semibold mb-3 block text-slate-700">
+                          Amount to Transfer
+                        </Label>
+                        <Input
+                          type="number"
+                          step="0.00000001"
+                          value={internalFormData.amount}
+                          onChange={(e) =>
+                            setInternalFormData({
+                              ...internalFormData,
+                              amount: e.target.value,
+                            })
+                          }
+                          placeholder="0.00000000"
+                          className="h-12 text-lg border-slate-300 hover:border-[#F26623] focus:border-[#F26623] transition-colors"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm font-semibold mb-3 block text-slate-700">
+                          Transfer Fee
+                        </Label>
+                        <Input
+                          value={transferFee.toFixed(8)}
+                          readOnly
+                          className="h-12 text-lg font-semibold bg-gradient-to-r from-red-50 to-red-100 border-red-200 text-red-800"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm font-semibold mb-3 block text-slate-700">
+                          You Will Receive
+                        </Label>
+                        <Input
+                          value={estimatedAmount.toFixed(8)}
+                          readOnly
+                          className="h-12 text-lg font-semibold bg-gradient-to-r from-green-50 to-green-100 border-green-200 text-green-800"
+                        />
+                      </div>
+                    </div>
+
+                    <Button
+                      onClick={executeInternalTransfer}
+                      disabled={
+                        !internalFormData.from_currency ||
+                        !internalFormData.to_currency ||
+                        !internalFormData.amount ||
+                        loading
+                      }
+                      className="w-full h-14 text-lg font-semibold bg-[#F26623] hover:bg-[#E55A1F] transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl"
+                    >
+                      Execute Internal Transfer
+                    </Button>
+                  </TabsContent>
+
+                  <TabsContent value="bank" className="space-y-6 mt-6">
+                    {/* Bank Transfer Currency Selection - Now includes crypto */}
+                    <div className="flex flex-col lg:flex-row items-center gap-6">
+                      <div className="flex-1 w-full">
+                        <Label className="text-sm font-semibold mb-3 block text-slate-700">
+                          From Currency
+                        </Label>
+                        <Select
+                          value={bankFormData.from_currency}
+                          onValueChange={(value) =>
+                            setBankFormData({
+                              ...bankFormData,
+                              from_currency: value,
+                            })
+                          }
+                        >
+                          <SelectTrigger className="h-12 w-full border-slate-300 hover:border-[#F26623] transition-colors">
+                            <SelectValue placeholder="Select currency" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {getBankTransferCurrencies().map((currency) => (
+                              <SelectItem
+                                key={currency.code}
+                                value={currency.code}
+                                className="py-3 hover:bg-slate-50"
+                              >
+                                {renderCurrencyOption(currency)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex flex-col items-center justify-center px-6 py-4">
+                        <div className="w-12 h-12 bg-[#F26623] rounded-full flex items-center justify-center mb-2">
+                          <Building2 className="w-6 h-6 text-white" />
+                        </div>
+                        <div className="currency-badge text-white px-3 py-1 rounded-full text-sm font-medium">
+                          {exchangeRate === 1 ? "1:1" : exchangeRate.toFixed(6)}
+                        </div>
+                        {liveRates.lastUpdated > 0 && exchangeRate !== 1 && (
+                          <div className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                            <TrendingUp className="w-3 h-3" />
+                            Live
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 w-full">
+                        <Label className="text-sm font-semibold mb-3 block text-slate-700">
+                          To Currency
+                        </Label>
+                        <Select
+                          value={bankFormData.to_currency}
+                          onValueChange={(value) =>
+                            setBankFormData({
+                              ...bankFormData,
+                              to_currency: value,
+                            })
+                          }
+                        >
+                          <SelectTrigger className="h-12 w-full border-slate-300 hover:border-[#F26623] transition-colors">
+                            <SelectValue placeholder="Select currency" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {getBankTransferCurrencies().map((currency) => (
+                              <SelectItem
+                                key={currency.code}
+                                value={currency.code}
+                                className="py-3 hover:bg-slate-50"
+                              >
+                                {renderCurrencyOption(currency)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    {/* Amount and Fees */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div>
+                        <Label className="text-sm font-semibold mb-3 block text-slate-700">
+                          Amount to Transfer
+                        </Label>
+                        <Input
+                          type="number"
+                          step="0.00000001"
+                          value={bankFormData.amount}
+                          onChange={(e) =>
+                            setBankFormData({
+                              ...bankFormData,
+                              amount: e.target.value,
+                            })
+                          }
+                          placeholder="0.00000000"
+                          className="h-12 text-lg border-slate-300 hover:border-[#F26623] focus:border-[#F26623] transition-colors"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm font-semibold mb-3 block text-slate-700">
+                          Transfer Fee (2% + Fee)
+                        </Label>
+                        <Input
+                          value={transferFee.toFixed(8)}
+                          readOnly
+                          className="h-12 text-lg font-semibold bg-gradient-to-r from-red-50 to-red-100 border-red-200 text-red-800"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm font-semibold mb-3 block text-slate-700">
+                          Recipient Will Receive
+                        </Label>
+                        <Input
+                          value={estimatedAmount.toFixed(8)}
+                          readOnly
+                          className="h-12 text-lg font-semibold bg-gradient-to-r from-green-50 to-green-100 border-green-200 text-green-800"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Bank Details Form */}
+                    <div className="space-y-4 p-6 bg-slate-50 rounded-lg border">
+                      <h3 className="text-lg font-semibold text-slate-800 mb-4">
+                        Bank Details
+                      </h3>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <Label className="text-sm font-semibold mb-2 block text-slate-700">
+                            Bank Name *
+                          </Label>
+                          <Input
+                            value={bankDetails.bank_name}
+                            onChange={(e) =>
+                              setBankDetails({
+                                ...bankDetails,
+                                bank_name: e.target.value,
+                              })
+                            }
+                            placeholder="Enter bank name"
+                            className="border-slate-300 hover:border-[#F26623] focus:border-[#F26623]"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-sm font-semibold mb-2 block text-slate-700">
+                            Account Holder Name *
+                          </Label>
+                          <Input
+                            value={bankDetails.account_holder_name}
+                            onChange={(e) =>
+                              setBankDetails({
+                                ...bankDetails,
+                                account_holder_name: e.target.value,
+                              })
+                            }
+                            placeholder="Enter account holder name"
+                            className="border-slate-300 hover:border-[#F26623] focus:border-[#F26623]"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-sm font-semibold mb-2 block text-slate-700">
+                            Account Number *
+                          </Label>
+                          <Input
+                            value={bankDetails.account_number}
+                            onChange={(e) =>
+                              setBankDetails({
+                                ...bankDetails,
+                                account_number: e.target.value,
+                              })
+                            }
+                            placeholder="Enter account number"
+                            className="border-slate-300 hover:border-[#F26623] focus:border-[#F26623]"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-sm font-semibold mb-2 block text-slate-700">
+                            Routing Number
+                          </Label>
+                          <Input
+                            value={bankDetails.routing_number}
+                            onChange={(e) =>
+                              setBankDetails({
+                                ...bankDetails,
+                                routing_number: e.target.value,
+                              })
+                            }
+                            placeholder="Enter routing number (US/CA)"
+                            className="border-slate-300 hover:border-[#F26623] focus:border-[#F26623]"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-sm font-semibold mb-2 block text-slate-700">
+                            SWIFT Code
+                          </Label>
+                          <Input
+                            value={bankDetails.swift_code}
+                            onChange={(e) =>
+                              setBankDetails({
+                                ...bankDetails,
+                                swift_code: e.target.value,
+                              })
+                            }
+                            placeholder="Enter SWIFT code (International)"
+                            className="border-slate-300 hover:border-[#F26623] focus:border-[#F26623]"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-sm font-semibold mb-2 block text-slate-700">
+                            IBAN
+                          </Label>
+                          <Input
+                            value={bankDetails.iban}
+                            onChange={(e) =>
+                              setBankDetails({
+                                ...bankDetails,
+                                iban: e.target.value,
+                              })
+                            }
+                            placeholder="Enter IBAN (Europe)"
+                            className="border-slate-300 hover:border-[#F26623] focus:border-[#F26623]"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <Label className="text-sm font-semibold mb-2 block text-slate-700">
+                          Bank Address
+                        </Label>
+                        <Textarea
+                          value={bankDetails.bank_address}
+                          onChange={(e) =>
+                            setBankDetails({
+                              ...bankDetails,
+                              bank_address: e.target.value,
+                            })
+                          }
+                          placeholder="Enter bank address"
+                          className="border-slate-300 hover:border-[#F26623] focus:border-[#F26623]"
+                          rows={2}
+                        />
+                      </div>
+
+                      <div>
+                        <Label className="text-sm font-semibold mb-2 block text-slate-700">
+                          Recipient Address
+                        </Label>
+                        <Textarea
+                          value={bankDetails.recipient_address}
+                          onChange={(e) =>
+                            setBankDetails({
+                              ...bankDetails,
+                              recipient_address: e.target.value,
+                            })
+                          }
+                          placeholder="Enter recipient address"
+                          className="border-slate-300 hover:border-[#F26623] focus:border-[#F26623]"
+                          rows={2}
+                        />
+                      </div>
+
+                      <div>
+                        <Label className="text-sm font-semibold mb-2 block text-slate-700">
+                          Purpose of Transfer
+                        </Label>
+                        <Textarea
+                          value={bankDetails.purpose_of_transfer}
+                          onChange={(e) =>
+                            setBankDetails({
+                              ...bankDetails,
+                              purpose_of_transfer: e.target.value,
+                            })
+                          }
+                          placeholder="Enter purpose of transfer"
+                          className="border-slate-300 hover:border-[#F26623] focus:border-[#F26623]"
+                          rows={2}
+                        />
+                      </div>
+                    </div>
+
+                    <Button
+                      onClick={executeBankTransfer}
+                      disabled={
+                        !bankFormData.from_currency ||
+                        !bankFormData.to_currency ||
+                        !bankFormData.amount ||
+                        !bankDetails.bank_name ||
+                        !bankDetails.account_holder_name ||
+                        !bankDetails.account_number ||
+                        loading
+                      }
+                      className="w-full h-14 text-lg font-semibold bg-[#F26623] hover:bg-[#E55A1F] transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl"
+                    >
+                      Submit Bank Transfer Request
+                    </Button>
+                  </TabsContent>
+                </Tabs>
               </CardContent>
             </Card>
           </div>
-
-          {/* Transfer Form */}
-          <Card className="transfer-form">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-xl font-bold text-slate-800 flex items-center gap-3">
-                <div className="w-8 h-8 bg-[#F26623] rounded-lg flex items-center justify-center">
-                  <ArrowLeftRight className="w-4 h-4 text-white" />
-                </div>
-                New Transfer
-              </CardTitle>
-              <p className="text-slate-600 text-sm mt-1">
-                Exchange currencies at real-time rates
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Currency Selection Row */}
-              <div className="flex flex-col lg:flex-row items-center gap-6">
-                <div className="flex-1 w-full">
-                  <Label className="text-sm font-semibold mb-3 block text-slate-700">
-                    From Currency
-                  </Label>
-                  <Select
-                    value={formData.from_currency}
-                    onValueChange={(value) => {
-                      console.log("From currency selected:", value);
-                      setFormData({ ...formData, from_currency: value });
-                    }}
-                  >
-                    <SelectTrigger className="h-12 w-full border-slate-300 hover:border-[#F26623] transition-colors">
-                      <SelectValue placeholder="Select currency" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {currencies.map((currency) => (
-                        <SelectItem
-                          key={currency.code}
-                          value={currency.code}
-                          className="py-3 hover:bg-slate-50"
-                        >
-                          <div className="flex items-center gap-3">
-                            <span className="text-lg">{currency.symbol}</span>
-                            <span className="font-medium">{currency.name}</span>
-                            <span className="text-slate-500">
-                              ({currency.code})
-                            </span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="flex flex-col items-center justify-center px-6 py-4">
-                  <div className="w-12 h-12 bg-[#F26623] rounded-full flex items-center justify-center mb-2">
-                    <ArrowLeftRight className="w-6 h-6 text-white" />
-                  </div>
-                  <div className="currency-badge text-white px-3 py-1 rounded-full text-sm font-medium">
-                    {exchangeRate.toFixed(4)}
-                  </div>
-                </div>
-
-                <div className="flex-1 w-full">
-                  <Label className="text-sm font-semibold mb-3 block text-slate-700">
-                    To Currency
-                  </Label>
-                  <Select
-                    value={formData.to_currency}
-                    onValueChange={(value) => {
-                      console.log("To currency selected:", value);
-                      setFormData({ ...formData, to_currency: value });
-                    }}
-                  >
-                    <SelectTrigger className="h-12 w-full border-slate-300 hover:border-[#F26623] transition-colors">
-                      <SelectValue placeholder="Select currency" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {currencies.map((currency) => (
-                        <SelectItem
-                          key={currency.code}
-                          value={currency.code}
-                          className="py-3 hover:bg-slate-50"
-                        >
-                          <div className="flex items-center gap-3">
-                            <span className="text-lg">{currency.symbol}</span>
-                            <span className="font-medium">{currency.name}</span>
-                            <span className="text-slate-500">
-                              ({currency.code})
-                            </span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              {/* Amount Input Row */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <Label className="text-sm font-semibold mb-3 block text-slate-700">
-                    Amount to Transfer
-                  </Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={formData.amount}
-                    onChange={(e) =>
-                      setFormData({ ...formData, amount: e.target.value })
-                    }
-                    placeholder="0.00"
-                    className="h-12 text-lg border-slate-300 hover:border-[#F26623] focus:border-[#F26623] transition-colors"
-                  />
-                </div>
-                <div>
-                  <Label className="text-sm font-semibold mb-3 block text-slate-700">
-                    You Will Receive
-                  </Label>
-                  <Input
-                    value={estimatedAmount.toFixed(2)}
-                    readOnly
-                    className="h-12 text-lg font-semibold bg-gradient-to-r from-slate-50 to-slate-100 border-slate-300 text-slate-800"
-                  />
-                </div>
-              </div>
-
-              <Button
-                onClick={executeTransfer}
-                disabled={
-                  !formData.from_currency ||
-                  !formData.to_currency ||
-                  !formData.amount ||
-                  loading
-                }
-                className="w-full h-14 text-lg font-semibold bg-[#F26623] hover:from-[#E55A1F] hover:to-[#D4501B] transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl"
-              >
-                Execute Transfer
-              </Button>
-            </CardContent>
-          </Card>
         </div>
 
-        {/* Transfer History - Right Side */}
-        <div className="w-full xl:w-96">
-          <Card className="history-card sticky top-8">
-            <CardHeader className="pb-6">
-              <CardTitle className="text-2xl font-bold text-slate-800 flex items-center gap-3">
+        {/* Transfer History - Static Sidebar */}
+        <div className="w-96 flex-shrink-0">
+          <Card className="history-card h-full flex flex-col">
+            <CardHeader className="pb-4 flex-shrink-0">
+              <CardTitle className="text-xl font-bold text-slate-800">
                 Transfer History
               </CardTitle>
-              <p className="text-slate-600 mt-2">Your recent transactions</p>
+              <p className="text-slate-600 text-sm">Your recent transactions</p>
             </CardHeader>
-            <CardContent className="p-6">
+            <CardContent className="p-4 flex-1 overflow-hidden">
               {transfers.length === 0 ? (
-                <div className="text-center py-12">
-                  <div className="w-16 h-16 bg-gradient-to-br from-slate-200 to-slate-300 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <span className="text-slate-500 text-2xl">📋</span>
+                <div className="text-center py-8 flex-1 flex flex-col justify-center">
+                  <div className="w-12 h-12 bg-gradient-to-br from-slate-200 to-slate-300 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <span className="text-slate-500 text-xl">📋</span>
                   </div>
-                  <p className="text-slate-500 text-lg">No transfers yet</p>
-                  <p className="text-slate-400 text-sm mt-2">
+                  <p className="text-slate-500">No transfers yet</p>
+                  <p className="text-slate-400 text-xs mt-1">
                     Your transfer history will appear here
                   </p>
                 </div>
               ) : (
-                <div className="space-y-4 max-h-96 overflow-y-auto custom-scrollbar pr-2">
+                <div className="space-y-3 h-full overflow-y-auto custom-scrollbar pr-2">
                   {transfers.map((transfer) => (
                     <div
                       key={transfer.id}
-                      className="transfer-item p-5 rounded-xl"
+                      className="transfer-item p-4 rounded-lg"
                     >
-                      <div className="flex justify-between items-start mb-3">
+                      <div className="flex justify-between items-start mb-2">
                         <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className="font-bold text-slate-800">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-bold text-slate-800 text-sm">
                               {transfer.from_currency}
                             </span>
-                            <ArrowLeftRight className="w-4 h-4 text-[#F26623]" />
-                            <span className="font-bold text-slate-800">
+                            <ArrowLeftRight className="w-3 h-3 text-[#F26623]" />
+                            <span className="font-bold text-slate-800 text-sm">
                               {transfer.to_currency}
                             </span>
+                            {transfer.transfer_type === "bank_transfer" && (
+                              <Building2 className="w-3 h-3 text-blue-600" />
+                            )}
+                            {(currencies.find(
+                              (c) => c.code === transfer.from_currency
+                            )?.type === "crypto" ||
+                              currencies.find(
+                                (c) => c.code === transfer.to_currency
+                              )?.type === "crypto") && (
+                              <Coins className="w-3 h-3 text-orange-600" />
+                            )}
                           </div>
-                          <div className="text-sm text-slate-600">
+                          <div className="text-xs text-slate-600">
                             <span className="font-medium">
                               {Number(transfer.from_amount).toLocaleString()}
                             </span>
@@ -604,20 +1237,31 @@ export default function TransfersSection() {
                             <span className="font-medium">
                               {Number(transfer.to_amount).toLocaleString()}
                             </span>
+                            {transfer.fee_amount > 0 && (
+                              <span className="text-red-600 text-xs ml-1">
+                                (Fee: {Number(transfer.fee_amount).toFixed(8)})
+                              </span>
+                            )}
                           </div>
                         </div>
-                        <span className="text-xs font-semibold text-green-700 bg-green-100 px-3 py-1 rounded-full">
-                          {transfer.status}
-                        </span>
+                        {getStatusBadge(transfer.status)}
                       </div>
                       <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-500 font-medium">
+                        <span className="text-slate-500">
                           {new Date(transfer.created_at).toLocaleDateString()}
                         </span>
-                        <span className="text-slate-600 bg-slate-100 px-2 py-1 rounded">
-                          Rate: {Number(transfer.exchange_rate).toFixed(4)}
-                        </span>
+                        {transfer.reference_number && (
+                          <span className="text-slate-600 bg-slate-100 px-2 py-1 rounded text-xs">
+                            {transfer.reference_number}
+                          </span>
+                        )}
                       </div>
+                      {transfer.transfer_type === "bank_transfer" &&
+                        transfer.status === "Pending" && (
+                          <div className="mt-2 text-xs text-amber-600 bg-amber-50 p-2 rounded">
+                            Bank transfer pending admin approval
+                          </div>
+                        )}
                     </div>
                   ))}
                 </div>
