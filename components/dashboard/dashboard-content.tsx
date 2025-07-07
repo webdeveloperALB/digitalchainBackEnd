@@ -766,7 +766,7 @@ export default function DashboardContent({
         {/* New User Welcome Banner */}
         {isNewUser && (
           <Alert className="mb-6 border-[#F26623] bg-gradient-to-r from-orange-50 to-yellow-50">
-            <Gift className="h-4 w-4 text-[#F26623]" />
+            <Gift className="mt-2 h-5 w-5 text-[#F26623]" />
             <AlertDescription className="text-gray-800">
               <strong>Welcome Bonus!</strong> As a new Digital Chain Bank
               customer, you're eligible for premium features and dedicated
