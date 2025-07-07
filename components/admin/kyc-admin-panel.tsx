@@ -264,29 +264,178 @@ export default function KYCAdminPanel() {
     setShowSkipDialog(true);
   };
 
+  const debugFilePaths = (record: KYCRecord) => {
+    console.log("=== DEBUG FILE PATHS ===");
+    console.log("Record ID:", record.id);
+    console.log("User ID:", record.user_id);
+    console.log("ID Document Path:", record.id_document_path);
+    console.log("Utility Bill Path:", record.utility_bill_path);
+    console.log("Selfie Path:", record.selfie_path);
+    console.log("Driver License Path:", record.driver_license_path);
+    console.log("========================");
+  };
+
   const downloadDocument = async (path: string, filename: string) => {
     try {
-      const { data, error } = await supabase.storage
-        .from("kyc-documents")
-        .download(path);
-      if (error) {
-        console.error("Error downloading document:", error);
-        alert("Error downloading document");
+      // Prevent admin skip downloads
+      if (path.includes("admin_skip") || path.includes("no_document")) {
+        console.log(
+          "Attempted to download admin-skipped document, blocking request"
+        );
         return;
       }
 
-      // Create download link
-      const url = URL.createObjectURL(data);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error("Error downloading document:", error);
-      alert("Error downloading document");
+      console.log("Original path from database:", path);
+
+      // Clean and normalize the path
+      let cleanPath = path.trim();
+      if (cleanPath.startsWith("/")) {
+        cleanPath = cleanPath.substring(1);
+      }
+
+      console.log("Cleaned path:", cleanPath);
+
+      // Extract just the filename from the path
+      const fileName = cleanPath.split("/").pop();
+      console.log("Extracted filename:", fileName);
+
+      // Determine document type from path
+      let documentType = "";
+      if (
+        cleanPath.includes("id-documents") ||
+        cleanPath.includes("id_documents")
+      ) {
+        documentType = "id-documents";
+      } else if (
+        cleanPath.includes("utility-bills") ||
+        cleanPath.includes("utility_bills")
+      ) {
+        documentType = "utility-bills";
+      } else if (cleanPath.includes("selfies")) {
+        documentType = "selfies";
+      } else if (
+        cleanPath.includes("driver-license") ||
+        cleanPath.includes("driver_license")
+      ) {
+        documentType = "driver-license";
+      }
+
+      console.log("Document type:", documentType);
+
+      // Try different path combinations based on your storage structure
+      const pathsToTry = [
+        cleanPath, // Original path
+        fileName, // Just filename
+        `${documentType}/${fileName}`, // document-type/filename
+        cleanPath.replace(/^[^/]+\//, ""), // Remove first folder (user ID)
+      ].filter(Boolean);
+
+      console.log("Paths to try:", pathsToTry);
+
+      let downloadSuccess = false;
+      let lastError = null;
+
+      for (const tryPath of pathsToTry) {
+        try {
+          console.log(`Attempting download with path: ${tryPath}`);
+
+          // First try direct download
+          const { data, error } = await supabase.storage
+            .from("kyc-documents")
+            .download(tryPath);
+
+          if (error) {
+            console.log(
+              `Direct download failed for ${tryPath}:`,
+              error.message
+            );
+
+            // Try with signed URL
+            const { data: signedUrlData, error: urlError } =
+              await supabase.storage
+                .from("kyc-documents")
+                .createSignedUrl(tryPath, 60);
+
+            if (urlError) {
+              console.log(
+                `Signed URL failed for ${tryPath}:`,
+                urlError.message
+              );
+              lastError = urlError;
+              continue;
+            }
+
+            if (signedUrlData?.signedUrl) {
+              console.log(
+                `Using signed URL for ${tryPath}:`,
+                signedUrlData.signedUrl
+              );
+
+              const response = await fetch(signedUrlData.signedUrl);
+              if (!response.ok) {
+                console.log(`Fetch failed for ${tryPath}: ${response.status}`);
+                continue;
+              }
+
+              const blob = await response.blob();
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = filename;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+
+              console.log(
+                `Document downloaded successfully via signed URL: ${tryPath}`
+              );
+              downloadSuccess = true;
+              break;
+            }
+          } else if (data) {
+            console.log(`Direct download successful: ${tryPath}`);
+
+            // Create download link
+            const url = URL.createObjectURL(data);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            console.log("Document downloaded successfully via direct download");
+            downloadSuccess = true;
+            break;
+          }
+        } catch (err: any) {
+          console.log(`Exception with path ${tryPath}:`, err.message);
+          lastError = err;
+          continue;
+        }
+      }
+
+      if (!downloadSuccess) {
+        console.error("All download attempts failed. Last error:", lastError);
+
+        // Show a more helpful error message
+        alert(`Unable to download document. 
+
+Tried these paths:
+${pathsToTry.map((p) => `• ${p}`).join("\n")}
+
+This might be due to:
+1. File permissions (RLS policies)
+2. File was moved or deleted
+3. Path mismatch between database and storage
+
+Please check your Supabase RLS policies for the kyc-documents bucket.`);
+      }
+    } catch (error: any) {
+      console.error("Unexpected error downloading document:", error);
+      alert(`Unexpected error: ${error.message || "Unknown error"}`);
     }
   };
 
@@ -733,12 +882,13 @@ export default function KYCAdminPanel() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() =>
+                                onClick={() => {
+                                  debugFilePaths(record);
                                   downloadDocument(
                                     record.id_document_path,
                                     `${record.full_name}_ID_Document`
-                                  )
-                                }
+                                  );
+                                }}
                               >
                                 <Download className="w-4 h-4 mr-1" />
                                 Download
