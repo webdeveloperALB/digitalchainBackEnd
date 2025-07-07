@@ -1,5 +1,4 @@
 "use client";
-
 import React from "react";
 import { useState, useEffect, useRef } from "react";
 import {
@@ -33,6 +32,9 @@ import {
   ArrowUpRight,
   Building2,
   AlertTriangle,
+  Sparkles,
+  Gift,
+  Shield,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -42,6 +44,7 @@ interface DashboardContentProps {
     client_id: string;
     full_name: string | null;
     email: string | null;
+    created_at?: string;
   };
   setActiveTab: (tab: string) => void;
 }
@@ -54,6 +57,7 @@ interface LatestMessage {
   message_type: string;
   is_read: boolean;
   created_at: string;
+  is_welcome?: boolean; // Make this optional
 }
 
 interface Payment {
@@ -83,6 +87,16 @@ interface Transfer {
   created_at: string;
 }
 
+interface WelcomeMessage {
+  id: string;
+  title: string;
+  content: string;
+  message_type: string;
+  is_read: boolean;
+  created_at: string;
+  is_welcome: boolean;
+}
+
 export default function DashboardContent({
   userProfile,
   setActiveTab,
@@ -105,12 +119,145 @@ export default function DashboardContent({
   const loadingRef = useRef(false);
   const [transfersData, setTransfersData] = useState<Transfer[]>([]);
   const [transfersLoading, setTransfersLoading] = useState(true);
+  const [welcomeMessage, setWelcomeMessage] = useState<WelcomeMessage | null>(
+    null
+  );
+  const [isNewUser, setIsNewUser] = useState(false);
+  const [hasCheckedWelcome, setHasCheckedWelcome] = useState(false);
+  const [currentMessage, setCurrentMessage] = useState<
+    LatestMessage | WelcomeMessage | null
+  >(null);
 
+  // Check if user is new and create welcome message
   useEffect(() => {
+    const checkNewUserAndCreateWelcome = async () => {
+      if (!userProfile || hasCheckedWelcome) return;
+
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) return;
+
+        // Check if user was created in the last 24 hours
+        const userCreatedAt = new Date(user.created_at);
+        const now = new Date();
+        const hoursDiff =
+          (now.getTime() - userCreatedAt.getTime()) / (1000 * 60 * 60);
+        const isRecentUser = hoursDiff <= 24;
+
+        // Check if user has any existing transactions (indicating they're not new)
+        const { data: existingTransfers } = await supabase
+          .from("transfers")
+          .select("id")
+          .eq("user_id", user.id)
+          .limit(1);
+
+        const { data: existingPayments } = await supabase
+          .from("payments")
+          .select("id")
+          .eq("user_id", user.id)
+          .limit(1);
+
+        // Check if welcome message already exists
+        const { data: existingWelcome } = await supabase
+          .from("messages")
+          .select("*")
+          .eq("client_id", userProfile.client_id)
+          .eq("message_type", "welcome")
+          .limit(1);
+
+        const hasActivity =
+          (existingTransfers && existingTransfers.length > 0) ||
+          (existingPayments && existingPayments.length > 0);
+
+        const shouldShowWelcome =
+          isRecentUser && !hasActivity && !existingWelcome?.length;
+
+        if (shouldShowWelcome) {
+          setIsNewUser(true);
+
+          // Create welcome message in database
+          const welcomeData = {
+            client_id: userProfile.client_id,
+            title: "Welcome to Digital Chain Bank! 🎉",
+            content: `Dear ${
+              userProfile.full_name || "Valued Customer"
+            }, welcome to Digital Chain Bank - your trusted partner in digital banking excellence. We're thrilled to have you join our growing family of satisfied customers. Your account is now active and ready for secure, fast, and reliable financial transactions. Explore our comprehensive banking services including multi-currency transfers, cryptocurrency management, and 24/7 customer support. Thank you for choosing Digital Chain Bank for your financial journey.`,
+            message_type: "welcome",
+            is_read: false,
+            created_at: new Date().toISOString(),
+          };
+
+          // Insert welcome message into database
+          const { data: insertedMessage, error: insertError } = await supabase
+            .from("messages")
+            .insert([welcomeData])
+            .select()
+            .single();
+
+          if (!insertError && insertedMessage) {
+            setWelcomeMessage({
+              ...insertedMessage,
+              is_welcome: true,
+            });
+            setCurrentMessage({
+              ...insertedMessage,
+              is_welcome: true,
+            });
+            setShowMessage(true);
+          } else {
+            // Fallback to local welcome message if database insert fails
+            const localWelcomeMessage = {
+              id: "welcome-local",
+              title: "Welcome to Digital Chain Bank! 🎉",
+              content: `Dear ${
+                userProfile.full_name || "Valued Customer"
+              }, welcome to Digital Chain Bank - your trusted partner in digital banking excellence. We're thrilled to have you join our growing family of satisfied customers.`,
+              message_type: "welcome",
+              is_read: false,
+              created_at: new Date().toISOString(),
+              is_welcome: true,
+            };
+            setWelcomeMessage(localWelcomeMessage);
+            setCurrentMessage(localWelcomeMessage);
+            setShowMessage(true);
+          }
+        }
+
+        setHasCheckedWelcome(true);
+      } catch (error) {
+        console.error("Error checking new user status:", error);
+        setHasCheckedWelcome(true);
+      }
+    };
+
+    checkNewUserAndCreateWelcome();
+  }, [userProfile, hasCheckedWelcome]);
+
+  // Handle regular messages
+  useEffect(() => {
+    // Only show regular messages if there's no welcome message or if the latest message is newer than welcome
     if (latestMessage && !latestMessage.is_read) {
-      setShowMessage(true);
+      if (welcomeMessage) {
+        // Check if the latest message is newer than the welcome message
+        const latestMessageTime = new Date(latestMessage.created_at).getTime();
+        const welcomeMessageTime = new Date(
+          welcomeMessage.created_at
+        ).getTime();
+
+        // Only replace welcome message if admin message is newer
+        if (latestMessageTime > welcomeMessageTime) {
+          setWelcomeMessage(null); // Clear welcome message
+          setCurrentMessage({ ...latestMessage, is_welcome: false });
+          setShowMessage(true);
+        }
+      } else {
+        setCurrentMessage({ ...latestMessage, is_welcome: false });
+        setShowMessage(true);
+      }
     }
-  }, [latestMessage]);
+  }, [latestMessage, welcomeMessage]);
 
   useEffect(() => {
     if (loading && !loadingRef.current) {
@@ -237,10 +384,8 @@ export default function DashboardContent({
         const sortedTransfers = uniqueTransfers.sort((a, b) => {
           const aIsCredit = isAdminCredit(a);
           const bIsCredit = isAdminCredit(b);
-
           if (aIsCredit && !bIsCredit) return -1;
           if (!aIsCredit && bIsCredit) return 1;
-
           return (
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
           );
@@ -305,10 +450,55 @@ export default function DashboardContent({
     };
   }, [userProfile.client_id]);
 
+  useEffect(() => {
+    const checkForNewAdminMessages = async () => {
+      if (!welcomeMessage || !userProfile) return;
+
+      try {
+        const { data: newerMessages } = await supabase
+          .from("messages")
+          .select("*")
+          .eq("client_id", userProfile.client_id)
+          .neq("message_type", "welcome")
+          .gt("created_at", welcomeMessage.created_at)
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        if (newerMessages && newerMessages.length > 0) {
+          // There's a newer admin message, welcome message should step aside
+          console.log(
+            "Newer admin message found, welcome message will be replaced"
+          );
+          setCurrentMessage({ ...newerMessages[0], is_welcome: false });
+        }
+      } catch (error) {
+        console.error("Error checking for newer messages:", error);
+      }
+    };
+
+    checkForNewAdminMessages();
+  }, [welcomeMessage, userProfile, latestMessage]);
+
   const handleDismissMessage = async () => {
-    if (latestMessage) {
+    if (welcomeMessage) {
+      try {
+        if (welcomeMessage.id !== "welcome-local") {
+          await supabase
+            .from("messages")
+            .update({ is_read: true })
+            .eq("id", welcomeMessage.id);
+        }
+        // Don't clear welcome message, just mark as read
+        setWelcomeMessage({ ...welcomeMessage, is_read: true });
+        setCurrentMessage({ ...welcomeMessage, is_read: true });
+        setShowMessage(false);
+      } catch (error) {
+        console.error("Error marking welcome message as read:", error);
+      }
+    } else if (latestMessage) {
       try {
         await markAsRead(latestMessage.id);
+        setCurrentMessage(null);
         setShowMessage(false);
       } catch (error) {
         console.error("Error marking message as read:", error);
@@ -348,6 +538,8 @@ export default function DashboardContent({
 
   const getMessageIcon = (type: string) => {
     switch (type) {
+      case "welcome":
+        return <Sparkles className="h-4 w-4" />;
       case "alert":
         return <Bell className="h-4 w-4" />;
       case "warning":
@@ -397,11 +589,9 @@ export default function DashboardContent({
       }
       return <Building2 className="h-5 w-5 text-blue-600" />;
     }
-
     if (isRegularDeposit(transfer)) {
       return <ArrowDownLeft className="h-5 w-5 text-green-600" />;
     }
-
     return <ArrowUpRight className="h-5 w-5 text-gray-600" />;
   };
 
@@ -410,11 +600,9 @@ export default function DashboardContent({
     if (transfer.transfer_type === "admin_deposit") {
       return "Account Credit";
     }
-
     if (transfer.transfer_type === "admin_debit") {
       return "Account Debit";
     }
-
     if (transfer.transfer_type === "admin_balance_adjustment") {
       return "Balance Adjustment";
     }
@@ -423,11 +611,9 @@ export default function DashboardContent({
     if (transfer.description?.toLowerCase().includes("account credit")) {
       return "Account Credit";
     }
-
     if (transfer.description?.toLowerCase().includes("account debit")) {
       return "Account Debit";
     }
-
     if (transfer.description?.toLowerCase().includes("administrative")) {
       return "Administrative Transaction";
     }
@@ -451,13 +637,11 @@ export default function DashboardContent({
         transfer.from_currency || "USD"
       ).toUpperCase()}`;
     }
-
     if (transfer.transfer_type === "admin_debit") {
       return `-${Number(transfer.from_amount || 0).toLocaleString()} ${(
         transfer.from_currency || "USD"
       ).toUpperCase()}`;
     }
-
     if (transfer.transfer_type === "admin_balance_adjustment") {
       return `${Number(transfer.to_amount || 0).toLocaleString()} ${(
         transfer.to_currency || "USD"
@@ -472,7 +656,6 @@ export default function DashboardContent({
       const amount = match ? match[1] : transfer.from_amount;
       return `+${amount} ${(transfer.from_currency || "USD").toUpperCase()}`;
     }
-
     if (
       transfer.description?.toLowerCase().includes("debited from your account")
     ) {
@@ -561,9 +744,14 @@ export default function DashboardContent({
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">
             Welcome, {displayName}!
+            {isNewUser && (
+              <Sparkles className="inline-block ml-2 h-6 w-6 text-[#F26623]" />
+            )}
           </h1>
           <p className="text-gray-600">
-            Here's your account overview and recent activity
+            {isNewUser
+              ? "Thank you for joining Digital Chain Bank! Here's your new account overview"
+              : "Here's your account overview and recent activity"}
           </p>
         </div>
 
@@ -575,13 +763,39 @@ export default function DashboardContent({
           </Alert>
         )}
 
+        {/* New User Welcome Banner */}
+        {isNewUser && (
+          <Alert className="mb-6 border-[#F26623] bg-gradient-to-r from-orange-50 to-yellow-50">
+            <Gift className="h-4 w-4 text-[#F26623]" />
+            <AlertDescription className="text-gray-800">
+              <strong>Welcome Bonus!</strong> As a new Digital Chain Bank
+              customer, you're eligible for premium features and dedicated
+              support.
+              <Button
+                variant="link"
+                className="p-0 ml-2 text-[#F26623] font-semibold"
+                onClick={() => setActiveTab("support")}
+              >
+                Learn more →
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Balance Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           {Object.entries(displayBalances).map(([currency, balance]) => (
             <Card
               key={currency}
-              className="hover:shadow-lg transition-shadow bg-[#F26623]"
+              className="hover:shadow-lg transition-shadow bg-[#F26623] relative overflow-hidden"
             >
+              {isNewUser && (
+                <div className="absolute top-2 right-2">
+                  <Badge className="bg-white text-[#F26623] text-xs">
+                    New!
+                  </Badge>
+                </div>
+              )}
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm text-white font-medium capitalize">
                   {currency} Balance
@@ -667,9 +881,15 @@ export default function DashboardContent({
                 ) : transfersData.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
                     <Send className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p className="text-sm">No account activity</p>
+                    <p className="text-sm">
+                      {isNewUser
+                        ? "Welcome! Your first transaction will appear here"
+                        : "No account activity"}
+                    </p>
                     <p className="text-xs">
-                      Your transactions will appear here in real-time
+                      {isNewUser
+                        ? "Start by making a deposit or transfer to see your activity"
+                        : "Your transactions will appear here in real-time"}
                     </p>
                   </div>
                 ) : (
@@ -758,11 +978,8 @@ export default function DashboardContent({
                                     ? "bg-purple-100 text-purple-800"
                                     : isRegularDep
                                     ? "bg-green-100 text-green-800"
-                                    : "bg-gray-100 text-gray-800"
-                                  : transfer.status === "pending" ||
-                                    transfer.status === "Pending"
-                                  ? "bg-yellow-100 text-yellow-800"
-                                  : "bg-red-100 text-red-800"
+                                    : "bg-gray-100 text-gray-800" 
+                                  : "bg-gray-100 text-gray-800" 
                               }`}
                             >
                               {transfer.status || "Completed"}
@@ -799,9 +1016,13 @@ export default function DashboardContent({
                 ) : payments.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
                     <CreditCard className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p className="text-sm">No recent payments</p>
+                    <p className="text-sm">
+                      {isNewUser ? "No payments yet" : "No recent payments"}
+                    </p>
                     <p className="text-xs">
-                      Your payment history will appear here
+                      {isNewUser
+                        ? "Your payment history will appear here once you start making transactions"
+                        : "Your payment history will appear here"}
                     </p>
                   </div>
                 ) : (
@@ -867,12 +1088,33 @@ export default function DashboardContent({
                 <CardTitle className="flex items-center justify-between">
                   <div className="flex items-center">
                     <MessageSquare className="h-5 w-5 mr-2" />
-                    Latest Message
-                    {latestMessage && !latestMessage.is_read && (
-                      <Badge variant="destructive" className="ml-2 text-xs">
-                        New
-                      </Badge>
-                    )}
+                    {currentMessage ? "Welcome Message" : "Latest Message"}
+                    {currentMessage &&
+                      (!currentMessage.is_read ||
+                        (welcomeMessage &&
+                          currentMessage.id === welcomeMessage.id)) && (
+                        <Badge
+                          variant={
+                            welcomeMessage &&
+                            currentMessage.id === welcomeMessage.id
+                              ? "default"
+                              : "destructive"
+                          }
+                          className={`ml-2 text-xs ${
+                            welcomeMessage &&
+                            currentMessage.id === welcomeMessage.id
+                              ? "bg-[#F26623]"
+                              : ""
+                          }`}
+                        >
+                          {welcomeMessage &&
+                          currentMessage.id === welcomeMessage.id
+                            ? currentMessage.is_read
+                              ? "Welcome"
+                              : "Welcome!"
+                            : "New"}
+                        </Badge>
+                      )}
                   </div>
                 </CardTitle>
               </CardHeader>
@@ -882,36 +1124,61 @@ export default function DashboardContent({
                     <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
                     <div className="h-3 bg-gray-200 rounded w-1/2"></div>
                   </div>
-                ) : latestMessage ? (
+                ) : currentMessage ? (
                   <div
-                    className={`p-3 rounded-lg border-l-4 transition-opacity ${
-                      latestMessage.message_type === "success"
+                    className={`p-4 rounded-lg border-l-4 transition-opacity ${
+                      currentMessage.message_type === "welcome"
+                        ? "border-[#F26623] bg-gradient-to-r from-orange-50 to-yellow-50"
+                        : currentMessage.message_type === "success"
                         ? "border-green-500 bg-green-50"
-                        : latestMessage.message_type === "alert"
+                        : currentMessage.message_type === "alert"
                         ? "border-red-500 bg-red-50"
-                        : latestMessage.message_type === "warning"
+                        : currentMessage.message_type === "warning"
                         ? "border-yellow-500 bg-yellow-50"
                         : "border-blue-500 bg-blue-50"
-                    } ${latestMessage.is_read ? "opacity-70" : ""}`}
+                    } ${currentMessage.is_read ? "opacity-70" : ""}`}
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex items-start space-x-2">
-                        {getMessageIcon(latestMessage.message_type)}
+                        {getMessageIcon(currentMessage.message_type)}
                         <div className="flex-1">
                           <h4 className="font-semibold text-sm">
-                            {latestMessage.title}
+                            {currentMessage.title}
                           </h4>
-                          <p className="text-xs text-gray-600 mt-1">
-                            {latestMessage.content}
+                          <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                            {currentMessage.content}
                           </p>
                           <p className="text-xs text-gray-400 mt-2">
                             {new Date(
-                              latestMessage.created_at
+                              currentMessage.created_at
                             ).toLocaleTimeString()}
                           </p>
+                          {welcomeMessage &&
+                            currentMessage.id === welcomeMessage.id && (
+                              <div className="mt-3 flex space-x-2">
+                                <Button
+                                  size="sm"
+                                  onClick={() => setActiveTab("support")}
+                                  className="bg-[#F26623] hover:bg-[#E55A1F] text-white text-xs"
+                                >
+                                  <Shield className="h-3 w-3 mr-1" />
+                                  Get Support
+                                </Button>
+                                {!currentMessage.is_read && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={handleDismissMessage}
+                                    className="text-xs bg-transparent"
+                                  >
+                                    Mark as Read
+                                  </Button>
+                                )}
+                              </div>
+                            )}
                         </div>
                       </div>
-                      {!latestMessage.is_read && (
+                      {!currentMessage.is_read && !welcomeMessage && (
                         <div className="w-2 h-2 bg-[#F26623] rounded-full mt-1"></div>
                       )}
                     </div>

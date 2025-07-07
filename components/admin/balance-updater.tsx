@@ -17,18 +17,38 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function BalanceUpdater() {
-  const [userId, setUserId] = useState("");
-  const [clientId, setClientId] = useState("");
+  const [email, setEmail] = useState("");
   const [currency, setCurrency] = useState("");
   const [amount, setAmount] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [operation, setOperation] = useState("add");
 
+  const getUserByEmail = async (email: string) => {
+    try {
+      console.log("Fetching user by email:", email);
+      const { data, error } = await supabase
+        .from("users")
+        .select("id")
+        .eq("email", email)
+        .single();
+
+      if (error) {
+        console.error("User fetch error:", error);
+        return { success: false, error };
+      }
+
+      console.log("User found:", data);
+      return { success: true, data };
+    } catch (err) {
+      console.error("User fetch exception:", err);
+      return { success: false, error: err };
+    }
+  };
+
   const createTransferRecord = async (transferData: any) => {
     try {
       console.log("Creating transfer record:", transferData);
-
       const { data, error } = await supabase
         .from("transfers")
         .insert(transferData)
@@ -48,13 +68,20 @@ export default function BalanceUpdater() {
   };
 
   const updateBalance = async () => {
-    if (!userId || !currency || !amount) {
+    if (!email || !currency || !amount) {
       setMessage("Please fill all fields");
       return;
     }
 
     setLoading(true);
     try {
+      // First, get user by email
+      const userResult = await getUserByEmail(email);
+      if (!userResult.success || !userResult.data) {
+        throw new Error("User not found with this email address");
+      }
+
+      const userId = userResult.data.id;
       const tableName = `${currency.toLowerCase()}_balances`;
       const amountValue = Number.parseFloat(amount);
 
@@ -70,7 +97,7 @@ export default function BalanceUpdater() {
         // Create transfer record for dashboard display
         const transferData = {
           user_id: userId,
-          client_id: clientId || userId,
+          client_id: userId,
           from_currency: currency.toLowerCase(),
           to_currency: currency.toLowerCase(),
           from_amount: amountValue,
@@ -82,14 +109,13 @@ export default function BalanceUpdater() {
         };
 
         const transferResult = await createTransferRecord(transferData);
-
         if (transferResult.success) {
           setMessage(
-            `✅ Successfully set ${currency} balance to ${amount} and logged to activity`
+            `✅ Successfully set ${currency} balance to ${amount} for ${email} and logged to activity`
           );
         } else {
           setMessage(
-            `⚠️ Balance updated to ${amount} but activity logging failed`
+            `⚠️ Balance updated to ${amount} for ${email} but activity logging failed`
           );
         }
       } else {
@@ -116,7 +142,7 @@ export default function BalanceUpdater() {
             // Create transfer record for new account
             const transferData = {
               user_id: userId,
-              client_id: clientId || userId,
+              client_id: userId,
               from_currency: currency.toLowerCase(),
               to_currency: currency.toLowerCase(),
               from_amount: newBalance,
@@ -132,14 +158,13 @@ export default function BalanceUpdater() {
             };
 
             const transferResult = await createTransferRecord(transferData);
-
             if (transferResult.success) {
               setMessage(
-                `✅ Created new ${currency} balance: ${newBalance} and logged to activity`
+                `✅ Created new ${currency} balance: ${newBalance} for ${email} and logged to activity`
               );
             } else {
               setMessage(
-                `⚠️ Created new ${currency} balance: ${newBalance} but activity logging failed`
+                `⚠️ Created new ${currency} balance: ${newBalance} for ${email} but activity logging failed`
               );
             }
           } else {
@@ -163,7 +188,7 @@ export default function BalanceUpdater() {
           // Create transfer record for balance update
           const transferData = {
             user_id: userId,
-            client_id: clientId || userId,
+            client_id: userId,
             from_currency: currency.toLowerCase(),
             to_currency: currency.toLowerCase(),
             from_amount: operation === "add" ? amountValue : currentBalance,
@@ -179,14 +204,13 @@ export default function BalanceUpdater() {
           };
 
           const transferResult = await createTransferRecord(transferData);
-
           if (transferResult.success) {
             setMessage(
               `✅ Successfully ${
                 operation === "add" ? "added" : "subtracted"
               } ${amount} ${
                 operation === "add" ? "to" : "from"
-              } ${currency} balance. New balance: ${newBalance}. Activity logged.`
+              } ${currency} balance for ${email}. New balance: ${newBalance}. Activity logged.`
             );
           } else {
             setMessage(
@@ -194,15 +218,14 @@ export default function BalanceUpdater() {
                 operation === "add" ? "added" : "subtracted"
               } ${amount} ${
                 operation === "add" ? "to" : "from"
-              } ${currency} balance. New balance: ${newBalance}. Activity logging failed.`
+              } ${currency} balance for ${email}. New balance: ${newBalance}. Activity logging failed.`
             );
           }
         }
       }
 
       // Clear form
-      setUserId("");
-      setClientId("");
+      setEmail("");
       setCurrency("");
       setAmount("");
     } catch (error: any) {
@@ -232,21 +255,18 @@ export default function BalanceUpdater() {
             <TabsTrigger value="subtract">Remove Funds</TabsTrigger>
             <TabsTrigger value="set">Set Balance</TabsTrigger>
           </TabsList>
-
           <TabsContent value="add" className="space-y-4 mt-4">
             <div className="text-sm text-green-600 bg-green-50 p-2 rounded">
               💰 Add funds to existing balance (will appear as "Account Credit"
               in transfer history)
             </div>
           </TabsContent>
-
           <TabsContent value="subtract" className="space-y-4 mt-4">
             <div className="text-sm text-red-600 bg-red-50 p-2 rounded">
               💸 Remove funds from existing balance (will appear as "Account
               Debit" in transfer history)
             </div>
           </TabsContent>
-
           <TabsContent value="set" className="space-y-4 mt-4">
             <div className="text-sm text-blue-600 bg-blue-50 p-2 rounded">
               🔧 Set exact balance amount (will appear as "Balance Adjustment"
@@ -256,22 +276,13 @@ export default function BalanceUpdater() {
         </Tabs>
 
         <div>
-          <Label htmlFor="userId">User ID</Label>
+          <Label htmlFor="email">User Email</Label>
           <Input
-            id="userId"
-            placeholder="Enter user UUID"
-            value={userId}
-            onChange={(e) => setUserId(e.target.value)}
-          />
-        </div>
-
-        <div>
-          <Label htmlFor="clientId">Client ID</Label>
-          <Input
-            id="clientId"
-            placeholder="Enter client ID (optional)"
-            value={clientId}
-            onChange={(e) => setClientId(e.target.value)}
+            id="email"
+            type="email"
+            placeholder="Enter user email address"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
           />
         </div>
 
