@@ -57,7 +57,7 @@ interface LatestMessage {
   message_type: string;
   is_read: boolean;
   created_at: string;
-  is_welcome?: boolean; // Make this optional
+  is_welcome?: boolean;
 }
 
 interface Payment {
@@ -85,6 +85,32 @@ interface Transfer {
   transfer_type: string;
   description?: string;
   created_at: string;
+}
+
+interface AccountActivity {
+  id: string;
+  user_id: string;
+  client_id: string;
+  activity_type: string;
+  title: string;
+  description: string | null;
+  currency: string;
+  display_amount: number;
+  status: string;
+  priority: string;
+  is_read: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  expires_at: string | null;
+  metadata: any;
+}
+
+interface CombinedActivity {
+  id: string;
+  type: "transfer" | "account_activity";
+  created_at: string;
+  data: Transfer | AccountActivity;
 }
 
 interface WelcomeMessage {
@@ -118,7 +144,13 @@ export default function DashboardContent({
   const [hasLoaded, setHasLoaded] = useState(false);
   const loadingRef = useRef(false);
   const [transfersData, setTransfersData] = useState<Transfer[]>([]);
-  const [transfersLoading, setTransfersLoading] = useState(true);
+  const [accountActivities, setAccountActivities] = useState<AccountActivity[]>(
+    []
+  );
+  const [combinedActivities, setCombinedActivities] = useState<
+    CombinedActivity[]
+  >([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(true);
   const [welcomeMessage, setWelcomeMessage] = useState<WelcomeMessage | null>(
     null
   );
@@ -176,7 +208,6 @@ export default function DashboardContent({
 
         if (shouldShowWelcome) {
           setIsNewUser(true);
-
           // Create welcome message in database
           const welcomeData = {
             client_id: userProfile.client_id,
@@ -224,7 +255,6 @@ export default function DashboardContent({
             setShowMessage(true);
           }
         }
-
         setHasCheckedWelcome(true);
       } catch (error) {
         console.error("Error checking new user status:", error);
@@ -331,14 +361,17 @@ export default function DashboardContent({
     };
   }, []);
 
+  // Fetch transfers and account activities
   useEffect(() => {
-    const fetchTransfers = async () => {
+    const fetchActivities = async () => {
+      setActivitiesLoading(true);
       try {
         const {
           data: { user },
         } = await supabase.auth.getUser();
         if (!user) return;
 
+        // Fetch transfers
         const { data: userTransfers, error: userError } = await supabase
           .from("transfers")
           .select("*")
@@ -348,20 +381,6 @@ export default function DashboardContent({
 
         if (userError) {
           console.error("Error fetching user transfers:", userError);
-          const { data: clientTransfers, error: clientError } = await supabase
-            .from("transfers")
-            .select("*")
-            .eq("client_id", userProfile.client_id)
-            .order("created_at", { ascending: false })
-            .limit(20);
-
-          if (clientError) {
-            console.error("Error fetching client transfers:", clientError);
-            return;
-          }
-
-          setTransfersData(clientTransfers || []);
-          return;
         }
 
         const { data: clientTransfers } = await supabase
@@ -381,32 +400,87 @@ export default function DashboardContent({
             index === self.findIndex((t) => t.id === transfer.id)
         );
 
-        const sortedTransfers = uniqueTransfers.sort((a, b) => {
-          const aIsCredit = isAdminCredit(a);
-          const bIsCredit = isAdminCredit(b);
-          if (aIsCredit && !bIsCredit) return -1;
-          if (!aIsCredit && bIsCredit) return 1;
+        setTransfersData(uniqueTransfers);
+
+        // Fetch account activities
+        const { data: userActivities, error: activitiesError } = await supabase
+          .from("account_activities")
+          .select("*")
+          .eq("user_id", user.id)
+          .eq("status", "active")
+          .order("created_at", { ascending: false })
+          .limit(20);
+
+        if (activitiesError) {
+          console.error("Error fetching account activities:", activitiesError);
+        }
+
+        const { data: clientActivities } = await supabase
+          .from("account_activities")
+          .select("*")
+          .eq("client_id", userProfile.client_id)
+          .eq("status", "active")
+          .order("created_at", { ascending: false })
+          .limit(20);
+
+        const allActivities = [
+          ...(userActivities || []),
+          ...(clientActivities || []),
+        ];
+
+        const uniqueActivities = allActivities.filter(
+          (activity, index, self) =>
+            index === self.findIndex((a) => a.id === activity.id)
+        );
+
+        setAccountActivities(uniqueActivities);
+
+        // Combine and sort all activities
+        const combined: CombinedActivity[] = [
+          ...uniqueTransfers.map((transfer) => ({
+            id: transfer.id,
+            type: "transfer" as const,
+            created_at: transfer.created_at,
+            data: transfer,
+          })),
+          ...uniqueActivities.map((activity) => ({
+            id: activity.id,
+            type: "account_activity" as const,
+            created_at: activity.created_at,
+            data: activity,
+          })),
+        ];
+
+        // Sort by created_at descending, with admin credits prioritized
+        const sortedCombined = combined.sort((a, b) => {
+          if (a.type === "transfer" && b.type === "transfer") {
+            const aIsCredit = isAdminCredit(a.data as Transfer);
+            const bIsCredit = isAdminCredit(b.data as Transfer);
+            if (aIsCredit && !bIsCredit) return -1;
+            if (!aIsCredit && bIsCredit) return 1;
+          }
           return (
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
           );
         });
 
-        setTransfersData(sortedTransfers);
+        setCombinedActivities(sortedCombined);
       } catch (error) {
-        console.error("Error fetching transfers:", error);
+        console.error("Error fetching activities:", error);
       } finally {
-        setTransfersLoading(false);
+        setActivitiesLoading(false);
       }
     };
 
-    fetchTransfers();
+    fetchActivities();
 
-    const setupTransfersSubscription = async () => {
+    const setupSubscriptions = async () => {
       const {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) return;
 
+      // Transfers subscription
       const transfersSubscription = supabase
         .channel(`transfers_realtime_${user.id}`)
         .on(
@@ -419,8 +493,7 @@ export default function DashboardContent({
           },
           (payload) => {
             console.log("User transfer change detected:", payload);
-            fetchTransfers();
-            setTimeout(() => {}, 1000);
+            fetchActivities();
           }
         )
         .on(
@@ -433,18 +506,49 @@ export default function DashboardContent({
           },
           (payload) => {
             console.log("Client transfer change detected:", payload);
-            fetchTransfers();
-            setTimeout(() => {}, 1000);
+            fetchActivities();
+          }
+        )
+        .subscribe();
+
+      // Account activities subscription
+      const activitiesSubscription = supabase
+        .channel(`account_activities_realtime_${user.id}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "account_activities",
+            filter: `user_id=eq.${user.id}`,
+          },
+          (payload) => {
+            console.log("User account activity change detected:", payload);
+            fetchActivities();
+          }
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "account_activities",
+            filter: `client_id=eq.${userProfile.client_id}`,
+          },
+          (payload) => {
+            console.log("Client account activity change detected:", payload);
+            fetchActivities();
           }
         )
         .subscribe();
 
       return () => {
         transfersSubscription.unsubscribe();
+        activitiesSubscription.unsubscribe();
       };
     };
 
-    const cleanup = setupTransfersSubscription();
+    const cleanup = setupSubscriptions();
     return () => {
       cleanup?.then((fn) => fn?.());
     };
@@ -582,105 +686,178 @@ export default function DashboardContent({
     );
   };
 
-  const getTransferIcon = (transfer: Transfer) => {
-    if (isAdminCredit(transfer)) {
-      if (isAdminDebit(transfer)) {
-        return <AlertTriangle className="h-5 w-5 text-orange-600" />;
+  const getActivityIcon = (activity: CombinedActivity) => {
+    if (activity.type === "account_activity") {
+      const accountActivity = activity.data as AccountActivity;
+      switch (accountActivity.activity_type) {
+        case "admin_notification":
+          return <Building2 className="h-5 w-5 text-blue-600" />;
+        case "system_update":
+          return <Activity className="h-5 w-5 text-green-600" />;
+        case "security_alert":
+          return <AlertTriangle className="h-5 w-5 text-red-600" />;
+        case "account_notice":
+          return <Info className="h-5 w-5 text-yellow-600" />;
+        case "service_announcement":
+          return <Send className="h-5 w-5 text-purple-600" />;
+        default:
+          return <Bell className="h-5 w-5 text-gray-600" />;
       }
-      return <Building2 className="h-5 w-5 text-blue-600" />;
+    } else {
+      const transfer = activity.data as Transfer;
+      if (isAdminCredit(transfer)) {
+        if (isAdminDebit(transfer)) {
+          return <AlertTriangle className="h-5 w-5 text-orange-600" />;
+        }
+        return <Building2 className="h-5 w-5 text-blue-600" />;
+      }
+      if (isRegularDeposit(transfer)) {
+        return <ArrowDownLeft className="h-5 w-5 text-green-600" />;
+      }
+      return <ArrowUpRight className="h-5 w-5 text-gray-600" />;
     }
-    if (isRegularDeposit(transfer)) {
-      return <ArrowDownLeft className="h-5 w-5 text-green-600" />;
-    }
-    return <ArrowUpRight className="h-5 w-5 text-gray-600" />;
   };
 
-  const getTransferDescription = (transfer: Transfer) => {
-    // Admin actions - show professional banking messages
-    if (transfer.transfer_type === "admin_deposit") {
-      return "Account Credit";
+  const getActivityDescription = (activity: CombinedActivity) => {
+    if (activity.type === "account_activity") {
+      const accountActivity = activity.data as AccountActivity;
+      return accountActivity.title;
+    } else {
+      const transfer = activity.data as Transfer;
+      // Admin actions - show professional banking messages
+      if (transfer.transfer_type === "admin_deposit") {
+        return "Account Credit";
+      }
+      if (transfer.transfer_type === "admin_debit") {
+        return "Account Debit";
+      }
+      if (transfer.transfer_type === "admin_balance_adjustment") {
+        return "Balance Adjustment";
+      }
+      // Check description for admin actions
+      if (transfer.description?.toLowerCase().includes("account credit")) {
+        return "Account Credit";
+      }
+      if (transfer.description?.toLowerCase().includes("account debit")) {
+        return "Account Debit";
+      }
+      if (transfer.description?.toLowerCase().includes("administrative")) {
+        return "Administrative Transaction";
+      }
+      // Regular deposits
+      if (isRegularDeposit(transfer)) {
+        return `Account Deposit - ${(
+          transfer.to_currency || transfer.from_currency
+        ).toUpperCase()}`;
+      }
+      // Regular transfers
+      return `${transfer.from_currency?.toUpperCase() || "N/A"} → ${
+        transfer.to_currency?.toUpperCase() || "N/A"
+      }`;
     }
-    if (transfer.transfer_type === "admin_debit") {
-      return "Account Debit";
-    }
-    if (transfer.transfer_type === "admin_balance_adjustment") {
-      return "Balance Adjustment";
-    }
-
-    // Check description for admin actions
-    if (transfer.description?.toLowerCase().includes("account credit")) {
-      return "Account Credit";
-    }
-    if (transfer.description?.toLowerCase().includes("account debit")) {
-      return "Account Debit";
-    }
-    if (transfer.description?.toLowerCase().includes("administrative")) {
-      return "Administrative Transaction";
-    }
-
-    // Regular deposits
-    if (isRegularDeposit(transfer)) {
-      return `Account Deposit - ${(
-        transfer.to_currency || transfer.from_currency
-      ).toUpperCase()}`;
-    }
-
-    // Regular transfers
-    return `${transfer.from_currency?.toUpperCase() || "N/A"} → ${
-      transfer.to_currency?.toUpperCase() || "N/A"
-    }`;
   };
 
-  const getTransferAmount = (transfer: Transfer) => {
-    if (transfer.transfer_type === "admin_deposit") {
-      return `+${Number(transfer.from_amount || 0).toLocaleString()} ${(
+  const getActivityAmount = (activity: CombinedActivity) => {
+    if (activity.type === "account_activity") {
+      const accountActivity = activity.data as AccountActivity;
+      if (
+        accountActivity.display_amount &&
+        accountActivity.display_amount !== 0
+      ) {
+        const sign = accountActivity.display_amount > 0 ? "+" : "";
+        return `${sign}${Number(
+          accountActivity.display_amount
+        ).toLocaleString()} ${accountActivity.currency.toUpperCase()}`;
+      }
+      return null;
+    } else {
+      const transfer = activity.data as Transfer;
+      if (transfer.transfer_type === "admin_deposit") {
+        return `+${Number(transfer.from_amount || 0).toLocaleString()} ${(
+          transfer.from_currency || "USD"
+        ).toUpperCase()}`;
+      }
+      if (transfer.transfer_type === "admin_debit") {
+        return `-${Number(transfer.from_amount || 0).toLocaleString()} ${(
+          transfer.from_currency || "USD"
+        ).toUpperCase()}`;
+      }
+      if (transfer.transfer_type === "admin_balance_adjustment") {
+        return `${Number(transfer.to_amount || 0).toLocaleString()} ${(
+          transfer.to_currency || "USD"
+        ).toUpperCase()}`;
+      }
+      // Check description for admin actions
+      if (
+        transfer.description?.toLowerCase().includes("credited to your account")
+      ) {
+        const match = transfer.description.match(
+          /(\d+(?:,\d{3})*(?:\.\d{2})?)/
+        );
+        const amount = match ? match[1] : transfer.from_amount;
+        return `+${amount} ${(transfer.from_currency || "USD").toUpperCase()}`;
+      }
+      if (
+        transfer.description
+          ?.toLowerCase()
+          .includes("debited from your account")
+      ) {
+        const match = transfer.description.match(
+          /(\d+(?:,\d{3})*(?:\.\d{2})?)/
+        );
+        const amount = match ? match[1] : transfer.from_amount;
+        return `-${amount} ${(transfer.from_currency || "USD").toUpperCase()}`;
+      }
+      // Regular deposits
+      if (isRegularDeposit(transfer)) {
+        return `+${Number(
+          transfer.to_amount || transfer.from_amount || 0
+        ).toLocaleString()} ${(
+          transfer.to_currency ||
+          transfer.from_currency ||
+          "USD"
+        ).toUpperCase()}`;
+      }
+      // Regular transfers
+      return `${Number(transfer.from_amount || 0).toLocaleString()} ${(
         transfer.from_currency || "USD"
-      ).toUpperCase()}`;
-    }
-    if (transfer.transfer_type === "admin_debit") {
-      return `-${Number(transfer.from_amount || 0).toLocaleString()} ${(
-        transfer.from_currency || "USD"
-      ).toUpperCase()}`;
-    }
-    if (transfer.transfer_type === "admin_balance_adjustment") {
-      return `${Number(transfer.to_amount || 0).toLocaleString()} ${(
+      ).toUpperCase()} → ${Number(transfer.to_amount || 0).toLocaleString()} ${(
         transfer.to_currency || "USD"
       ).toUpperCase()}`;
     }
+  };
 
-    // Check description for admin actions
-    if (
-      transfer.description?.toLowerCase().includes("credited to your account")
-    ) {
-      const match = transfer.description.match(/(\d+(?:,\d{3})*(?:\.\d{2})?)/);
-      const amount = match ? match[1] : transfer.from_amount;
-      return `+${amount} ${(transfer.from_currency || "USD").toUpperCase()}`;
-    }
-    if (
-      transfer.description?.toLowerCase().includes("debited from your account")
-    ) {
-      const match = transfer.description.match(/(\d+(?:,\d{3})*(?:\.\d{2})?)/);
-      const amount = match ? match[1] : transfer.from_amount;
-      return `-${amount} ${(transfer.from_currency || "USD").toUpperCase()}`;
-    }
+  const getActivityColor = (activity: CombinedActivity) => {
+    if (activity.type === "account_activity") {
+      const accountActivity = activity.data as AccountActivity;
+      switch (accountActivity.activity_type) {
+        case "admin_notification":
+          return "border-blue-200 bg-blue-50/30";
+        case "system_update":
+          return "border-green-200 bg-green-50/30";
+        case "security_alert":
+          return "border-red-200 bg-red-50/30";
+        case "account_notice":
+          return "border-yellow-200 bg-yellow-50/30";
+        case "service_announcement":
+          return "border-purple-200 bg-purple-50/30";
+        default:
+          return "border-gray-200 bg-gray-50/30";
+      }
+    } else {
+      const transfer = activity.data as Transfer;
+      const isCredit = isAdminCredit(transfer) && !isAdminDebit(transfer);
+      const isDebit = isAdminDebit(transfer);
+      const isAdjustment =
+        transfer.transfer_type === "admin_balance_adjustment";
+      const isRegularDep = isRegularDeposit(transfer);
 
-    // Regular deposits
-    if (isRegularDeposit(transfer)) {
-      return `+${Number(
-        transfer.to_amount || transfer.from_amount || 0
-      ).toLocaleString()} ${(
-        transfer.to_currency ||
-        transfer.from_currency ||
-        "USD"
-      ).toUpperCase()}`;
+      if (isCredit) return "border-blue-200 bg-blue-50/30";
+      if (isDebit) return "border-orange-200 bg-orange-50/30";
+      if (isAdjustment) return "border-purple-200 bg-purple-50/30";
+      if (isRegularDep) return "border-green-200 bg-green-50/30";
+      return "border-gray-200";
     }
-
-    // Regular transfers
-    return `${Number(transfer.from_amount || 0).toLocaleString()} ${(
-      transfer.from_currency || "USD"
-    ).toUpperCase()} → ${Number(transfer.to_amount || 0).toLocaleString()} ${(
-      transfer.to_currency || "USD"
-    ).toUpperCase()}`;
   };
 
   if (loading && !hasLoaded) {
@@ -859,7 +1036,7 @@ export default function DashboardContent({
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {transfersLoading ? (
+                {activitiesLoading ? (
                   <div className="space-y-2">
                     {[1, 2, 3].map((i) => (
                       <div
@@ -871,7 +1048,7 @@ export default function DashboardContent({
                       </div>
                     ))}
                   </div>
-                ) : transfersData.length === 0 ? (
+                ) : combinedActivities.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
                     <Send className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <p className="text-sm">
@@ -887,95 +1064,116 @@ export default function DashboardContent({
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {transfersData.slice(0, 8).map((transfer) => {
-                      const isCredit =
-                        isAdminCredit(transfer) && !isAdminDebit(transfer);
-                      const isDebit = isAdminDebit(transfer);
-                      const isAdjustment =
-                        transfer.transfer_type === "admin_balance_adjustment";
-                      const isRegularDep = isRegularDeposit(transfer);
-
+                    {combinedActivities.slice(0, 8).map((activity) => {
                       return (
                         <div
-                          key={transfer.id}
-                          className={`flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors ${
-                            isCredit
-                              ? "border-blue-200 bg-blue-50/30"
-                              : isDebit
-                              ? "border-orange-200 bg-orange-50/30"
-                              : isAdjustment
-                              ? "border-purple-200 bg-purple-50/30"
-                              : isRegularDep
-                              ? "border-green-200 bg-green-50/30"
-                              : "border-gray-200"
-                          }`}
+                          key={activity.id}
+                          className={`flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors ${getActivityColor(
+                            activity
+                          )}`}
                         >
                           <div className="flex items-center space-x-3">
                             <div
                               className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                                isCredit
+                                activity.type === "account_activity"
                                   ? "bg-blue-100"
-                                  : isDebit
+                                  : getActivityColor(activity).includes("blue")
+                                  ? "bg-blue-100"
+                                  : getActivityColor(activity).includes(
+                                      "orange"
+                                    )
                                   ? "bg-orange-100"
-                                  : isAdjustment
+                                  : getActivityColor(activity).includes(
+                                      "purple"
+                                    )
                                   ? "bg-purple-100"
-                                  : isRegularDep
+                                  : getActivityColor(activity).includes("green")
                                   ? "bg-green-100"
                                   : "bg-gray-100"
                               }`}
                             >
-                              {getTransferIcon(transfer)}
+                              {getActivityIcon(activity)}
                             </div>
                             <div>
                               <p className="font-medium text-sm">
-                                {getTransferDescription(transfer)}
+                                {getActivityDescription(activity)}
                               </p>
-                              <p className="text-xs text-gray-600">
-                                {getTransferAmount(transfer)}
-                              </p>
-                              {transfer.description && (
-                                <p className="text-xs text-gray-500 mt-1 max-w-xs truncate">
-                                  {transfer.description}
+                              {getActivityAmount(activity) && (
+                                <p className="text-xs text-gray-600">
+                                  {getActivityAmount(activity)}
                                 </p>
                               )}
+                              {activity.type === "account_activity" &&
+                                (activity.data as AccountActivity)
+                                  .description && (
+                                  <p className="text-xs text-gray-500 mt-1 max-w-xs truncate">
+                                    {
+                                      (activity.data as AccountActivity)
+                                        .description
+                                    }
+                                  </p>
+                                )}
+                              {activity.type === "transfer" &&
+                                (activity.data as Transfer).description && (
+                                  <p className="text-xs text-gray-500 mt-1 max-w-xs truncate">
+                                    {(activity.data as Transfer).description}
+                                  </p>
+                                )}
                               <p className="text-xs text-gray-400">
                                 {new Date(
-                                  transfer.created_at
+                                  activity.created_at
                                 ).toLocaleDateString()}{" "}
                                 at{" "}
                                 {new Date(
-                                  transfer.created_at
+                                  activity.created_at
                                 ).toLocaleTimeString()}
                               </p>
                             </div>
                           </div>
                           <div className="text-right">
-                            {!isAdminCredit(transfer) &&
-                              !isRegularDeposit(transfer) &&
-                              transfer.exchange_rate &&
-                              transfer.exchange_rate !== 1.0 && (
+                            {activity.type === "transfer" &&
+                              !isAdminCredit(activity.data as Transfer) &&
+                              !isRegularDeposit(activity.data as Transfer) &&
+                              (activity.data as Transfer).exchange_rate &&
+                              (activity.data as Transfer).exchange_rate !==
+                                1.0 && (
                                 <p className="font-medium text-sm mb-1">
                                   Rate:{" "}
-                                  {Number(transfer.exchange_rate).toFixed(4)}
+                                  {Number(
+                                    (activity.data as Transfer).exchange_rate
+                                  ).toFixed(4)}
                                 </p>
                               )}
                             <Badge
                               className={`text-xs px-2 rounded ${
-                                transfer.status === "completed" ||
-                                transfer.status === "Completed"
-                                  ? isCredit
+                                activity.type === "account_activity"
+                                  ? "bg-blue-100 text-blue-800"
+                                  : (activity.data as Transfer).status ===
+                                      "completed" ||
+                                    (activity.data as Transfer).status ===
+                                      "Completed"
+                                  ? getActivityColor(activity).includes("blue")
                                     ? "bg-blue-100 text-blue-800"
-                                    : isDebit
+                                    : getActivityColor(activity).includes(
+                                        "orange"
+                                      )
                                     ? "bg-orange-100 text-orange-800"
-                                    : isAdjustment
+                                    : getActivityColor(activity).includes(
+                                        "purple"
+                                      )
                                     ? "bg-purple-100 text-purple-800"
-                                    : isRegularDep
+                                    : getActivityColor(activity).includes(
+                                        "green"
+                                      )
                                     ? "bg-green-100 text-green-800"
-                                    : "bg-gray-100 text-gray-800" 
-                                  : "bg-gray-100 text-gray-800" 
+                                    : "bg-gray-100 text-gray-800"
+                                  : "bg-gray-100 text-gray-800"
                               }`}
                             >
-                              {transfer.status || "Completed"}
+                              {activity.type === "account_activity"
+                                ? (activity.data as AccountActivity).status
+                                : (activity.data as Transfer).status ||
+                                  "Completed"}
                             </Badge>
                           </div>
                         </div>
