@@ -122,6 +122,7 @@ export default function EnhancedActivityManager() {
   const [templates, setTemplates] = useState<ActivityTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   const [previewMode, setPreviewMode] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
 
   const activityTypes = [
     // Banking Operations
@@ -715,6 +716,47 @@ export default function EnhancedActivityManager() {
     }
   };
 
+  const handleDeleteActivity = async (activityId: string) => {
+    if (
+      !confirm(
+        "Are you sure you want to delete this activity? This action cannot be undone."
+      )
+    ) {
+      return;
+    }
+
+    setDeleteLoading(activityId);
+
+    try {
+      const { error } = await supabase
+        .from("account_activities")
+        .delete()
+        .eq("id", activityId);
+
+      if (error) {
+        throw error;
+      }
+
+      setMessage({
+        type: "success",
+        text: "Activity deleted successfully",
+      });
+
+      // Refresh the activities list
+      await fetchRecentActivities();
+    } catch (error) {
+      console.error("Error deleting activity:", error);
+      setMessage({
+        type: "error",
+        text: `Failed to delete activity: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
+      });
+    } finally {
+      setDeleteLoading(null);
+    }
+  };
+
   const getActivityIcon = (type: string) => {
     const activityType = activityTypes.find((t) => t.value === type);
     if (activityType) {
@@ -1241,12 +1283,17 @@ export default function EnhancedActivityManager() {
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                onClick={() => {
-                                  /* Delete function */
-                                }}
+                                onClick={() =>
+                                  handleDeleteActivity(activity.id)
+                                }
+                                disabled={deleteLoading === activity.id}
                                 className="text-red-600 hover:text-red-800 hover:bg-red-100"
                               >
-                                <Trash2 className="h-3 w-3" />
+                                {deleteLoading === activity.id ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-3 w-3" />
+                                )}
                               </Button>
                             </div>
                           </div>

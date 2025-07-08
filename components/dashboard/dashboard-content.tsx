@@ -1051,6 +1051,12 @@ export default function DashboardContent({
                 <CardTitle className="flex items-center">
                   <Activity className="h-5 w-5 mr-2 text-[#F26623]" />
                   Account Activity
+                  <Badge
+                    variant="outline"
+                    className="ml-2 text-xs bg-[#F26623] text-white border-[#F26623]"
+                  >
+                    Real-time
+                  </Badge>
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
@@ -1280,6 +1286,77 @@ export default function DashboardContent({
                 )}
               </CardContent>
             </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <CreditCard className="h-5 w-5 mr-2" />
+                  Payments
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {paymentsLoading ? (
+                  <div className="space-y-2">
+                    {[1, 2, 3, 4].map((i) => (
+                      <div
+                        key={i}
+                        className="py-2 border-b border-gray-100 animate-pulse"
+                      >
+                        <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
+                        <div className="h-3 bg-gray-200 rounded w-3/4"></div>
+                      </div>
+                    ))}
+                  </div>
+                ) : payments.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <CreditCard className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p className="text-sm">
+                      {isNewUser ? "No payments yet" : "No recent payments"}
+                    </p>
+                    <p className="text-xs">
+                      {isNewUser
+                        ? "Your payment history will appear here once you start making transactions"
+                        : "Your payment history will appear here"}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {payments.slice(0, 6).map((payment) => (
+                      <div
+                        key={payment.id}
+                        className="py-2 border-b border-gray-100 last:border-b-0"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <span className="text-sm font-medium">
+                              {payment.payment_type}
+                            </span>
+                            <span className="text-xs text-gray-600 block">
+                              {payment.description || "Payment transaction"}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-sm font-medium">
+                              {formatCurrency(payment.amount, payment.currency)}
+                            </span>
+                            <Badge
+                              variant={
+                                payment.status === "completed"
+                                  ? "default"
+                                  : "secondary"
+                              }
+                              className="ml-2 text-xs"
+                            >
+                              {payment.status}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
 
           <div className="lg:col-span-1 space-y-6">
@@ -1407,77 +1484,6 @@ export default function DashboardContent({
                     <p className="text-xs">
                       Your notifications will appear here
                     </p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <CreditCard className="h-5 w-5 mr-2" />
-                  Payments
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {paymentsLoading ? (
-                  <div className="space-y-2">
-                    {[1, 2, 3, 4].map((i) => (
-                      <div
-                        key={i}
-                        className="py-2 border-b border-gray-100 animate-pulse"
-                      >
-                        <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
-                        <div className="h-3 bg-gray-200 rounded w-3/4"></div>
-                      </div>
-                    ))}
-                  </div>
-                ) : payments.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <CreditCard className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p className="text-sm">
-                      {isNewUser ? "No payments yet" : "No recent payments"}
-                    </p>
-                    <p className="text-xs">
-                      {isNewUser
-                        ? "Your payment history will appear here once you start making transactions"
-                        : "Your payment history will appear here"}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {payments.slice(0, 6).map((payment) => (
-                      <div
-                        key={payment.id}
-                        className="py-2 border-b border-gray-100 last:border-b-0"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <span className="text-sm font-medium">
-                              {payment.payment_type}
-                            </span>
-                            <span className="text-xs text-gray-600 block">
-                              {payment.description || "Payment transaction"}
-                            </span>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-sm font-medium">
-                              {formatCurrency(payment.amount, payment.currency)}
-                            </span>
-                            <Badge
-                              variant={
-                                payment.status === "completed"
-                                  ? "default"
-                                  : "secondary"
-                              }
-                              className="ml-2 text-xs"
-                            >
-                              {payment.status}
-                            </Badge>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
                   </div>
                 )}
               </CardContent>
