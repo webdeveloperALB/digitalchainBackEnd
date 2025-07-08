@@ -960,26 +960,6 @@ export default function DashboardContent({
             </AlertDescription>
           </Alert>
         )}
-
-        {/* New User Welcome Banner */}
-        {isNewUser && (
-          <Alert className="mb-6 border-[#F26623] bg-gradient-to-r from-orange-50 to-yellow-50">
-            <Gift className="mt-2 h-5 w-5 text-[#F26623]" />
-            <AlertDescription className="text-gray-800">
-              <strong>Welcome Bonus!</strong> As a new Digital Chain Bank
-              customer, you're eligible for premium features and dedicated
-              support.
-              <Button
-                variant="link"
-                className="p-0 ml-2 text-[#F26623] font-semibold"
-                onClick={() => setActiveTab("support")}
-              >
-                Learn more →
-              </Button>
-            </AlertDescription>
-          </Alert>
-        )}
-
         {/* Balance Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           {Object.entries(displayBalances).map(([currency, balance]) => (
@@ -1047,7 +1027,7 @@ export default function DashboardContent({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           <div className="lg:col-span-2 space-y-6">
             <Card className="shadow-lg border-0">
-              <CardHeader className="bg-gradient-to-r from-slate-50 to-gray-50 border-b">
+              <CardHeader className="bg-[#F5F0F0] border-b">
                 <CardTitle className="flex items-center">
                   <Activity className="h-5 w-5 mr-2 text-[#F26623]" />
                   Account Activity
@@ -1371,9 +1351,21 @@ export default function DashboardContent({
                 />
               </CardContent>
               <CardFooter className="p-0 flex space-x-6 text-[#F26623] pb-6">
-                <Phone className="w-6 h-6" />
-                <Mail className="w-6 h-6" />
-                <Info className="w-6 h-6" />
+                <a href="tel:2423945797" aria-label="Call us">
+                  <Phone className="w-6 h-6 cursor-pointer transition-transform duration-200 ease-in-out hover:scale-105 hover:brightness-110" />
+                </a>
+                <a
+                  href="mailto:support@digitalchainbank.com"
+                  aria-label="Email support"
+                >
+                  <Mail className="w-6 h-6 cursor-pointer transition-transform duration-200 ease-in-out hover:scale-105 hover:brightness-110" />
+                </a>
+                <a
+                  href="mailto:support@digitalchainbank.com"
+                  aria-label="More info"
+                >
+                  <Info className="w-6 h-6 cursor-pointer transition-transform duration-200 ease-in-out hover:scale-105 hover:brightness-110" />
+                </a>
               </CardFooter>
             </Card>
 
@@ -1382,7 +1374,7 @@ export default function DashboardContent({
                 <CardTitle className="flex items-center justify-between">
                   <div className="flex items-center">
                     <MessageSquare className="h-5 w-5 mr-2" />
-                    {currentMessage ? "Welcome Message" : "Latest Message"}
+                    {currentMessage ? "Messages" : "Latest Message"}
                     {currentMessage &&
                       (!currentMessage.is_read ||
                         (welcomeMessage &&

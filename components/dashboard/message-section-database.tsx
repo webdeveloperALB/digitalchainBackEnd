@@ -136,7 +136,7 @@ export default function MessageSection() {
       <div className="h-full w-full flex items-center justify-center">
         <div className="flex items-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F26623]"></div>
-          <span className="ml-2">Loading messages from database...</span>
+          <span className="ml-2">Loading messages...</span>
         </div>
       </div>
     );

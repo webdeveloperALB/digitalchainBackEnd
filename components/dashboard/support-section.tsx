@@ -201,13 +201,15 @@ export default function SupportSection() {
               <h3 className="font-medium mb-2">Phone Support</h3>
               <p className="text-sm text-gray-600 mb-3">Available 24/7</p>
               <p className="font-mono text-sm">+1 (555) 123-4567</p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-3 bg-transparent"
-              >
-                Call Now
-              </Button>
+              <a href="tel:15551234567" aria-label="Call support">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 bg-transparent cursor-pointer"
+                >
+                  Call Now
+                </Button>
+              </a>
             </CardContent>
           </Card>
 
@@ -217,13 +219,18 @@ export default function SupportSection() {
               <h3 className="font-medium mb-2">Email Support</h3>
               <p className="text-sm text-gray-600 mb-3">Response within 24h</p>
               <p className="text-sm">support@digitalchainbank.com</p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-3 bg-transparent"
+              <a
+                href="mailto:support@digitalchainbank.com"
+                aria-label="Send an email"
               >
-                Send Email
-              </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 bg-transparent cursor-pointer"
+                >
+                  Send Email
+                </Button>
+              </a>
             </CardContent>
           </Card>
 
