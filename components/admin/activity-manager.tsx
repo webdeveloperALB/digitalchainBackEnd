@@ -181,7 +181,6 @@ export default function EnhancedActivityManager() {
       category: "Banking Operations",
       description: "Online banking platform activities",
     },
-
     // Account Management
     {
       value: "account_opening",
@@ -218,7 +217,6 @@ export default function EnhancedActivityManager() {
       category: "Account Management",
       description: "Transaction and withdrawal limit changes",
     },
-
     // Security & Compliance
     {
       value: "security_alert",
@@ -248,7 +246,6 @@ export default function EnhancedActivityManager() {
       category: "Security & Compliance",
       description: "Regulatory compliance notifications",
     },
-
     // Communications
     {
       value: "statement_ready",
@@ -278,7 +275,6 @@ export default function EnhancedActivityManager() {
       category: "Communications",
       description: "System maintenance notifications",
     },
-
     // Customer Service
     {
       value: "support_response",
@@ -409,7 +405,6 @@ export default function EnhancedActivityManager() {
   const fetchUsers = async () => {
     try {
       let data = null;
-
       const usersResult = await supabase
         .from("users")
         .select("id, email, first_name, last_name, full_name, created_at")
@@ -497,6 +492,19 @@ export default function EnhancedActivityManager() {
     }
   };
 
+  // Fixed user selection handler
+  const handleUserSelection = (userId: string, checked: boolean) => {
+    if (bulkMode) {
+      // Bulk mode: allow multiple selections
+      setSelectedUsers((prev) =>
+        checked ? [...prev, userId] : prev.filter((id) => id !== userId)
+      );
+    } else {
+      // Single mode: only one selection at a time
+      setSelectedUsers(checked ? [userId] : []);
+    }
+  };
+
   const validateActivityType = (type: string) => {
     const validTypes = [
       "admin_notification",
@@ -540,43 +548,56 @@ export default function EnhancedActivityManager() {
     return validTypes.includes(type);
   };
 
+  // Enhanced submit handler with better error handling and loading state management
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (
-      (!selectedUsers.length && !bulkMode) ||
-      !activityType ||
-      !activityTitle
-    ) {
-      setMessage({ type: "error", text: "Please fill in all required fields" });
+
+    // Clear any existing messages
+    setMessage(null);
+
+    // Validation
+    if (!selectedUsers.length) {
+      setMessage({ type: "error", text: "Please select at least one user" });
+      return;
+    }
+
+    if (!activityType) {
+      setMessage({ type: "error", text: "Please select an activity type" });
+      return;
+    }
+
+    if (!activityTitle.trim()) {
+      setMessage({ type: "error", text: "Please enter an activity title" });
       return;
     }
 
     setLoading(true);
-    setMessage(null);
 
     try {
       const {
         data: { user: currentUser },
       } = await supabase.auth.getUser();
 
-      const targetUsers = bulkMode ? selectedUsers : selectedUsers.slice(0, 1);
       const activities = [];
 
-      for (const userId of targetUsers) {
+      for (const userId of selectedUsers) {
         const selectedUserData = users.find((u) => u.id === userId);
-        if (!selectedUserData) continue;
+        if (!selectedUserData) {
+          console.warn(`User not found: ${userId}`);
+          continue;
+        }
 
         const activityData = {
           user_id: userId,
           client_id: selectedUserData.client_id,
           activity_type: activityType,
-          title: activityTitle,
-          description: activityDescription || null,
+          title: activityTitle.trim(),
+          description: activityDescription.trim() || null,
           currency: currency,
           display_amount: amount ? Number.parseFloat(amount) : 0,
           priority: priority,
-          status: "active", // Explicitly set status
-          is_read: false, // Explicitly set is_read
+          status: "active",
+          is_read: false,
           expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
           created_by: currentUser?.id || null,
           metadata: {
@@ -589,13 +610,18 @@ export default function EnhancedActivityManager() {
               ? new Date(scheduleFor).toISOString()
               : null,
             bulk_operation: bulkMode,
+            created_at: new Date().toISOString(),
           },
         };
 
         activities.push(activityData);
       }
 
-      console.log("Attempting to insert activities:", activities); // Debug log
+      if (activities.length === 0) {
+        throw new Error("No valid activities to create");
+      }
+
+      console.log("Creating activities:", activities);
 
       const { data, error } = await supabase
         .from("account_activities")
@@ -603,13 +629,11 @@ export default function EnhancedActivityManager() {
         .select();
 
       if (error) {
-        console.error("Supabase error details:", error);
-        throw new Error(
-          `Database error: ${error.message} (Code: ${error.code})`
-        );
+        console.error("Supabase error:", error);
+        throw new Error(`Database error: ${error.message}`);
       }
 
-      console.log("Successfully inserted activities:", data); // Debug log
+      console.log("Successfully created activities:", data);
 
       setMessage({
         type: "success",
@@ -628,16 +652,14 @@ export default function EnhancedActivityManager() {
       setExpiresAt("");
       setScheduleFor("");
 
-      fetchRecentActivities();
+      // Refresh activities list
+      await fetchRecentActivities();
     } catch (error) {
       console.error("Error creating activity:", error);
 
-      // Better error message handling
-      let errorMessage = "Unknown error occurred";
+      let errorMessage = "An unexpected error occurred";
       if (error instanceof Error) {
         errorMessage = error.message;
-      } else if (typeof error === "object" && error !== null) {
-        errorMessage = JSON.stringify(error);
       }
 
       setMessage({
@@ -645,6 +667,7 @@ export default function EnhancedActivityManager() {
         text: `Failed to create activity: ${errorMessage}`,
       });
     } finally {
+      // Always reset loading state
       setLoading(false);
     }
   };
@@ -681,7 +704,6 @@ export default function EnhancedActivityManager() {
       "activity_templates",
       JSON.stringify(updatedTemplates)
     );
-
     setMessage({ type: "success", text: "Template saved successfully" });
   };
 
@@ -724,12 +746,10 @@ export default function EnhancedActivityManager() {
       activity.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       activity.user_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       activity.user_email?.toLowerCase().includes(searchTerm.toLowerCase());
-
     const matchesType =
       filterType === "all" || activity.activity_type === filterType;
     const matchesPriority =
       filterPriority === "all" || activity.priority === filterPriority;
-
     return matchesSearch && matchesType && matchesPriority;
   });
 
@@ -760,7 +780,10 @@ export default function EnhancedActivityManager() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setBulkMode(!bulkMode)}
+                onClick={() => {
+                  setBulkMode(!bulkMode);
+                  setSelectedUsers([]); // Clear selections when switching modes
+                }}
               >
                 <Users className="h-4 w-4 mr-1" />
                 {bulkMode ? "Single Mode" : "Bulk Mode"}
@@ -786,7 +809,6 @@ export default function EnhancedActivityManager() {
               <TabsTrigger value="templates">Templates</TabsTrigger>
               <TabsTrigger value="analytics">Analytics</TabsTrigger>
             </TabsList>
-
             <TabsContent value="create" className="space-y-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Enhanced Create Form */}
@@ -860,21 +882,12 @@ export default function EnhancedActivityManager() {
                               >
                                 <Checkbox
                                   checked={selectedUsers.includes(user.id)}
-                                  onCheckedChange={(checked) => {
-                                    if (bulkMode) {
-                                      setSelectedUsers(
-                                        checked
-                                          ? [...selectedUsers, user.id]
-                                          : selectedUsers.filter(
-                                              (id) => id !== user.id
-                                            )
-                                      );
-                                    } else {
-                                      setSelectedUsers(
-                                        checked ? [user.id] : []
-                                      );
-                                    }
-                                  }}
+                                  onCheckedChange={(checked) =>
+                                    handleUserSelection(
+                                      user.id,
+                                      checked as boolean
+                                    )
+                                  }
                                 />
                                 <Users className="h-4 w-4 text-gray-500" />
                                 <div className="flex-1">
@@ -1052,7 +1065,7 @@ export default function EnhancedActivityManager() {
                         loading ||
                         !selectedUsers.length ||
                         !activityType ||
-                        !activityTitle
+                        !activityTitle.trim()
                       }
                       className="w-full h-12 bg-[#F26623] hover:bg-[#E55A1F] text-white font-semibold text-lg"
                     >
@@ -1105,7 +1118,6 @@ export default function EnhancedActivityManager() {
                       </Select>
                     </div>
                   </div>
-
                   <div className="space-y-3 max-h-[600px] overflow-y-auto border rounded-lg bg-gray-50 p-4">
                     {activitiesLoading ? (
                       <div className="space-y-3">
@@ -1245,7 +1257,6 @@ export default function EnhancedActivityManager() {
                 </div>
               </div>
             </TabsContent>
-
             <TabsContent value="templates" className="space-y-4">
               <div className="text-center py-8 text-gray-500">
                 <FileText className="h-16 w-16 mx-auto mb-4 opacity-30" />
@@ -1255,7 +1266,6 @@ export default function EnhancedActivityManager() {
                 </p>
               </div>
             </TabsContent>
-
             <TabsContent value="analytics" className="space-y-4">
               <div className="text-center py-8 text-gray-500">
                 <Activity className="h-16 w-16 mx-auto mb-4 opacity-30" />
