@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -73,6 +73,7 @@ export default function KYCAdminPanel() {
   const [searchTerm, setSearchTerm] = useState("");
   const [showSkipDialog, setShowSkipDialog] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserInterface | null>(null);
+  const [processingError, setProcessingError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -141,6 +142,7 @@ export default function KYCAdminPanel() {
   ) => {
     try {
       setUpdating(kycId);
+      setProcessingError(null);
       console.log(`Updating KYC ${kycId} to status: ${newStatus}`);
 
       // Update KYC verification record
@@ -179,6 +181,7 @@ export default function KYCAdminPanel() {
       alert(`KYC ${newStatus} successfully!`);
     } catch (error: any) {
       console.error("Error updating KYC status:", error);
+      setProcessingError(`Error updating KYC status: ${error.message}`);
       alert(`Error updating KYC status: ${error.message}`);
     } finally {
       setUpdating(null);
@@ -188,36 +191,70 @@ export default function KYCAdminPanel() {
   const skipKYCForUser = async (userId: string) => {
     try {
       setUpdating(userId);
+      setProcessingError(null);
       console.log(`Skipping KYC for user: ${userId}`);
 
+      // First, check if user already has a KYC record
+      const { data: existingKyc, error: checkError } = await supabase
+        .from("kyc_verifications")
+        .select("id")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (checkError) {
+        console.error("Error checking existing KYC:", checkError);
+        throw checkError;
+      }
+
+      if (existingKyc) {
+        console.log("User already has KYC record, updating status instead");
+        await updateKYCStatus(
+          userId,
+          existingKyc.id,
+          "approved",
+          "KYC SKIPPED BY ADMIN"
+        );
+        setShowSkipDialog(false);
+        setSelectedUser(null);
+        return;
+      }
+
       // Get user details
-      const user = allUsers.find((u) => u.id === userId);
-      if (!user) {
+      const { data: user, error: userFetchError } = await supabase
+        .from("users")
+        .select("*")
+        .eq("id", userId)
+        .single();
+
+      if (userFetchError) {
+        console.error("Error fetching user:", userFetchError);
         throw new Error("User not found");
       }
 
-      // Create a KYC verification record for the skipped user
+      // Create a minimal KYC verification record for the skipped user
+      const kycData = {
+        user_id: userId,
+        full_name: user.full_name || user.email.split("@")[0],
+        status: "approved",
+        submitted_at: new Date().toISOString(),
+        reviewed_at: new Date().toISOString(),
+        document_type: "passport", // Use a valid document type that exists in your constraint
+        document_number: "ADMIN_SKIP",
+        date_of_birth: "2000-01-01", // Placeholder
+        address: "Admin Skip",
+        city: "Admin Skip",
+        country: "Admin Skip",
+        postal_code: "00000",
+        id_document_path: "admin_skip/no_document",
+        utility_bill_path: "admin_skip/no_document",
+        selfie_path: "admin_skip/no_document",
+        rejection_reason:
+          "KYC SKIPPED BY ADMIN - No verification documents required",
+      };
+
       const { data: kycRecord, error: kycError } = await supabase
         .from("kyc_verifications")
-        .insert({
-          user_id: userId,
-          full_name: user.full_name || user.email.split("@")[0],
-          status: "approved",
-          submitted_at: new Date().toISOString(),
-          reviewed_at: new Date().toISOString(),
-          document_type: "passport", // Use a valid document type
-          document_number: "ADMIN_SKIP_NO_DOCUMENT",
-          date_of_birth: "1900-01-01", // Placeholder
-          address: "Admin Skip - No Address Required",
-          city: "Admin Skip",
-          country: "Admin Skip",
-          postal_code: "00000",
-          id_document_path: "admin_skip/no_document_required",
-          utility_bill_path: "admin_skip/no_document_required",
-          selfie_path: "admin_skip/no_document_required",
-          rejection_reason:
-            "KYC SKIPPED BY ADMIN - No verification documents required",
-        })
+        .insert(kycData)
         .select()
         .single();
 
@@ -246,6 +283,7 @@ export default function KYCAdminPanel() {
       alert("KYC successfully skipped for user!");
     } catch (error: any) {
       console.error("Error skipping KYC:", error);
+      setProcessingError(`Error skipping KYC: ${error.message}`);
       alert(`Error skipping KYC: ${error.message}`);
     } finally {
       setUpdating(null);
@@ -262,17 +300,6 @@ export default function KYCAdminPanel() {
   const handleSkipKYC = (user: UserInterface) => {
     setSelectedUser(user);
     setShowSkipDialog(true);
-  };
-
-  const debugFilePaths = (record: KYCRecord) => {
-    console.log("=== DEBUG FILE PATHS ===");
-    console.log("Record ID:", record.id);
-    console.log("User ID:", record.user_id);
-    console.log("ID Document Path:", record.id_document_path);
-    console.log("Utility Bill Path:", record.utility_bill_path);
-    console.log("Selfie Path:", record.selfie_path);
-    console.log("Driver License Path:", record.driver_license_path);
-    console.log("========================");
   };
 
   const downloadDocument = async (path: string, filename: string) => {
@@ -302,6 +329,7 @@ export default function KYCAdminPanel() {
         alert("Invalid file path - could not extract filename");
         return;
       }
+
       console.log("Extracted filename:", fileName);
 
       // Determine document type from path
@@ -330,7 +358,7 @@ export default function KYCAdminPanel() {
       // Try different path combinations based on your storage structure
       const pathsToTry = [
         cleanPath, // Original path
-        fileName, // Just filename (now guaranteed to exist)
+        fileName, // Just filename
         documentType ? `${documentType}/${fileName}` : fileName, // document-type/filename
         cleanPath.replace(/^[^/]+\//, ""), // Remove first folder (user ID)
       ].filter(Boolean);
@@ -426,9 +454,7 @@ export default function KYCAdminPanel() {
         console.error("All download attempts failed. Last error:", lastError);
 
         // Show a more helpful error message
-        alert(`Unable to download document. 
-
-Tried these paths:
+        alert(`Unable to download document. Tried these paths:
 ${pathsToTry.map((p) => `• ${p}`).join("\n")}
 
 This might be due to:
@@ -548,6 +574,13 @@ Please check your Supabase RLS policies for the kyc-documents bucket.`);
         </Alert>
       )}
 
+      {processingError && (
+        <Alert variant="destructive" className="mb-6">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{processingError}</AlertDescription>
+        </Alert>
+      )}
+
       {/* Search Bar */}
       <div className="mb-6">
         <div className="relative">
@@ -633,7 +666,11 @@ Please check your Supabase RLS policies for the kyc-documents bucket.`);
       </div>
 
       {/* Tabs for filtering */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
+      <Tabs
+        defaultValue={activeTab}
+        onValueChange={setActiveTab}
+        className="mb-6"
+      >
         <TabsList>
           <TabsTrigger value="all">All Submissions ({stats.total})</TabsTrigger>
           <TabsTrigger value="pending">Pending ({stats.pending})</TabsTrigger>
@@ -645,361 +682,86 @@ Please check your Supabase RLS policies for the kyc-documents bucket.`);
           </TabsTrigger>
           <TabsTrigger value="no-kyc">No KYC ({stats.noKYC})</TabsTrigger>
         </TabsList>
-      </Tabs>
 
-      {/* Users without KYC submissions */}
-      {activeTab === "no-kyc" && (
-        <div className="mb-8">
-          <h2 className="text-xl font-semibold mb-4">
-            Users Without KYC Submission
-          </h2>
-          {usersWithoutKYC.length === 0 ? (
-            <Card>
-              <CardContent className="text-center py-12">
-                <UserCheck className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-500 text-lg">
-                  No users without KYC found
-                </p>
-                <p className="text-sm text-gray-400 mt-2">
-                  All users have either submitted KYC or have been approved
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid gap-4">
-              {usersWithoutKYC.map((user) => (
-                <Card key={user.id}>
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
-                          <User className="w-5 h-5 text-white" />
-                        </div>
-                        <div>
-                          <h3 className="font-medium">
-                            {user.full_name || "Name not provided"}
-                          </h3>
-                          <div className="flex items-center space-x-2 mt-1">
-                            <Mail className="w-4 h-4 text-gray-400" />
-                            <span className="text-sm text-gray-600">
-                              {user.email}
-                            </span>
-                          </div>
-                          <p className="text-xs text-gray-500">
-                            Registered:{" "}
-                            {new Date(user.created_at).toLocaleDateString()}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Badge
-                          variant="secondary"
-                          className="bg-blue-100 text-blue-800"
-                        >
-                          {user.kyc_status || "No KYC"}
-                        </Badge>
-                        <Button
-                          onClick={() => handleSkipKYC(user)}
-                          variant="outline"
-                          size="sm"
-                          disabled={updating === user.id}
-                        >
-                          <SkipForward className="w-4 h-4 mr-1" />
-                          {updating === user.id ? "Processing..." : "Skip KYC"}
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* KYC Submissions */}
-      {activeTab !== "no-kyc" && (
-        <>
-          {filteredRecords.length === 0 ? (
-            <Card>
-              <CardContent className="text-center py-12">
-                <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-500 text-lg">No KYC records found</p>
-                <p className="text-sm text-gray-400 mt-2">
-                  {activeTab === "all"
-                    ? "KYC submissions will appear here when users complete their verification"
-                    : `No ${activeTab} KYC records found`}
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid gap-6">
-              {filteredRecords.map((record) => (
-                <Card key={record.id} className="overflow-hidden">
-                  <CardHeader className="bg-gray-50">
-                    <div className="flex justify-between items-start">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 bg-[#F26623] rounded-full flex items-center justify-center">
-                          <User className="w-5 h-5 text-white" />
-                        </div>
-                        <div>
-                          <CardTitle className="text-xl">
-                            {record.full_name}
-                          </CardTitle>
-                          <div className="flex items-center space-x-2 mt-1">
-                            <Mail className="w-4 h-4 text-gray-400" />
-                            <span className="text-sm text-gray-600">
-                              {record.email}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        {getStatusIcon(record.status)}
-                        {getStatusBadge(record.status)}
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="p-6">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      {/* Personal Information */}
-                      <div className="space-y-4">
-                        <h3 className="font-semibold text-lg flex items-center">
-                          <User className="w-5 h-5 mr-2" />
-                          Personal Information
-                        </h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                          <div>
-                            <span className="font-medium text-gray-600">
-                              Document Type:
-                            </span>
-                            <p className="capitalize">
-                              {record.document_type.replace("_", " ")}
-                            </p>
+        <TabsContent value="no-kyc">
+          <div className="mb-8">
+            <h2 className="text-xl font-semibold mb-4">
+              Users Without KYC Submission
+            </h2>
+            {usersWithoutKYC.length === 0 ? (
+              <Card>
+                <CardContent className="text-center py-12">
+                  <UserCheck className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-500 text-lg">
+                    No users without KYC found
+                  </p>
+                  <p className="text-sm text-gray-400 mt-2">
+                    All users have either submitted KYC or have been approved
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-4">
+                {usersWithoutKYC.map((user) => (
+                  <Card key={user.id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
+                            <User className="w-5 h-5 text-white" />
                           </div>
                           <div>
-                            <span className="font-medium text-gray-600">
-                              Document Number:
-                            </span>
-                            <p>{record.document_number}</p>
-                          </div>
-                          <div>
-                            <span className="font-medium text-gray-600">
-                              Date of Birth:
-                            </span>
-                            <p>
-                              {new Date(
-                                record.date_of_birth
-                              ).toLocaleDateString()}
-                            </p>
-                          </div>
-                          <div>
-                            <span className="font-medium text-gray-600">
-                              Submitted:
-                            </span>
-                            <p>
-                              {new Date(
-                                record.submitted_at
-                              ).toLocaleDateString()}{" "}
-                              at{" "}
-                              {new Date(
-                                record.submitted_at
-                              ).toLocaleTimeString()}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <div className="flex items-start space-x-2">
-                            <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />
-                            <div>
-                              <span className="font-medium text-gray-600">
-                                Address:
+                            <h3 className="font-medium">
+                              {user.full_name || "Name not provided"}
+                            </h3>
+                            <div className="flex items-center space-x-2 mt-1">
+                              <Mail className="w-4 h-4 text-gray-400" />
+                              <span className="text-sm text-gray-600">
+                                {user.email}
                               </span>
-                              <p className="text-sm">{record.address}</p>
-                              <p className="text-sm text-gray-600">
-                                {record.city}, {record.country}
-                                {record.postal_code && ` ${record.postal_code}`}
-                              </p>
                             </div>
+                            <p className="text-xs text-gray-500">
+                              Registered:{" "}
+                              {new Date(user.created_at).toLocaleDateString()}
+                            </p>
                           </div>
                         </div>
-                        {record.rejection_reason && (
-                          <div
-                            className={`p-3 border rounded-md ${
-                              record.rejection_reason.includes(
-                                "SKIPPED BY ADMIN"
-                              )
-                                ? "bg-blue-50 border-blue-200"
-                                : "bg-red-50 border-red-200"
-                            }`}
+                        <div className="flex items-center space-x-2">
+                          <Badge
+                            variant="secondary"
+                            className="bg-blue-100 text-blue-800"
                           >
-                            <span
-                              className={`font-medium ${
-                                record.rejection_reason.includes(
-                                  "SKIPPED BY ADMIN"
-                                )
-                                  ? "text-blue-800"
-                                  : "text-red-800"
-                              }`}
-                            >
-                              {record.rejection_reason.includes(
-                                "SKIPPED BY ADMIN"
-                              )
-                                ? "Admin Note:"
-                                : "Rejection Reason:"}
-                            </span>
-                            <p
-                              className={`text-sm mt-1 ${
-                                record.rejection_reason.includes(
-                                  "SKIPPED BY ADMIN"
-                                )
-                                  ? "text-blue-700"
-                                  : "text-red-700"
-                              }`}
-                            >
-                              {record.rejection_reason}
-                            </p>
-                          </div>
-                        )}
+                            {user.kyc_status || "No KYC"}
+                          </Badge>
+                          <Button
+                            onClick={() => handleSkipKYC(user)}
+                            variant="outline"
+                            size="sm"
+                            disabled={updating === user.id}
+                          >
+                            <SkipForward className="w-4 h-4 mr-1" />
+                            {updating === user.id
+                              ? "Processing..."
+                              : "Skip KYC"}
+                          </Button>
+                        </div>
                       </div>
-                      {/* Documents */}
-                      <div className="space-y-4">
-                        <h3 className="font-semibold text-lg flex items-center">
-                          <FileText className="w-5 h-5 mr-2" />
-                          Uploaded Documents
-                        </h3>
-                        {record.document_number === "ADMIN_SKIP_NO_DOCUMENT" ? (
-                          <div className="p-4 bg-blue-50 border border-blue-200 rounded-md text-center">
-                            <SkipForward className="w-8 h-8 text-blue-500 mx-auto mb-2" />
-                            <p className="text-blue-800 font-medium">
-                              KYC Skipped by Admin
-                            </p>
-                            <p className="text-sm text-blue-600 mt-1">
-                              No documents required for this verification
-                            </p>
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
-                              <span className="text-sm font-medium">
-                                ID Document
-                              </span>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  debugFilePaths(record);
-                                  downloadDocument(
-                                    record.id_document_path,
-                                    `${record.full_name}_ID_Document`
-                                  );
-                                }}
-                              >
-                                <Download className="w-4 h-4 mr-1" />
-                                Download
-                              </Button>
-                            </div>
-                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
-                              <span className="text-sm font-medium">
-                                Utility Bill
-                              </span>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() =>
-                                  downloadDocument(
-                                    record.utility_bill_path,
-                                    `${record.full_name}_Utility_Bill`
-                                  )
-                                }
-                              >
-                                <Download className="w-4 h-4 mr-1" />
-                                Download
-                              </Button>
-                            </div>
-                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
-                              <span className="text-sm font-medium">
-                                Selfie
-                              </span>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() =>
-                                  downloadDocument(
-                                    record.selfie_path,
-                                    `${record.full_name}_Selfie`
-                                  )
-                                }
-                              >
-                                <Download className="w-4 h-4 mr-1" />
-                                Download
-                              </Button>
-                            </div>
-                            {record.driver_license_path && (
-                              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
-                                <span className="text-sm font-medium">
-                                  Driver License
-                                </span>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() =>
-                                    downloadDocument(
-                                      record.driver_license_path!,
-                                      `${record.full_name}_Driver_License`
-                                    )
-                                  }
-                                >
-                                  <Download className="w-4 h-4 mr-1" />
-                                  Download
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    {/* Action Buttons */}
-                    {record.status === "pending" && (
-                      <div className="flex justify-end space-x-3 mt-6 pt-4 border-t">
-                        <Button
-                          onClick={() =>
-                            handleReject(record.user_id, record.id)
-                          }
-                          variant="destructive"
-                          disabled={updating === record.id}
-                        >
-                          {updating === record.id ? "Processing..." : "Reject"}
-                        </Button>
-                        <Button
-                          onClick={() =>
-                            updateKYCStatus(
-                              record.user_id,
-                              record.id,
-                              "approved"
-                            )
-                          }
-                          className="bg-green-600 hover:bg-green-700"
-                          disabled={updating === record.id}
-                        >
-                          {updating === record.id ? "Processing..." : "Approve"}
-                        </Button>
-                      </div>
-                    )}
-                    {record.status !== "pending" && record.reviewed_at && (
-                      <div className="mt-4 pt-4 border-t text-sm text-gray-500">
-                        Status updated on{" "}
-                        {new Date(record.reviewed_at).toLocaleDateString()} at{" "}
-                        {new Date(record.reviewed_at).toLocaleTimeString()}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </>
-      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="all">{renderKYCRecords()}</TabsContent>
+
+        <TabsContent value="pending">{renderKYCRecords()}</TabsContent>
+
+        <TabsContent value="approved">{renderKYCRecords()}</TabsContent>
+
+        <TabsContent value="rejected">{renderKYCRecords()}</TabsContent>
+      </Tabs>
 
       {/* Skip KYC Confirmation Dialog */}
       <Dialog open={showSkipDialog} onOpenChange={setShowSkipDialog}>
@@ -1043,4 +805,264 @@ Please check your Supabase RLS policies for the kyc-documents bucket.`);
       </Dialog>
     </div>
   );
+
+  function renderKYCRecords() {
+    if (filteredRecords.length === 0) {
+      return (
+        <Card>
+          <CardContent className="text-center py-12">
+            <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-500 text-lg">No KYC records found</p>
+            <p className="text-sm text-gray-400 mt-2">
+              {activeTab === "all"
+                ? "KYC submissions will appear here when users complete their verification"
+                : `No ${activeTab} KYC records found`}
+            </p>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    return (
+      <div className="grid gap-6">
+        {filteredRecords.map((record) => (
+          <Card key={record.id} className="overflow-hidden">
+            <CardHeader className="bg-gray-50">
+              <div className="flex justify-between items-start">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-[#F26623] rounded-full flex items-center justify-center">
+                    <User className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-xl">
+                      {record.full_name}
+                    </CardTitle>
+                    <div className="flex items-center space-x-2 mt-1">
+                      <Mail className="w-4 h-4 text-gray-400" />
+                      <span className="text-sm text-gray-600">
+                        {record.email}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-2">
+                  {getStatusIcon(record.status)}
+                  {getStatusBadge(record.status)}
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Personal Information */}
+                <div className="space-y-4">
+                  <h3 className="font-semibold text-lg flex items-center">
+                    <User className="w-5 h-5 mr-2" />
+                    Personal Information
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="font-medium text-gray-600">
+                        Document Type:
+                      </span>
+                      <p className="capitalize">
+                        {record.document_type.replace("_", " ")}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-600">
+                        Document Number:
+                      </span>
+                      <p>{record.document_number}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-600">
+                        Date of Birth:
+                      </span>
+                      <p>
+                        {new Date(record.date_of_birth).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-600">
+                        Submitted:
+                      </span>
+                      <p>
+                        {new Date(record.submitted_at).toLocaleDateString()} at{" "}
+                        {new Date(record.submitted_at).toLocaleTimeString()}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-start space-x-2">
+                      <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />
+                      <div>
+                        <span className="font-medium text-gray-600">
+                          Address:
+                        </span>
+                        <p className="text-sm">{record.address}</p>
+                        <p className="text-sm text-gray-600">
+                          {record.city}, {record.country}
+                          {record.postal_code && ` ${record.postal_code}`}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  {record.rejection_reason && (
+                    <div
+                      className={`p-3 border rounded-md ${
+                        record.rejection_reason.includes("SKIPPED BY ADMIN")
+                          ? "bg-blue-50 border-blue-200"
+                          : "bg-red-50 border-red-200"
+                      }`}
+                    >
+                      <span
+                        className={`font-medium ${
+                          record.rejection_reason.includes("SKIPPED BY ADMIN")
+                            ? "text-blue-800"
+                            : "text-red-800"
+                        }`}
+                      >
+                        {record.rejection_reason.includes("SKIPPED BY ADMIN")
+                          ? "Admin Note:"
+                          : "Rejection Reason:"}
+                      </span>
+                      <p
+                        className={`text-sm mt-1 ${
+                          record.rejection_reason.includes("SKIPPED BY ADMIN")
+                            ? "text-blue-700"
+                            : "text-red-700"
+                        }`}
+                      >
+                        {record.rejection_reason}
+                      </p>
+                    </div>
+                  )}
+                </div>
+                {/* Documents */}
+                <div className="space-y-4">
+                  <h3 className="font-semibold text-lg flex items-center">
+                    <FileText className="w-5 h-5 mr-2" />
+                    Uploaded Documents
+                  </h3>
+                  {record.document_number === "ADMIN_SKIP" ||
+                  record.document_number === "ADMIN_SKIP_NO_DOCUMENT" ? (
+                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-md text-center">
+                      <SkipForward className="w-8 h-8 text-blue-500 mx-auto mb-2" />
+                      <p className="text-blue-800 font-medium">
+                        KYC Skipped by Admin
+                      </p>
+                      <p className="text-sm text-blue-600 mt-1">
+                        No documents required for this verification
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                        <span className="text-sm font-medium">ID Document</span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            downloadDocument(
+                              record.id_document_path,
+                              `${record.full_name}_ID_Document`
+                            );
+                          }}
+                        >
+                          <Download className="w-4 h-4 mr-1" />
+                          Download
+                        </Button>
+                      </div>
+                      <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                        <span className="text-sm font-medium">
+                          Utility Bill
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            downloadDocument(
+                              record.utility_bill_path,
+                              `${record.full_name}_Utility_Bill`
+                            )
+                          }
+                        >
+                          <Download className="w-4 h-4 mr-1" />
+                          Download
+                        </Button>
+                      </div>
+                      <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                        <span className="text-sm font-medium">Selfie</span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            downloadDocument(
+                              record.selfie_path,
+                              `${record.full_name}_Selfie`
+                            )
+                          }
+                        >
+                          <Download className="w-4 h-4 mr-1" />
+                          Download
+                        </Button>
+                      </div>
+                      {record.driver_license_path && (
+                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                          <span className="text-sm font-medium">
+                            Driver License
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              downloadDocument(
+                                record.driver_license_path!,
+                                `${record.full_name}_Driver_License`
+                              )
+                            }
+                          >
+                            <Download className="w-4 h-4 mr-1" />
+                            Download
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {/* Action Buttons */}
+              {record.status === "pending" && (
+                <div className="flex justify-end space-x-3 mt-6 pt-4 border-t">
+                  <Button
+                    onClick={() => handleReject(record.user_id, record.id)}
+                    variant="destructive"
+                    disabled={updating === record.id}
+                  >
+                    {updating === record.id ? "Processing..." : "Reject"}
+                  </Button>
+                  <Button
+                    onClick={() =>
+                      updateKYCStatus(record.user_id, record.id, "approved")
+                    }
+                    className="bg-green-600 hover:bg-green-700"
+                    disabled={updating === record.id}
+                  >
+                    {updating === record.id ? "Processing..." : "Approve"}
+                  </Button>
+                </div>
+              )}
+              {record.status !== "pending" && record.reviewed_at && (
+                <div className="mt-4 pt-4 border-t text-sm text-gray-500">
+                  Status updated on{" "}
+                  {new Date(record.reviewed_at).toLocaleDateString()} at{" "}
+                  {new Date(record.reviewed_at).toLocaleTimeString()}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  }
 }
