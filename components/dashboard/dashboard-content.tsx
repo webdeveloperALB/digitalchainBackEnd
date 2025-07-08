@@ -35,6 +35,13 @@ import {
   Sparkles,
   Gift,
   Shield,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  Calendar,
+  User,
+  FileText,
+  Banknote,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -160,6 +167,11 @@ export default function DashboardContent({
     LatestMessage | WelcomeMessage | null
   >(null);
 
+  // Add state for expanded activities
+  const [expandedActivities, setExpandedActivities] = useState<Set<string>>(
+    new Set()
+  );
+
   // Check if user is new and create welcome message
   useEffect(() => {
     const checkNewUserAndCreateWelcome = async () => {
@@ -255,6 +267,7 @@ export default function DashboardContent({
             setShowMessage(true);
           }
         }
+
         setHasCheckedWelcome(true);
       } catch (error) {
         console.error("Error checking new user status:", error);
@@ -394,7 +407,6 @@ export default function DashboardContent({
           ...(userTransfers || []),
           ...(clientTransfers || []),
         ];
-
         const uniqueTransfers = allTransfers.filter(
           (transfer, index, self) =>
             index === self.findIndex((t) => t.id === transfer.id)
@@ -427,7 +439,6 @@ export default function DashboardContent({
           ...(userActivities || []),
           ...(clientActivities || []),
         ];
-
         const uniqueActivities = allActivities.filter(
           (activity, index, self) =>
             index === self.findIndex((a) => a.id === activity.id)
@@ -691,30 +702,40 @@ export default function DashboardContent({
       const accountActivity = activity.data as AccountActivity;
       switch (accountActivity.activity_type) {
         case "admin_notification":
-          return <Building2 className="h-5 w-5 text-blue-600" />;
+          return <Building2 className="h-5 w-5" />;
         case "system_update":
-          return <Activity className="h-5 w-5 text-green-600" />;
+          return <Activity className="h-5 w-5" />;
         case "security_alert":
-          return <AlertTriangle className="h-5 w-5 text-red-600" />;
+          return <AlertTriangle className="h-5 w-5" />;
         case "account_notice":
-          return <Info className="h-5 w-5 text-yellow-600" />;
+          return <Info className="h-5 w-5" />;
         case "service_announcement":
-          return <Send className="h-5 w-5 text-purple-600" />;
+          return <Send className="h-5 w-5" />;
+        case "account_credit":
+          return <Banknote className="h-5 w-5" />;
+        case "account_debit":
+          return <Banknote className="h-5 w-5" />;
+        case "wire_transfer":
+          return <ArrowUpRight className="h-5 w-5" />;
+        case "fraud_alert":
+          return <Shield className="h-5 w-5" />;
+        case "statement_ready":
+          return <FileText className="h-5 w-5" />;
         default:
-          return <Bell className="h-5 w-5 text-gray-600" />;
+          return <Bell className="h-5 w-5" />;
       }
     } else {
       const transfer = activity.data as Transfer;
       if (isAdminCredit(transfer)) {
         if (isAdminDebit(transfer)) {
-          return <AlertTriangle className="h-5 w-5 text-orange-600" />;
+          return <AlertTriangle className="h-5 w-5" />;
         }
-        return <Building2 className="h-5 w-5 text-blue-600" />;
+        return <Building2 className="h-5 w-5" />;
       }
       if (isRegularDeposit(transfer)) {
-        return <ArrowDownLeft className="h-5 w-5 text-green-600" />;
+        return <ArrowDownLeft className="h-5 w-5" />;
       }
-      return <ArrowUpRight className="h-5 w-5 text-gray-600" />;
+      return <ArrowUpRight className="h-5 w-5" />;
     }
   };
 
@@ -828,36 +849,33 @@ export default function DashboardContent({
   };
 
   const getActivityColor = (activity: CombinedActivity) => {
-    if (activity.type === "account_activity") {
-      const accountActivity = activity.data as AccountActivity;
-      switch (accountActivity.activity_type) {
-        case "admin_notification":
-          return "border-blue-200 bg-blue-50/30";
-        case "system_update":
-          return "border-green-200 bg-green-50/30";
-        case "security_alert":
-          return "border-red-200 bg-red-50/30";
-        case "account_notice":
-          return "border-yellow-200 bg-yellow-50/30";
-        case "service_announcement":
-          return "border-purple-200 bg-purple-50/30";
-        default:
-          return "border-gray-200 bg-gray-50/30";
-      }
-    } else {
-      const transfer = activity.data as Transfer;
-      const isCredit = isAdminCredit(transfer) && !isAdminDebit(transfer);
-      const isDebit = isAdminDebit(transfer);
-      const isAdjustment =
-        transfer.transfer_type === "admin_balance_adjustment";
-      const isRegularDep = isRegularDeposit(transfer);
+    // Use neutral colors with #F26623 accent
+    return "border-gray-200 bg-gray-50/30 hover:border-[#F26623]/30";
+  };
 
-      if (isCredit) return "border-blue-200 bg-blue-50/30";
-      if (isDebit) return "border-orange-200 bg-orange-50/30";
-      if (isAdjustment) return "border-purple-200 bg-purple-50/30";
-      if (isRegularDep) return "border-green-200 bg-green-50/30";
-      return "border-gray-200";
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case "urgent":
+        return "bg-[#F26623] text-white border-[#F26623]";
+      case "high":
+        return "bg-[#F26623]/20 text-[#F26623] border-[#F26623]/30";
+      case "normal":
+        return "bg-gray-100 text-gray-800 border-gray-200";
+      case "low":
+        return "bg-gray-50 text-gray-600 border-gray-100";
+      default:
+        return "bg-gray-100 text-gray-800 border-gray-200";
     }
+  };
+
+  const toggleActivityExpansion = (activityId: string) => {
+    const newExpanded = new Set(expandedActivities);
+    if (newExpanded.has(activityId)) {
+      newExpanded.delete(activityId);
+    } else {
+      newExpanded.add(activityId);
+    }
+    setExpandedActivities(newExpanded);
   };
 
   if (loading && !hasLoaded) {
@@ -1025,19 +1043,22 @@ export default function DashboardContent({
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           <div className="lg:col-span-2 space-y-6">
-            <Card>
-              <CardHeader>
+            <Card className="shadow-lg border-0">
+              <CardHeader className="bg-gradient-to-r from-slate-50 to-gray-50 border-b">
                 <CardTitle className="flex items-center">
-                  <Activity className="h-5 w-5 mr-2" />
+                  <Activity className="h-5 w-5 mr-2 text-[#F26623]" />
                   Account Activity
-                  <Badge variant="outline" className="ml-2 text-xs">
+                  <Badge
+                    variant="outline"
+                    className="ml-2 text-xs bg-[#F26623] text-white border-[#F26623]"
+                  >
                     Real-time
                   </Badge>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="p-0">
                 {activitiesLoading ? (
-                  <div className="space-y-2">
+                  <div className="space-y-2 p-6">
                     {[1, 2, 3].map((i) => (
                       <div
                         key={i}
@@ -1049,7 +1070,7 @@ export default function DashboardContent({
                     ))}
                   </div>
                 ) : combinedActivities.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
+                  <div className="text-center py-12 text-gray-500 p-6">
                     <Send className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <p className="text-sm">
                       {isNewUser
@@ -1063,118 +1084,200 @@ export default function DashboardContent({
                     </p>
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="divide-y divide-gray-100">
                     {combinedActivities.slice(0, 8).map((activity) => {
+                      const isExpanded = expandedActivities.has(activity.id);
+                      const activityData = activity.data;
+                      const hasDescription =
+                        activity.type === "account_activity"
+                          ? (activityData as AccountActivity).description
+                          : (activityData as Transfer).description;
+                      const description =
+                        activity.type === "account_activity"
+                          ? (activityData as AccountActivity).description
+                          : (activityData as Transfer).description;
+                      const shouldShowExpand =
+                        description && description.length > 100;
+
                       return (
                         <div
                           key={activity.id}
-                          className={`flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors ${getActivityColor(
+                          className={`transition-all duration-200 hover:bg-gray-50/50 ${getActivityColor(
                             activity
-                          )}`}
+                          )} border-l-4 hover:border-l-[#F26623]`}
                         >
-                          <div className="flex items-center space-x-3">
-                            <div
-                              className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                                activity.type === "account_activity"
-                                  ? "bg-blue-100"
-                                  : getActivityColor(activity).includes("blue")
-                                  ? "bg-blue-100"
-                                  : getActivityColor(activity).includes(
-                                      "orange"
-                                    )
-                                  ? "bg-orange-100"
-                                  : getActivityColor(activity).includes(
-                                      "purple"
-                                    )
-                                  ? "bg-purple-100"
-                                  : getActivityColor(activity).includes("green")
-                                  ? "bg-green-100"
-                                  : "bg-gray-100"
-                              }`}
-                            >
-                              {getActivityIcon(activity)}
-                            </div>
-                            <div>
-                              <p className="font-medium text-sm">
-                                {getActivityDescription(activity)}
-                              </p>
-                              {getActivityAmount(activity) && (
-                                <p className="text-xs text-gray-600">
-                                  {getActivityAmount(activity)}
-                                </p>
-                              )}
-                              {activity.type === "account_activity" &&
-                                (activity.data as AccountActivity)
-                                  .description && (
-                                  <p className="text-xs text-gray-500 mt-1 max-w-xs truncate">
+                          <div className="p-6">
+                            <div className="flex items-start justify-between">
+                              <div className="flex items-start space-x-4 flex-1">
+                                <div className="w-12 h-12 rounded-full bg-white shadow-sm flex items-center justify-center flex-shrink-0 border-2 border-gray-100">
+                                  {React.cloneElement(
+                                    getActivityIcon(activity),
                                     {
-                                      (activity.data as AccountActivity)
-                                        .description
+                                      className: "h-5 w-5 text-[#F26623]",
                                     }
-                                  </p>
-                                )}
-                              {activity.type === "transfer" &&
-                                (activity.data as Transfer).description && (
-                                  <p className="text-xs text-gray-500 mt-1 max-w-xs truncate">
-                                    {(activity.data as Transfer).description}
-                                  </p>
-                                )}
-                              <p className="text-xs text-gray-400">
-                                {new Date(
-                                  activity.created_at
-                                ).toLocaleDateString()}{" "}
-                                at{" "}
-                                {new Date(
-                                  activity.created_at
-                                ).toLocaleTimeString()}
-                              </p>
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center space-x-3 mb-3">
+                                    <h4 className="font-bold text-lg text-gray-900 leading-tight">
+                                      {getActivityDescription(activity)}
+                                    </h4>
+                                    {activity.type === "account_activity" && (
+                                      <Badge
+                                        className={`text-xs font-medium border ${getPriorityColor(
+                                          (activityData as AccountActivity)
+                                            .priority
+                                        )}`}
+                                      >
+                                        {(
+                                          activityData as AccountActivity
+                                        ).priority.toUpperCase()}
+                                      </Badge>
+                                    )}
+                                  </div>
+
+                                  {getActivityAmount(activity) && (
+                                    <div className="flex items-center space-x-2 mb-3">
+                                      <Banknote className="h-4 w-4 text-gray-500" />
+                                      <span
+                                        className={`font-bold text-lg ${
+                                          activity.type === "account_activity"
+                                            ? (activityData as AccountActivity)
+                                                .display_amount > 0
+                                              ? "text-[#F26623]"
+                                              : "text-gray-600"
+                                            : getActivityAmount(
+                                                activity
+                                              )?.startsWith("+")
+                                            ? "text-[#F26623]"
+                                            : "text-gray-600"
+                                        }`}
+                                      >
+                                        {getActivityAmount(activity)}
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {hasDescription && (
+                                    <div className="mb-4">
+                                      <div
+                                        className={`text-sm text-gray-700 leading-relaxed ${
+                                          !isExpanded && shouldShowExpand
+                                            ? "line-clamp-3"
+                                            : ""
+                                        }`}
+                                      >
+                                        {description
+                                          ?.split("\n")
+                                          .map((line, index) => (
+                                            <div
+                                              key={index}
+                                              className={
+                                                index > 0 ? "mt-2" : ""
+                                              }
+                                            >
+                                              {line}
+                                            </div>
+                                          ))}
+                                      </div>
+                                      {shouldShowExpand && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() =>
+                                            toggleActivityExpansion(activity.id)
+                                          }
+                                          className="mt-2 text-[#F26623] hover:text-[#F26623] hover:bg-[#F26623]/10 p-0 h-auto font-medium"
+                                        >
+                                          {isExpanded ? (
+                                            <>
+                                              <ChevronUp className="h-4 w-4 mr-1" />
+                                              Show Less
+                                            </>
+                                          ) : (
+                                            <>
+                                              <ChevronDown className="h-4 w-4 mr-1" />
+                                              Read More
+                                            </>
+                                          )}
+                                        </Button>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  <div className="flex items-center space-x-6 text-xs text-gray-500">
+                                    <div className="flex items-center space-x-1">
+                                      <Clock className="h-3 w-3" />
+                                      <span className="font-medium">
+                                        {new Date(
+                                          activity.created_at
+                                        ).toLocaleDateString("en-US", {
+                                          month: "short",
+                                          day: "numeric",
+                                          year: "numeric",
+                                        })}{" "}
+                                        at{" "}
+                                        {new Date(
+                                          activity.created_at
+                                        ).toLocaleTimeString("en-US", {
+                                          hour: "2-digit",
+                                          minute: "2-digit",
+                                        })}
+                                      </span>
+                                    </div>
+                                    {activity.type === "account_activity" &&
+                                      (activityData as AccountActivity)
+                                        .expires_at && (
+                                        <div className="flex items-center space-x-1">
+                                          <Calendar className="h-3 w-3" />
+                                          <span>
+                                            Expires:{" "}
+                                            {new Date(
+                                              (
+                                                activityData as AccountActivity
+                                              ).expires_at!
+                                            ).toLocaleDateString()}
+                                          </span>
+                                        </div>
+                                      )}
+                                    {activity.type === "account_activity" &&
+                                      (activityData as AccountActivity)
+                                        .created_by && (
+                                        <div className="flex items-center space-x-1">
+                                          <User className="h-3 w-3" />
+                                          <span>Admin</span>
+                                        </div>
+                                      )}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex flex-col items-end space-y-2 flex-shrink-0">
+                                {activity.type === "transfer" &&
+                                  !isAdminCredit(activity.data as Transfer) &&
+                                  !isRegularDeposit(
+                                    activity.data as Transfer
+                                  ) &&
+                                  (activity.data as Transfer).exchange_rate &&
+                                  (activity.data as Transfer).exchange_rate !==
+                                    1.0 && (
+                                    <div className="text-xs text-gray-500 text-right">
+                                      <span className="font-medium">
+                                        Rate:{" "}
+                                      </span>
+                                      {Number(
+                                        (activity.data as Transfer)
+                                          .exchange_rate
+                                      ).toFixed(4)}
+                                    </div>
+                                  )}
+                                <Badge className="text-xs px-3 py-1 rounded-full font-medium bg-gray-100 text-gray-800 border border-gray-200">
+                                  {activity.type === "account_activity"
+                                    ? "Active"
+                                    : (activity.data as Transfer).status ||
+                                      "Completed"}
+                                </Badge>
+                              </div>
                             </div>
-                          </div>
-                          <div className="text-right">
-                            {activity.type === "transfer" &&
-                              !isAdminCredit(activity.data as Transfer) &&
-                              !isRegularDeposit(activity.data as Transfer) &&
-                              (activity.data as Transfer).exchange_rate &&
-                              (activity.data as Transfer).exchange_rate !==
-                                1.0 && (
-                                <p className="font-medium text-sm mb-1">
-                                  Rate:{" "}
-                                  {Number(
-                                    (activity.data as Transfer).exchange_rate
-                                  ).toFixed(4)}
-                                </p>
-                              )}
-                            <Badge
-                              className={`text-xs px-2 rounded ${
-                                activity.type === "account_activity"
-                                  ? "bg-blue-100 text-blue-800"
-                                  : (activity.data as Transfer).status ===
-                                      "completed" ||
-                                    (activity.data as Transfer).status ===
-                                      "Completed"
-                                  ? getActivityColor(activity).includes("blue")
-                                    ? "bg-blue-100 text-blue-800"
-                                    : getActivityColor(activity).includes(
-                                        "orange"
-                                      )
-                                    ? "bg-orange-100 text-orange-800"
-                                    : getActivityColor(activity).includes(
-                                        "purple"
-                                      )
-                                    ? "bg-purple-100 text-purple-800"
-                                    : getActivityColor(activity).includes(
-                                        "green"
-                                      )
-                                    ? "bg-green-100 text-green-800"
-                                    : "bg-gray-100 text-gray-800"
-                                  : "bg-gray-100 text-gray-800"
-                              }`}
-                            >
-                              {activity.type === "account_activity"
-                                ? (activity.data as AccountActivity).status
-                                : (activity.data as Transfer).status ||
-                                  "Completed"}
-                            </Badge>
                           </div>
                         </div>
                       );
