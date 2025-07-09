@@ -1,32 +1,38 @@
 "use client";
-import { useState, useEffect } from "react";
+
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import AuthForm from "@/components/auth/auth-form";
 import Dashboard from "@/components/dashboard/dashboard";
 import KYCVerification from "@/components/auth/kyc-verification";
 import type { User } from "@supabase/supabase-js";
 
+type KYCStatus = "not_started" | "pending" | "approved" | "rejected";
+
 export default function Page() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [kycStatus, setKycStatus] = useState<
-    "not_started" | "pending" | "approved" | "rejected" | null
-  >(null);
+  const [kycStatus, setKycStatus] = useState<KYCStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // Function to check KYC status - only called when user exists
-  const checkKYCStatus = async (userId: string) => {
+  // Improved KYC status check with better error handling
+  const checkKYCStatus = useCallback(async (userId: string): Promise<void> => {
     try {
       console.log("Checking KYC status for user:", userId);
 
-      const { data: userData, error: userError } = await supabase
-        .from("users")
-        .select("kyc_status")
-        .eq("id", userId)
-        .single();
+      // Create timeout promise
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error("Request timed out")), 8000);
+      });
+
+      // Race between the actual query and timeout
+      const { data: userData, error: userError } = (await Promise.race([
+        supabase.from("users").select("kyc_status").eq("id", userId).single(),
+        timeoutPromise,
+      ])) as any;
 
       if (userError) {
         console.error("Error checking KYC status:", userError);
-
         // If user doesn't exist in users table, they need to complete KYC
         if (userError.code === "PGRST116") {
           console.log(
@@ -38,7 +44,7 @@ export default function Page() {
           setKycStatus("not_started");
         }
       } else {
-        const status = userData?.kyc_status || "not_started";
+        const status = (userData?.kyc_status as KYCStatus) || "not_started";
         console.log("KYC status retrieved:", status);
         setKycStatus(status);
       }
@@ -47,93 +53,147 @@ export default function Page() {
       // Default to not_started if any error occurs
       setKycStatus("not_started");
     }
-  };
+  }, []);
+
+  // Initialize auth state with better error handling
+  const initializeAuth = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      console.log("Getting initial session...");
+
+      // Create timeout promise
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error("Session check timed out")), 8000);
+      });
+
+      // Race between session check and timeout
+      const {
+        data: { session },
+        error: sessionError,
+      } = (await Promise.race([
+        supabase.auth.getSession(),
+        timeoutPromise,
+      ])) as any;
+
+      if (sessionError) {
+        console.error("Error getting session:", sessionError);
+        throw sessionError;
+      }
+
+      const currentUser = session?.user ?? null;
+      console.log(
+        "Initial session check - User:",
+        currentUser?.id || "No user"
+      );
+
+      setUser(currentUser);
+
+      // Only check KYC if user exists
+      if (currentUser) {
+        console.log("User found, checking KYC status...");
+        await checkKYCStatus(currentUser.id);
+      } else {
+        console.log("No user found, will show auth form");
+        setKycStatus(null);
+      }
+    } catch (error) {
+      console.error("Error in initializeAuth:", error);
+      setError("Failed to load. Please refresh the page.");
+      setUser(null);
+      setKycStatus(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [checkKYCStatus]);
 
   useEffect(() => {
-    // Get initial session
-    const getInitialSession = async () => {
-      try {
-        const {
-          data: { session },
-          error,
-        } = await supabase.auth.getSession();
-
-        if (error) {
-          console.error("Error getting session:", error);
-        }
-
-        const currentUser = session?.user ?? null;
-        console.log(
-          "Initial session check - User:",
-          currentUser?.id || "No user"
-        );
-
-        setUser(currentUser);
-        setLoading(false); // Set loading to false immediately after getting session
-
-        // Only check KYC if user exists
-        if (currentUser) {
-          console.log("User found, checking KYC status...");
-          await checkKYCStatus(currentUser.id);
-        } else {
-          console.log("No user found, will show auth form");
-        }
-      } catch (error) {
-        console.error("Error in getInitialSession:", error);
-        setUser(null);
-        setLoading(false);
-      }
-    };
-
-    getInitialSession();
+    // Initialize auth state
+    initializeAuth();
 
     // Listen for auth changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("Auth state changed:", event, session?.user?.id || "No user");
+      try {
+        console.log(
+          "Auth state changed:",
+          event,
+          session?.user?.id || "No user"
+        );
 
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
+        const currentUser = session?.user ?? null;
+        setUser(currentUser);
+        setError(null);
 
-      if (currentUser) {
-        console.log("User authenticated, checking KYC...");
-        await checkKYCStatus(currentUser.id);
-      } else {
-        console.log("User signed out, resetting KYC status");
-        setKycStatus(null);
+        if (currentUser) {
+          console.log("User authenticated, checking KYC...");
+          setKycStatus(null); // Reset KYC status while checking
+          await checkKYCStatus(currentUser.id);
+        } else {
+          console.log("User signed out, resetting KYC status");
+          setKycStatus(null);
+        }
+      } catch (error) {
+        console.error("Error in auth state change:", error);
+        setError("Authentication error occurred");
       }
     });
 
-    return () => subscription.unsubscribe();
-  }, []);
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [initializeAuth, checkKYCStatus]);
 
-  // Show loading screen only while checking initial authentication
+  // Loading component
+  const LoadingScreen = ({ message = "Loading..." }: { message?: string }) => (
+    <>
+      <style>
+        {`
+          @keyframes zoomInOut {
+            0%, 100% { transform: scale(1); }
+            50%       { transform: scale(1.2); }
+          }
+          .zoom-breath {
+            animation: zoomInOut 2s ease-in-out infinite;
+          }
+        `}
+      </style>
+      <div className="min-h-screen flex flex-col items-center justify-center space-y-4 bg-gradient-to-br from-orange-50 to-orange-100">
+        <img
+          src="/logo.svg"
+          alt="Loading logo"
+          className="w-64 h-64 object-contain zoom-breath"
+        />
+        <p className="text-gray-600 text-2xl text-center">{message}</p>
+        {error && (
+          <div className="text-center space-y-2">
+            <p className="text-red-600 text-sm">{error}</p>
+            <button
+              onClick={() => {
+                setError(null);
+                initializeAuth();
+              }}
+              className="bg-[#F26623] hover:bg-[#E55A1F] text-white font-medium py-2 px-4 rounded-md transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+
+  // Show loading screen while checking initial authentication
   if (loading) {
     console.log("Showing loading screen...");
-    return (
-      <>
-        <style>
-          {`
-      @keyframes zoomInOut {
-        0%, 100% { transform: scale(1); }
-        50%       { transform: scale(1.2); }
-      }
-      .zoom-breath {
-        animation: zoomInOut 2s ease-in-out infinite;
-      }
-    `}
-        </style>
-        <div className="min-h-screen flex flex-col items-center justify-center space-y-4 bg-gradient-to-br from-orange-50 to-orange-100">
-          <img
-            src="/logo.svg"
-            alt="Loading logo"
-            className="w-64 h-64 object-contain zoom-breath"
-          />
-          <p className="text-gray-600 text-2xl text-center">Loading...</p>
-        </div>
-      </>
-    );
+    return <LoadingScreen />;
+  }
+
+  // If there's an error and no user, show error state
+  if (error && !user) {
+    return <LoadingScreen message="Something went wrong" />;
   }
 
   // If no user is authenticated, show auth form
@@ -148,31 +208,7 @@ export default function Page() {
   if (kycStatus === null) {
     // Still checking KYC status
     console.log("Still checking KYC status...");
-    return (
-      <>
-        <style>
-          {`
-      @keyframes zoomInOut {
-        0%, 100% { transform: scale(1); }
-        50%       { transform: scale(1.2); }
-      }
-      .zoom-breath {
-        animation: zoomInOut 2s ease-in-out infinite;
-      }
-    `}
-        </style>
-        <div className="min-h-screen flex flex-col items-center justify-center space-y-4 bg-gradient-to-br from-orange-50 to-orange-100">
-          <img
-            src="/logo.svg"
-            alt="Loading logo"
-            className="w-64 h-64 object-contain zoom-breath"
-          />
-          <p className="text-gray-600 text-2xl text-center">
-            Checking verification status...
-          </p>
-        </div>
-      </>
-    );
+    return <LoadingScreen message="Checking verification status..." />;
   }
 
   if (kycStatus === "not_started") {
