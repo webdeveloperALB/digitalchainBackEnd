@@ -109,7 +109,6 @@ export default function Page() {
       );
 
       setUser(currentUser);
-      setLoading(false);
 
       if (currentUser) {
         console.log("User found, checking KYC status...");
@@ -118,6 +117,7 @@ export default function Page() {
         console.log("No user found, will show auth form");
         setKycStatus(null); // Reset KYC status when no user
       }
+      setLoading(false); // Moved this line here
     } catch (error) {
       console.error("Error in getInitialSession:", error);
       setUser(null);
