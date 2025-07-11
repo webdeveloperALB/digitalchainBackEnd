@@ -1,5 +1,4 @@
 "use client";
-
 import type React from "react";
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +11,7 @@ import {
   Database,
   Shield,
   Activity,
+  Calculator,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -44,6 +44,7 @@ import DatabaseTest from "./database-test";
 import UserManagementTest from "./user-management-test";
 import KYCAdminPanel from "./kyc-admin-panel";
 import ActivityManager from "./activity-manager";
+import TaxManager from "./tax-manager";
 
 interface User {
   id: string;
@@ -401,7 +402,6 @@ function ActivityManagerComponent() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">Create Activity Entry</h3>
-
               {message && (
                 <Alert
                   className={
@@ -421,7 +421,6 @@ function ActivityManagerComponent() {
                   </AlertDescription>
                 </Alert>
               )}
-
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
                   <Label htmlFor="user-select">Select User *</Label>
@@ -450,7 +449,6 @@ function ActivityManagerComponent() {
                     </SelectContent>
                   </Select>
                 </div>
-
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="activity-type">Activity Type *</Label>
@@ -473,7 +471,6 @@ function ActivityManagerComponent() {
                       </SelectContent>
                     </Select>
                   </div>
-
                   <div>
                     <Label htmlFor="priority">Priority</Label>
                     <Select value={priority} onValueChange={setPriority}>
@@ -490,7 +487,6 @@ function ActivityManagerComponent() {
                     </Select>
                   </div>
                 </div>
-
                 <div>
                   <Label htmlFor="activity-title">Activity Title *</Label>
                   <Input
@@ -501,7 +497,6 @@ function ActivityManagerComponent() {
                     required
                   />
                 </div>
-
                 <div>
                   <Label htmlFor="activity-description">Description</Label>
                   <Textarea
@@ -512,7 +507,6 @@ function ActivityManagerComponent() {
                     rows={3}
                   />
                 </div>
-
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="currency">Currency</Label>
@@ -529,7 +523,6 @@ function ActivityManagerComponent() {
                       </SelectContent>
                     </Select>
                   </div>
-
                   <div>
                     <Label htmlFor="display-amount">
                       Display Amount (Optional)
@@ -544,7 +537,6 @@ function ActivityManagerComponent() {
                     />
                   </div>
                 </div>
-
                 <div>
                   <Label htmlFor="expires-at">Expires At (Optional)</Label>
                   <Input
@@ -554,7 +546,6 @@ function ActivityManagerComponent() {
                     onChange={(e) => setExpiresAt(e.target.value)}
                   />
                 </div>
-
                 <Button
                   type="submit"
                   disabled={
@@ -576,10 +567,8 @@ function ActivityManagerComponent() {
                 </Button>
               </form>
             </div>
-
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">Recent Activity Entries</h3>
-
               <div className="space-y-3 max-h-96 overflow-y-auto">
                 {activitiesLoading ? (
                   <div className="space-y-2">
@@ -709,7 +698,7 @@ export default function AdminDashboard() {
           onValueChange={setActiveTab}
           className="space-y-6"
         >
-          <TabsList className="grid w-full grid-cols-7">
+          <TabsList className="grid w-full grid-cols-8">
             <TabsTrigger value="overview" className="flex items-center">
               <Settings className="w-4 h-4 mr-2" />
               Overview
@@ -737,6 +726,10 @@ export default function AdminDashboard() {
             <TabsTrigger value="database" className="flex items-center">
               <Database className="w-4 h-4 mr-2" />
               Database
+            </TabsTrigger>
+            <TabsTrigger value="taxes" className="flex items-center">
+              <Calculator className="w-4 h-4 mr-2" />
+              Taxes
             </TabsTrigger>
           </TabsList>
 
@@ -841,6 +834,12 @@ export default function AdminDashboard() {
                     Test database connectivity and run system diagnostics
                   </p>
                 </div>
+                <div className="space-y-2">
+                  <h4 className="font-medium">Tax Management</h4>
+                  <p className="text-sm text-gray-600">
+                    Manage user tax records, calculations, and compliance
+                  </p>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -852,17 +851,25 @@ export default function AdminDashboard() {
           <TabsContent value="kyc">
             <KYCAdminPanel />
           </TabsContent>
+
           <TabsContent value="balances">
             <BalanceUpdater />
           </TabsContent>
+
           <TabsContent value="messages">
             <MessageManager />
           </TabsContent>
+
           <TabsContent value="users">
             <UserManagementTest />
           </TabsContent>
+
           <TabsContent value="database">
             <DatabaseTest />
+          </TabsContent>
+
+          <TabsContent value="taxes">
+            <TaxManager />
           </TabsContent>
         </Tabs>
       </div>

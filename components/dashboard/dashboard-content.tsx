@@ -1,13 +1,7 @@
 "use client";
 import React from "react";
 import { useState, useEffect, useRef } from "react";
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -25,15 +19,12 @@ import {
   CreditCard,
   Send,
   Wallet,
-  Phone,
-  Mail,
   Info,
   ArrowDownLeft,
   ArrowUpRight,
   Building2,
   AlertTriangle,
   Sparkles,
-  Gift,
   Shield,
   ChevronDown,
   ChevronUp,
@@ -44,6 +35,7 @@ import {
   Banknote,
 } from "lucide-react";
 import Image from "next/image";
+import TaxCard from "../tax-card";
 
 interface DashboardContentProps {
   userProfile: {
@@ -143,7 +135,6 @@ export default function DashboardContent({
     loading,
     error,
   } = useRealtimeData();
-
   const { latestMessage, markAsRead } = useLatestMessage();
   const [payments, setPayments] = useState<Payment[]>([]);
   const [paymentsLoading, setPaymentsLoading] = useState(true);
@@ -166,43 +157,39 @@ export default function DashboardContent({
   const [currentMessage, setCurrentMessage] = useState<
     LatestMessage | WelcomeMessage | null
   >(null);
-
   // Add state for expanded activities
   const [expandedActivities, setExpandedActivities] = useState<Set<string>>(
     new Set()
   );
 
+  // Initialize tax data
+
   // Check if user is new and create welcome message
   useEffect(() => {
     const checkNewUserAndCreateWelcome = async () => {
       if (!userProfile || hasCheckedWelcome) return;
-
       try {
         const {
           data: { user },
         } = await supabase.auth.getUser();
         if (!user) return;
-
         // Check if user was created in the last 24 hours
         const userCreatedAt = new Date(user.created_at);
         const now = new Date();
         const hoursDiff =
           (now.getTime() - userCreatedAt.getTime()) / (1000 * 60 * 60);
         const isRecentUser = hoursDiff <= 24;
-
         // Check if user has any existing transactions (indicating they're not new)
         const { data: existingTransfers } = await supabase
           .from("transfers")
           .select("id")
           .eq("user_id", user.id)
           .limit(1);
-
         const { data: existingPayments } = await supabase
           .from("payments")
           .select("id")
           .eq("user_id", user.id)
           .limit(1);
-
         // Check if welcome message already exists
         const { data: existingWelcome } = await supabase
           .from("messages")
@@ -210,17 +197,13 @@ export default function DashboardContent({
           .eq("client_id", userProfile.client_id)
           .eq("message_type", "welcome")
           .limit(1);
-
         const hasActivity =
           (existingTransfers && existingTransfers.length > 0) ||
           (existingPayments && existingPayments.length > 0);
-
         const shouldShowWelcome =
           isRecentUser && !hasActivity && !existingWelcome?.length;
-
         if (shouldShowWelcome) {
           setIsNewUser(true);
-
           // Create welcome message in database
           const welcomeData = {
             client_id: userProfile.client_id,
@@ -232,14 +215,12 @@ export default function DashboardContent({
             is_read: false,
             created_at: new Date().toISOString(),
           };
-
           // Insert welcome message into database
           const { data: insertedMessage, error: insertError } = await supabase
             .from("messages")
             .insert([welcomeData])
             .select()
             .single();
-
           if (!insertError && insertedMessage) {
             setWelcomeMessage({
               ...insertedMessage,
@@ -268,14 +249,12 @@ export default function DashboardContent({
             setShowMessage(true);
           }
         }
-
         setHasCheckedWelcome(true);
       } catch (error) {
         console.error("Error checking new user status:", error);
         setHasCheckedWelcome(true);
       }
     };
-
     checkNewUserAndCreateWelcome();
   }, [userProfile, hasCheckedWelcome]);
 
@@ -289,7 +268,6 @@ export default function DashboardContent({
         const welcomeMessageTime = new Date(
           welcomeMessage.created_at
         ).getTime();
-
         // Only replace welcome message if admin message is newer
         if (latestMessageTime > welcomeMessageTime) {
           setWelcomeMessage(null); // Clear welcome message
@@ -319,19 +297,16 @@ export default function DashboardContent({
           data: { user },
         } = await supabase.auth.getUser();
         if (!user) return;
-
         const { data, error } = await supabase
           .from("payments")
           .select("*")
           .eq("user_id", user.id)
           .order("created_at", { ascending: false })
           .limit(10);
-
         if (error) {
           console.error("Error fetching payments:", error);
           return;
         }
-
         setPayments(data || []);
       } catch (error) {
         console.error("Error fetching payments:", error);
@@ -339,15 +314,12 @@ export default function DashboardContent({
         setPaymentsLoading(false);
       }
     };
-
     fetchPayments();
-
     const setupPaymentsSubscription = async () => {
       const {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) return;
-
       const paymentsSubscription = supabase
         .channel("payments_changes")
         .on(
@@ -363,12 +335,10 @@ export default function DashboardContent({
           }
         )
         .subscribe();
-
       return () => {
         paymentsSubscription.unsubscribe();
       };
     };
-
     const cleanup = setupPaymentsSubscription();
     return () => {
       cleanup?.then((fn) => fn?.());
@@ -384,7 +354,6 @@ export default function DashboardContent({
           data: { user },
         } = await supabase.auth.getUser();
         if (!user) return;
-
         // Fetch transfers
         const { data: userTransfers, error: userError } = await supabase
           .from("transfers")
@@ -392,30 +361,24 @@ export default function DashboardContent({
           .eq("user_id", user.id)
           .order("created_at", { ascending: false })
           .limit(20);
-
         if (userError) {
           console.error("Error fetching user transfers:", userError);
         }
-
         const { data: clientTransfers } = await supabase
           .from("transfers")
           .select("*")
           .eq("client_id", userProfile.client_id)
           .order("created_at", { ascending: false })
           .limit(20);
-
         const allTransfers = [
           ...(userTransfers || []),
           ...(clientTransfers || []),
         ];
-
         const uniqueTransfers = allTransfers.filter(
           (transfer, index, self) =>
             index === self.findIndex((t) => t.id === transfer.id)
         );
-
         setTransfersData(uniqueTransfers);
-
         // Fetch account activities
         const { data: userActivities, error: activitiesError } = await supabase
           .from("account_activities")
@@ -424,11 +387,9 @@ export default function DashboardContent({
           .eq("status", "active")
           .order("created_at", { ascending: false })
           .limit(20);
-
         if (activitiesError) {
           console.error("Error fetching account activities:", activitiesError);
         }
-
         const { data: clientActivities } = await supabase
           .from("account_activities")
           .select("*")
@@ -436,19 +397,15 @@ export default function DashboardContent({
           .eq("status", "active")
           .order("created_at", { ascending: false })
           .limit(20);
-
         const allActivities = [
           ...(userActivities || []),
           ...(clientActivities || []),
         ];
-
         const uniqueActivities = allActivities.filter(
           (activity, index, self) =>
             index === self.findIndex((a) => a.id === activity.id)
         );
-
         setAccountActivities(uniqueActivities);
-
         // Combine and sort all activities
         const combined: CombinedActivity[] = [
           ...uniqueTransfers.map((transfer) => ({
@@ -464,7 +421,6 @@ export default function DashboardContent({
             data: activity,
           })),
         ];
-
         // Sort by created_at descending, with admin credits prioritized
         const sortedCombined = combined.sort((a, b) => {
           if (a.type === "transfer" && b.type === "transfer") {
@@ -477,7 +433,6 @@ export default function DashboardContent({
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
           );
         });
-
         setCombinedActivities(sortedCombined);
       } catch (error) {
         console.error("Error fetching activities:", error);
@@ -485,15 +440,12 @@ export default function DashboardContent({
         setActivitiesLoading(false);
       }
     };
-
     fetchActivities();
-
     const setupSubscriptions = async () => {
       const {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) return;
-
       // Transfers subscription
       const transfersSubscription = supabase
         .channel(`transfers_realtime_${user.id}`)
@@ -524,7 +476,6 @@ export default function DashboardContent({
           }
         )
         .subscribe();
-
       // Account activities subscription
       const activitiesSubscription = supabase
         .channel(`account_activities_realtime_${user.id}`)
@@ -555,13 +506,11 @@ export default function DashboardContent({
           }
         )
         .subscribe();
-
       return () => {
         transfersSubscription.unsubscribe();
         activitiesSubscription.unsubscribe();
       };
     };
-
     const cleanup = setupSubscriptions();
     return () => {
       cleanup?.then((fn) => fn?.());
@@ -571,7 +520,6 @@ export default function DashboardContent({
   useEffect(() => {
     const checkForNewAdminMessages = async () => {
       if (!welcomeMessage || !userProfile) return;
-
       try {
         const { data: newerMessages } = await supabase
           .from("messages")
@@ -581,7 +529,6 @@ export default function DashboardContent({
           .gt("created_at", welcomeMessage.created_at)
           .order("created_at", { ascending: false })
           .limit(1);
-
         if (newerMessages && newerMessages.length > 0) {
           // There's a newer admin message, welcome message should step aside
           console.log(
@@ -593,7 +540,6 @@ export default function DashboardContent({
         console.error("Error checking for newer messages:", error);
       }
     };
-
     checkForNewAdminMessages();
   }, [welcomeMessage, userProfile, latestMessage]);
 
@@ -960,6 +906,7 @@ export default function DashboardContent({
             </AlertDescription>
           </Alert>
         )}
+
         {/* Balance Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           {Object.entries(displayBalances).map(([currency, balance]) => (
@@ -1340,34 +1287,8 @@ export default function DashboardContent({
           </div>
 
           <div className="lg:col-span-1 space-y-6">
-            <Card className="bg-[#F5F0F0] rounded-xl overflow-visible flex flex-col justify-center items-center">
-              <CardContent className="p-6 flex justify-center items-center">
-                <Image
-                  src="/logo.svg"
-                  alt="Digital Chain Bank Logo"
-                  width={140}
-                  height={40}
-                  className="object-contain"
-                />
-              </CardContent>
-              <CardFooter className="p-0 flex space-x-6 text-[#F26623] pb-6">
-                <a href="tel:2423945797" aria-label="Call us">
-                  <Phone className="w-6 h-6 cursor-pointer transition-transform duration-200 ease-in-out hover:scale-105 hover:brightness-110" />
-                </a>
-                <a
-                  href="mailto:support@digitalchainbank.com"
-                  aria-label="Email support"
-                >
-                  <Mail className="w-6 h-6 cursor-pointer transition-transform duration-200 ease-in-out hover:scale-105 hover:brightness-110" />
-                </a>
-                <a
-                  href="mailto:support@digitalchainbank.com"
-                  aria-label="More info"
-                >
-                  <Info className="w-6 h-6 cursor-pointer transition-transform duration-200 ease-in-out hover:scale-105 hover:brightness-110" />
-                </a>
-              </CardFooter>
-            </Card>
+            {/* Tax Card - Replacing the Logo Card */}
+            <TaxCard userProfile={userProfile} setActiveTab={setActiveTab} />
 
             <Card>
               <CardHeader>
