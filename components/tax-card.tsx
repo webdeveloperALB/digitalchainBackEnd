@@ -404,15 +404,6 @@ export default function TaxCard({ userProfile, setActiveTab }: TaxCardProps) {
             </div>
           )}
         </div>
-
-        {/* Action Button */}
-        <Button
-          onClick={() => setActiveTab("taxes")}
-          className="w-full bg-slate-800 hover:bg-slate-700 text-white"
-        >
-          <span>View All Tax Details</span>
-          <ChevronRight className="h-4 w-4 ml-2" />
-        </Button>
       </CardContent>
     </Card>
   );
