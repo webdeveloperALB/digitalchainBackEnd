@@ -9,6 +9,13 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import Image from "next/image";
 
+// Extend Window interface to include presenceCleanup
+declare global {
+  interface Window {
+    presenceCleanup?: () => void;
+  }
+}
+
 export default function AuthForm() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -23,6 +30,104 @@ export default function AuthForm() {
     lastName: "",
     age: "",
   });
+
+  // Function to update user online status
+  const updateUserOnlineStatus = async (userId: string, isOnline: boolean) => {
+    try {
+      // First check if user_presence table exists and create record
+      const { data: existingRecord, error: selectError } = await supabase
+        .from("user_presence")
+        .select("*")
+        .eq("user_id", userId)
+        .single();
+
+      if (selectError && selectError.code !== "PGRST116") {
+        console.error("Error checking user presence:", selectError);
+        return;
+      }
+
+      if (existingRecord) {
+        // Update existing record
+        const { error: updateError } = await supabase
+          .from("user_presence")
+          .update({
+            is_online: isOnline,
+            last_seen: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", userId);
+
+        if (updateError) {
+          console.error("Error updating user presence:", updateError);
+        } else {
+          console.log(
+            `User ${userId} status updated to ${
+              isOnline ? "online" : "offline"
+            }`
+          );
+        }
+      } else {
+        // Insert new record
+        const { error: insertError } = await supabase
+          .from("user_presence")
+          .insert({
+            user_id: userId,
+            is_online: isOnline,
+            last_seen: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+
+        if (insertError) {
+          console.error("Error inserting user presence:", insertError);
+        } else {
+          console.log(
+            `User ${userId} presence record created as ${
+              isOnline ? "online" : "offline"
+            }`
+          );
+        }
+      }
+    } catch (error) {
+      console.error("Error in updateUserOnlineStatus:", error);
+    }
+  };
+
+  // Function to set up presence tracking when user signs in
+  const setupPresenceTracking = (userId: string) => {
+    // Update status to online immediately
+    updateUserOnlineStatus(userId, true);
+
+    // Set up periodic heartbeat to maintain online status
+    const heartbeatInterval = setInterval(() => {
+      updateUserOnlineStatus(userId, true);
+    }, 30000); // Update every 30 seconds
+
+    // Set up beforeunload event to mark user as offline when they leave
+    const handleBeforeUnload = () => {
+      updateUserOnlineStatus(userId, false);
+    };
+
+    // Set up visibility change to handle tab switching
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        updateUserOnlineStatus(userId, false);
+      } else {
+        updateUserOnlineStatus(userId, true);
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    // Store cleanup function
+    window.presenceCleanup = () => {
+      clearInterval(heartbeatInterval);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      updateUserOnlineStatus(userId, false);
+    };
+  };
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,6 +187,9 @@ export default function AuthForm() {
         } else {
           console.log("User successfully inserted into users table");
         }
+
+        // Set up presence tracking for new user
+        setupPresenceTracking(authData.user.id);
       }
 
       console.log("Signup response:", authData);
@@ -118,6 +226,12 @@ export default function AuthForm() {
       }
 
       console.log("Signin successful:", data.user?.id);
+
+      // Set up presence tracking for signed in user
+      if (data.user) {
+        setupPresenceTracking(data.user.id);
+      }
+
       setSuccess("Successfully signed in!");
 
       // The auth state change will handle the redirect based on KYC status

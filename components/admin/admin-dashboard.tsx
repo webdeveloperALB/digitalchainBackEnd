@@ -12,6 +12,7 @@ import {
   Shield,
   Activity,
   Calculator,
+  Wifi,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,6 +46,8 @@ import UserManagementTest from "./user-management-test";
 import KYCAdminPanel from "./kyc-admin-panel";
 import ActivityManager from "./activity-manager";
 import TaxManager from "./tax-manager";
+import UserPresenceTracker from "./user-presence-tracker";
+import PresenceManager from "./presence-manager";
 
 interface User {
   id: string;
@@ -673,6 +676,7 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <PresenceManager />
       <div className="bg-white border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
@@ -698,10 +702,14 @@ export default function AdminDashboard() {
           onValueChange={setActiveTab}
           className="space-y-6"
         >
-          <TabsList className="grid w-full grid-cols-8">
+          <TabsList className="grid w-full grid-cols-9">
             <TabsTrigger value="overview" className="flex items-center">
               <Settings className="w-4 h-4 mr-2" />
               Overview
+            </TabsTrigger>
+            <TabsTrigger value="presence" className="flex items-center">
+              <Wifi className="w-4 h-4 mr-2" />
+              Presence
             </TabsTrigger>
             <TabsTrigger value="activity" className="flex items-center">
               <Activity className="w-4 h-4 mr-2" />
@@ -802,6 +810,13 @@ export default function AdminDashboard() {
               </CardHeader>
               <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
+                  <h4 className="font-medium">User Presence Tracking</h4>
+                  <p className="text-sm text-gray-600">
+                    Real-time monitoring of user online/offline status with last
+                    seen timestamps
+                  </p>
+                </div>
+                <div className="space-y-2">
                   <h4 className="font-medium">Activity Management</h4>
                   <p className="text-sm text-gray-600">
                     Push account activity entries to users without affecting
@@ -842,6 +857,10 @@ export default function AdminDashboard() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="presence">
+            <UserPresenceTracker />
           </TabsContent>
 
           <TabsContent value="activity">
