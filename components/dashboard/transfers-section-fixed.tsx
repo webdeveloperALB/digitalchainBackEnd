@@ -132,7 +132,6 @@ export default function TransfersSection() {
       { code: "USD", name: "US Dollar", symbol: "$", type: "fiat" },
       { code: "EUR", name: "Euro", symbol: "€", type: "fiat" },
       { code: "CAD", name: "Canadian Dollar", symbol: "C$", type: "fiat" },
-      { code: "BTC", name: "Bitcoin", symbol: "₿", type: "crypto" },
       { code: "ETH", name: "Ethereum", symbol: "Ξ", type: "crypto" },
       { code: "ADA", name: "Cardano", symbol: "₳", type: "crypto" },
       { code: "DOT", name: "Polkadot", symbol: "●", type: "crypto" },

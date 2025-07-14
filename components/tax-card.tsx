@@ -263,7 +263,7 @@ export default function TaxCard({ userProfile, setActiveTab }: TaxCardProps) {
 
   return (
     <Card className="bg-gradient-to-br from-slate-50 to-gray-100 border-0 shadow-lg">
-      <CardHeader className="bg-gradient-to-r from-slate-800 to-slate-700 text-white rounded-t-lg">
+      <CardHeader className="bg-[#F26623] text-white rounded-t-lg">
         <CardTitle className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <Calculator className="h-5 w-5" />
