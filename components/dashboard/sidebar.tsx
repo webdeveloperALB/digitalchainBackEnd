@@ -1,5 +1,4 @@
 "use client";
-
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
@@ -31,8 +30,56 @@ export default function Sidebar({
 
   const handleSignOut = async () => {
     setIsLoggingOut(true);
-    await supabase.auth.signOut();
-    setIsLoggingOut(false);
+
+    try {
+      // Get current user before signing out
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user) {
+        console.log("Logging out user:", user.id);
+
+        // Mark user as offline before signing out
+        const timestamp = new Date().toISOString();
+        const { error: presenceError } = await supabase
+          .from("user_presence")
+          .upsert(
+            {
+              user_id: user.id,
+              is_online: false,
+              last_seen: timestamp,
+              updated_at: timestamp,
+            },
+            {
+              onConflict: "user_id",
+            }
+          );
+
+        if (presenceError) {
+          console.error("Error updating presence on logout:", presenceError);
+        } else {
+          console.log("Successfully marked user offline on logout");
+        }
+
+        // Small delay to ensure the presence update completes
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+
+      // Then sign out
+      const { error } = await supabase.auth.signOut();
+
+      if (error) {
+        console.error("Error signing out:", error);
+      } else {
+        console.log("Successfully signed out");
+        // The auth state change will be handled by your auth provider
+      }
+    } catch (error) {
+      console.error("Error during logout process:", error);
+    } finally {
+      setIsLoggingOut(false);
+    }
   };
 
   const menuItems = [
@@ -70,7 +117,11 @@ export default function Sidebar({
             <li key={item.id}>
               <button
                 onClick={() => setActiveTab(item.id)}
-                className="w-full flex items-center px-0 py-4 text-left transition-all duration-200 text-gray-800 hover:text-[#F26623]"
+                className={`w-full flex items-center px-0 py-4 text-left transition-all duration-200 ${
+                  activeTab === item.id
+                    ? "text-[#F26623]"
+                    : "text-gray-800 hover:text-[#F26623]"
+                }`}
               >
                 <item.icon className="w-5 h-5 mr-4 text-gray-600" />
                 <span className="font-medium text-base">{item.label}</span>
@@ -96,8 +147,13 @@ export default function Sidebar({
               onClick={handleSignOut}
               disabled={isLoggingOut}
               className="text-white hover:bg-white/20 w-6 h-6 p-0"
+              title={isLoggingOut ? "Logging out..." : "Sign out"}
             >
-              <LogOut className="w-4 h-4" />
+              {isLoggingOut ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <LogOut className="w-4 h-4" />
+              )}
             </Button>
           </div>
         </div>

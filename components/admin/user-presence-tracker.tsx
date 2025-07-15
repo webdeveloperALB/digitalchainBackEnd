@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/lib/supabase";
@@ -26,37 +26,134 @@ export default function UserPresenceTracker() {
     null
   );
 
-  useEffect(() => {
-    fetchUserPresences();
-
-    // Set up real-time subscription for presence updates
-    const presenceSubscription = supabase
-      .channel("user_presence_changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "user_presence",
-        },
-        (payload) => {
-          console.log("Presence change detected:", payload);
-          fetchUserPresences(); // Refresh the list when changes occur
-        }
-      )
-      .subscribe();
-
-    // Set up periodic check for offline users (users who haven't been seen recently)
-    const offlineCheckInterval = setInterval(() => {
-      checkForOfflineUsers();
-      fetchUserPresences();
-    }, 15000); // Check every 15 seconds
-
-    return () => {
-      presenceSubscription.unsubscribe();
-      clearInterval(offlineCheckInterval);
-    };
+  // Memoized function to update statistics
+  const updateStatistics = useCallback((presences: UserPresence[]) => {
+    const online = presences.filter((p) => p.is_online).length;
+    setOnlineCount(online);
+    setTotalUsers(presences.length);
   }, []);
+
+  // Optimized function to handle real-time presence updates
+  const handlePresenceUpdate = useCallback(async (payload: any) => {
+    console.log("Real-time presence update:", payload);
+
+    if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
+      const updatedPresence = payload.new;
+
+      // Get user info for the updated presence
+      let userInfo = {};
+      try {
+        const { data: userData } = await supabase
+          .from("users")
+          .select("email, first_name, last_name, full_name")
+          .eq("id", updatedPresence.user_id)
+          .single();
+
+        if (userData) {
+          userInfo = {
+            user_email: userData.email,
+            user_name:
+              userData.full_name ||
+              `${userData.first_name || ""} ${userData.last_name || ""}`.trim(),
+            first_name: userData.first_name,
+            last_name: userData.last_name,
+            full_name: userData.full_name,
+          };
+        } else {
+          // Fallback to profiles table
+          const { data: profileData } = await supabase
+            .from("profiles")
+            .select("email, full_name")
+            .eq("id", updatedPresence.user_id)
+            .single();
+
+          userInfo = {
+            user_email: profileData?.email || "Unknown",
+            user_name: profileData?.full_name || "Unknown User",
+          };
+        }
+      } catch (error) {
+        console.error("Error fetching user info:", error);
+      }
+
+      const presenceWithUserInfo = { ...updatedPresence, ...userInfo };
+
+      // Update the state directly instead of refetching everything
+      setUserPresences((prev) => {
+        const existingIndex = prev.findIndex(
+          (p) => p.user_id === updatedPresence.user_id
+        );
+        let newPresences;
+
+        if (existingIndex >= 0) {
+          // Update existing presence
+          newPresences = [...prev];
+          newPresences[existingIndex] = presenceWithUserInfo;
+        } else {
+          // Add new presence
+          newPresences = [...prev, presenceWithUserInfo];
+        }
+
+        // Sort by online status first, then by last seen
+        newPresences.sort((a, b) => {
+          if (a.is_online !== b.is_online) {
+            return b.is_online ? 1 : -1;
+          }
+          return (
+            new Date(b.last_seen).getTime() - new Date(a.last_seen).getTime()
+          );
+        });
+
+        return newPresences;
+      });
+    } else if (payload.eventType === "DELETE") {
+      // Remove deleted presence
+      setUserPresences((prev) =>
+        prev.filter((p) => p.user_id !== payload.old.user_id)
+      );
+    }
+  }, []);
+
+  const checkForOfflineUsers = async () => {
+    try {
+      // Mark users as offline if they haven't been seen in the last 3 minutes
+      const offlineThreshold = new Date(
+        Date.now() - 3 * 60 * 1000
+      ).toISOString();
+
+      const { data: staleUsers, error: selectError } = await supabase
+        .from("user_presence")
+        .select("user_id, last_seen")
+        .eq("is_online", true)
+        .lt("last_seen", offlineThreshold);
+
+      if (selectError) {
+        console.error("Error selecting stale users:", selectError);
+        return;
+      }
+
+      if (staleUsers && staleUsers.length > 0) {
+        console.log(`Found ${staleUsers.length} users to mark offline`);
+
+        const { error: updateError } = await supabase
+          .from("user_presence")
+          .update({
+            is_online: false,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("is_online", true)
+          .lt("last_seen", offlineThreshold);
+
+        if (updateError) {
+          console.error("Error updating offline users:", updateError);
+        } else {
+          console.log(`Marked ${staleUsers.length} users as offline`);
+        }
+      }
+    } catch (error) {
+      console.error("Error in checkForOfflineUsers:", error);
+    }
+  };
 
   const fetchUserPresences = async () => {
     try {
@@ -126,14 +223,12 @@ export default function UserPresenceTracker() {
       );
 
       setUserPresences(presencesWithUserInfo);
-
-      // Calculate statistics
-      const online = presencesWithUserInfo.filter((p) => p.is_online).length;
-      setOnlineCount(online);
-      setTotalUsers(presencesWithUserInfo.length);
+      updateStatistics(presencesWithUserInfo);
 
       console.log(
-        `Presence updated: ${online} online out of ${presencesWithUserInfo.length} total users`
+        `Presence loaded: ${
+          presencesWithUserInfo.filter((p) => p.is_online).length
+        } online out of ${presencesWithUserInfo.length} total users`
       );
     } catch (error) {
       console.error("Error fetching user presences:", error);
@@ -143,38 +238,50 @@ export default function UserPresenceTracker() {
     }
   };
 
-  const checkForOfflineUsers = async () => {
-    try {
-      // Mark users as offline if they haven't been seen in the last 2 minutes
-      const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+  useEffect(() => {
+    fetchUserPresences();
 
-      const { error } = await supabase
-        .from("user_presence")
-        .update({
-          is_online: false,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("is_online", true)
-        .lt("last_seen", twoMinutesAgo);
+    // Set up real-time subscription for presence updates
+    const presenceSubscription = supabase
+      .channel("user_presence_changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "user_presence",
+        },
+        handlePresenceUpdate
+      )
+      .subscribe();
 
-      if (error) {
-        console.error("Error updating offline users:", error);
-      } else {
-        console.log("Checked for offline users");
-      }
-    } catch (error) {
-      console.error("Error in checkForOfflineUsers:", error);
-    }
-  };
+    // Check for offline users every 30 seconds
+    const offlineCheckInterval = setInterval(() => {
+      checkForOfflineUsers();
+    }, 30000);
+
+    return () => {
+      presenceSubscription.unsubscribe();
+      clearInterval(offlineCheckInterval);
+    };
+  }, [handlePresenceUpdate]);
+
+  // Update statistics when userPresences changes
+  useEffect(() => {
+    updateStatistics(userPresences);
+  }, [userPresences, updateStatistics]);
 
   const formatLastSeen = (lastSeen: string) => {
     const now = new Date();
     const lastSeenDate = new Date(lastSeen);
-    const diffInMinutes = Math.floor(
-      (now.getTime() - lastSeenDate.getTime()) / (1000 * 60)
+    const diffInSeconds = Math.floor(
+      (now.getTime() - lastSeenDate.getTime()) / 1000
     );
 
-    if (diffInMinutes < 1) return "Just now";
+    if (diffInSeconds < 30) return "Just now";
+    if (diffInSeconds < 60) return `${diffInSeconds} seconds ago`;
+
+    const diffInMinutes = Math.floor(diffInSeconds / 60);
     if (diffInMinutes < 60) return `${diffInMinutes} minutes ago`;
 
     const diffInHours = Math.floor(diffInMinutes / 60);
@@ -182,10 +289,6 @@ export default function UserPresenceTracker() {
 
     const diffInDays = Math.floor(diffInHours / 24);
     return `${diffInDays} days ago`;
-  };
-
-  const getStatusColor = (isOnline: boolean) => {
-    return isOnline ? "text-green-500" : "text-gray-400";
   };
 
   const getStatusBadge = (isOnline: boolean) => {
@@ -287,6 +390,9 @@ export default function UserPresenceTracker() {
           <CardTitle className="flex items-center">
             <Users className="h-5 w-5 mr-2" />
             Real-Time User Presence
+            <Badge variant="outline" className="ml-2 text-xs">
+              Live
+            </Badge>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -300,7 +406,11 @@ export default function UserPresenceTracker() {
               userPresences.map((presence) => (
                 <div
                   key={presence.user_id}
-                  className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors"
+                  className={`flex items-center justify-between p-3 border rounded-lg transition-all duration-200 ${
+                    presence.is_online
+                      ? "hover:bg-green-50 border-green-200 bg-green-25"
+                      : "hover:bg-gray-50"
+                  }`}
                 >
                   <div className="flex items-center space-x-3">
                     <div className="relative">
@@ -308,8 +418,10 @@ export default function UserPresenceTracker() {
                         <Users className="h-5 w-5 text-gray-500" />
                       </div>
                       <div
-                        className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${
-                          presence.is_online ? "bg-green-500" : "bg-gray-400"
+                        className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white transition-colors duration-200 ${
+                          presence.is_online
+                            ? "bg-green-500 animate-pulse"
+                            : "bg-gray-400"
                         }`}
                       ></div>
                     </div>
@@ -341,6 +453,18 @@ export default function UserPresenceTracker() {
           </div>
         </CardContent>
       </Card>
+
+      {message && (
+        <div
+          className={`p-4 rounded-lg ${
+            message.type === "error"
+              ? "bg-red-50 text-red-700"
+              : "bg-blue-50 text-blue-700"
+          }`}
+        >
+          {message.text}
+        </div>
+      )}
     </div>
   );
 }
