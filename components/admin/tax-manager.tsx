@@ -15,16 +15,12 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/lib/supabase";
 import {
   Calculator,
   Users,
   DollarSign,
   FileText,
-  TrendingUp,
-  Building2,
-  Receipt,
   Loader2,
   Trash2,
   Edit,
@@ -73,7 +69,7 @@ interface Tax {
   user_email?: string;
 }
 
-export default function TaxManager() {
+export default function SimplifiedTaxManager() {
   const [users, setUsers] = useState<User[]>([]);
   const [taxes, setTaxes] = useState<Tax[]>([]);
   const [selectedUser, setSelectedUser] = useState<string>("");
@@ -86,38 +82,20 @@ export default function TaxManager() {
   const [editingTax, setEditingTax] = useState<Tax | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  // Form states
+  // Simplified form states - only essential fields
   const [taxType, setTaxType] = useState<string>("");
   const [taxName, setTaxName] = useState<string>("");
-  const [taxRate, setTaxRate] = useState<string>("");
   const [taxAmount, setTaxAmount] = useState<string>("");
-  const [taxableIncome, setTaxableIncome] = useState<string>("");
-  const [taxPeriod, setTaxPeriod] = useState<string>("yearly");
   const [dueDate, setDueDate] = useState<string>("");
   const [status, setStatus] = useState<string>("pending");
   const [description, setDescription] = useState<string>("");
-  const [taxYear, setTaxYear] = useState<string>(
-    new Date().getFullYear().toString()
-  );
-  const [isEstimated, setIsEstimated] = useState<boolean>(false);
 
+  // Simplified tax types - most common ones
   const taxTypes = [
-    { value: "income", label: "Income Tax", icon: DollarSign },
-    { value: "property", label: "Property Tax", icon: Building2 },
-    { value: "sales", label: "Sales Tax", icon: Receipt },
-    { value: "capital_gains", label: "Capital Gains Tax", icon: TrendingUp },
-    { value: "corporate", label: "Corporate Tax", icon: Building2 },
-    { value: "payroll", label: "Payroll Tax", icon: Users },
-    { value: "excise", label: "Excise Tax", icon: FileText },
-    { value: "other", label: "Other Tax", icon: Calculator },
-  ];
-
-  const taxPeriods = [
-    { value: "yearly", label: "Annual" },
-    { value: "quarterly", label: "Quarterly" },
-    { value: "monthly", label: "Monthly" },
-    { value: "weekly", label: "Weekly" },
-    { value: "one-time", label: "One-time" },
+    { value: "income", label: "Income Tax" },
+    { value: "property", label: "Property Tax" },
+    { value: "sales", label: "Sales Tax" },
+    { value: "other", label: "Other Tax" },
   ];
 
   const taxStatuses = [
@@ -128,16 +106,6 @@ export default function TaxManager() {
     },
     { value: "paid", label: "Paid", color: "bg-green-100 text-green-800" },
     { value: "overdue", label: "Overdue", color: "bg-red-100 text-red-800" },
-    {
-      value: "processing",
-      label: "Processing",
-      color: "bg-blue-100 text-blue-800",
-    },
-    {
-      value: "cancelled",
-      label: "Cancelled",
-      color: "bg-gray-100 text-gray-800",
-    },
   ];
 
   useEffect(() => {
@@ -210,7 +178,6 @@ export default function TaxManager() {
 
       if (error) throw error;
 
-      // Add user info to each tax record
       const taxesWithUserInfo = (data || []).map((tax) => ({
         ...tax,
         user_full_name: selectedUserData.full_name,
@@ -229,21 +196,16 @@ export default function TaxManager() {
   const resetForm = () => {
     setTaxType("");
     setTaxName("");
-    setTaxRate("");
     setTaxAmount("");
-    setTaxableIncome("");
-    setTaxPeriod("yearly");
     setDueDate("");
     setStatus("pending");
     setDescription("");
-    setTaxYear(new Date().getFullYear().toString());
-    setIsEstimated(false);
     setEditingTax(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedUser || !taxType || !taxName) {
+    if (!selectedUser || !taxType || !taxName || !taxAmount) {
       setMessage({ type: "error", text: "Please fill in all required fields" });
       return;
     }
@@ -261,33 +223,33 @@ export default function TaxManager() {
         data: { user: currentUser },
       } = await supabase.auth.getUser();
 
+      // Simplified tax data with auto-calculated fields
+      const taxAmountNum = Number.parseFloat(taxAmount);
       const taxData = {
         user_id: selectedUser,
         client_id: selectedUserData.client_id,
         tax_type: taxType,
         tax_name: taxName,
-        tax_rate: Number.parseFloat(taxRate) || 0,
-        tax_amount: Number.parseFloat(taxAmount) || 0,
-        taxable_income: Number.parseFloat(taxableIncome) || 0,
-        tax_period: taxPeriod,
+        tax_rate: 0, // Default to 0, can be calculated later if needed
+        tax_amount: taxAmountNum,
+        taxable_income: taxAmountNum, // Simplified: assume tax amount equals taxable income
+        tax_period: "yearly", // Default to yearly
         due_date: dueDate || null,
         status: status,
         description: description || null,
-        tax_year: Number.parseInt(taxYear),
+        tax_year: new Date().getFullYear(),
         is_active: true,
-        is_estimated: isEstimated,
+        is_estimated: false,
         created_by: currentUser?.email || "admin",
       };
 
       let result;
       if (editingTax) {
-        // Update existing tax
         result = await supabase
           .from("taxes")
           .update(taxData)
           .eq("id", editingTax.id);
       } else {
-        // Create new tax
         result = await supabase.from("taxes").insert([taxData]);
       }
 
@@ -315,15 +277,10 @@ export default function TaxManager() {
     setEditingTax(tax);
     setTaxType(tax.tax_type);
     setTaxName(tax.tax_name);
-    setTaxRate(tax.tax_rate.toString());
     setTaxAmount(tax.tax_amount.toString());
-    setTaxableIncome(tax.taxable_income.toString());
-    setTaxPeriod(tax.tax_period);
     setDueDate(tax.due_date || "");
     setStatus(tax.status);
     setDescription(tax.description || "");
-    setTaxYear(tax.tax_year.toString());
-    setIsEstimated(tax.is_estimated);
     setIsDialogOpen(true);
   };
 
@@ -361,15 +318,6 @@ export default function TaxManager() {
     }
   };
 
-  const getTaxIcon = (taxType: string) => {
-    const type = taxTypes.find((t) => t.value === taxType);
-    if (type) {
-      const IconComponent = type.icon;
-      return <IconComponent className="h-4 w-4" />;
-    }
-    return <Calculator className="h-4 w-4" />;
-  };
-
   const getStatusColor = (status: string) => {
     const statusObj = taxStatuses.find((s) => s.value === status);
     return statusObj?.color || "bg-gray-100 text-gray-800";
@@ -399,7 +347,7 @@ export default function TaxManager() {
           <CardTitle className="flex items-center justify-between">
             <div className="flex items-center">
               <Calculator className="h-5 w-5 mr-2" />
-              Tax Management System
+              Simple Tax Manager
             </div>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
@@ -412,56 +360,35 @@ export default function TaxManager() {
                   className="bg-[#F26623] hover:bg-[#E55A1F]"
                 >
                   <Plus className="h-4 w-4 mr-2" />
-                  Add New Tax
+                  Add Tax
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogContent className="max-w-md">
                 <DialogHeader>
                   <DialogTitle>
-                    {editingTax ? "Edit Tax Record" : "Create New Tax Record"}
+                    {editingTax ? "Edit Tax" : "Add New Tax"}
                   </DialogTitle>
                   <DialogDescription>
-                    {editingTax
-                      ? "Update the tax information below"
-                      : "Fill in the tax details for the selected user"}
+                    Fill in the basic tax information
                   </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="tax-type">Tax Type *</Label>
-                      <Select value={taxType} onValueChange={setTaxType}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select tax type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {taxTypes.map((type) => (
-                            <SelectItem key={type.value} value={type.value}>
-                              <div className="flex items-center space-x-2">
-                                <type.icon className="h-4 w-4" />
-                                <span>{type.label}</span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="tax-period">Tax Period</Label>
-                      <Select value={taxPeriod} onValueChange={setTaxPeriod}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {taxPeriods.map((period) => (
-                            <SelectItem key={period.value} value={period.value}>
-                              {period.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  <div>
+                    <Label htmlFor="tax-type">Tax Type *</Label>
+                    <Select value={taxType} onValueChange={setTaxType}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select tax type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {taxTypes.map((type) => (
+                          <SelectItem key={type.value} value={type.value}>
+                            {type.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
+
                   <div>
                     <Label htmlFor="tax-name">Tax Name *</Label>
                     <Input
@@ -472,99 +399,57 @@ export default function TaxManager() {
                       required
                     />
                   </div>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <Label htmlFor="tax-rate">Tax Rate (%)</Label>
-                      <Input
-                        id="tax-rate"
-                        type="number"
-                        step="0.0001"
-                        value={taxRate}
-                        onChange={(e) => setTaxRate(e.target.value)}
-                        placeholder="0.2200"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="tax-amount">Tax Amount ($)</Label>
-                      <Input
-                        id="tax-amount"
-                        type="number"
-                        step="0.01"
-                        value={taxAmount}
-                        onChange={(e) => setTaxAmount(e.target.value)}
-                        placeholder="5000.00"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="taxable-income">Taxable Income ($)</Label>
-                      <Input
-                        id="taxable-income"
-                        type="number"
-                        step="0.01"
-                        value={taxableIncome}
-                        onChange={(e) => setTaxableIncome(e.target.value)}
-                        placeholder="50000.00"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <Label htmlFor="due-date">Due Date</Label>
-                      <Input
-                        id="due-date"
-                        type="date"
-                        value={dueDate}
-                        onChange={(e) => setDueDate(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="status">Status</Label>
-                      <Select value={status} onValueChange={setStatus}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {taxStatuses.map((s) => (
-                            <SelectItem key={s.value} value={s.value}>
-                              <Badge className={s.color}>{s.label}</Badge>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="tax-year">Tax Year</Label>
-                      <Input
-                        id="tax-year"
-                        type="number"
-                        value={taxYear}
-                        onChange={(e) => setTaxYear(e.target.value)}
-                        placeholder="2024"
-                      />
-                    </div>
-                  </div>
+
                   <div>
-                    <Label htmlFor="description">Description</Label>
+                    <Label htmlFor="tax-amount">Tax Amount ($) *</Label>
+                    <Input
+                      id="tax-amount"
+                      type="number"
+                      step="0.01"
+                      value={taxAmount}
+                      onChange={(e) => setTaxAmount(e.target.value)}
+                      placeholder="5000.00"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="due-date">Due Date</Label>
+                    <Input
+                      id="due-date"
+                      type="date"
+                      value={dueDate}
+                      onChange={(e) => setDueDate(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="status">Status</Label>
+                    <Select value={status} onValueChange={setStatus}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {taxStatuses.map((s) => (
+                          <SelectItem key={s.value} value={s.value}>
+                            {s.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="description">Notes (Optional)</Label>
                     <Textarea
                       id="description"
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
-                      placeholder="Additional tax details..."
-                      rows={3}
+                      placeholder="Additional notes..."
+                      rows={2}
                     />
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="is-estimated"
-                      checked={isEstimated}
-                      onCheckedChange={(checked) =>
-                        setIsEstimated(checked as boolean)
-                      }
-                    />
-                    <Label htmlFor="is-estimated">
-                      This is an estimated tax
-                    </Label>
-                  </div>
+
                   <DialogFooter>
                     <Button
                       type="button"
@@ -575,16 +460,16 @@ export default function TaxManager() {
                     </Button>
                     <Button
                       type="submit"
-                      disabled={loading || !taxType || !taxName}
+                      disabled={loading || !taxType || !taxName || !taxAmount}
                       className="bg-[#F26623] hover:bg-[#E55A1F]"
                     >
                       {loading ? (
                         <>
                           <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          {editingTax ? "Updating..." : "Creating..."}
+                          {editingTax ? "Updating..." : "Adding..."}
                         </>
                       ) : (
-                        <>{editingTax ? "Update Tax" : "Create Tax"}</>
+                        <>{editingTax ? "Update" : "Add Tax"}</>
                       )}
                     </Button>
                   </DialogFooter>
@@ -611,17 +496,18 @@ export default function TaxManager() {
               </AlertDescription>
             </Alert>
           )}
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* User Selection */}
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Select User</h3>
+              <h3 className="text-lg font-semibold">Select Client</h3>
               <div>
-                <Label htmlFor="user-select">Choose User *</Label>
+                <Label htmlFor="user-select">Choose Client *</Label>
                 <Select value={selectedUser} onValueChange={setSelectedUser}>
                   <SelectTrigger>
                     <SelectValue
                       placeholder={
-                        usersLoading ? "Loading users..." : "Choose a user"
+                        usersLoading ? "Loading..." : "Choose a client"
                       }
                     />
                   </SelectTrigger>
@@ -631,11 +517,6 @@ export default function TaxManager() {
                         <div className="flex items-center space-x-2">
                           <Users className="h-4 w-4" />
                           <span>{user.full_name || user.email}</span>
-                          {user.client_id && (
-                            <Badge variant="outline" className="text-xs">
-                              {user.client_id}
-                            </Badge>
-                          )}
                         </div>
                       </SelectItem>
                     ))}
@@ -643,34 +524,32 @@ export default function TaxManager() {
                 </Select>
               </div>
               {selectedUser && (
-                <div className="mt-4">
-                  <Button
-                    onClick={() => fetchTaxesForUser(selectedUser)}
-                    variant="outline"
-                    className="w-full"
-                  >
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Refresh Tax Records
-                  </Button>
-                </div>
+                <Button
+                  onClick={() => fetchTaxesForUser(selectedUser)}
+                  variant="outline"
+                  className="w-full"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Refresh
+                </Button>
               )}
             </div>
+
             {/* Tax Records */}
             <div className="lg:col-span-2 space-y-4">
               <h3 className="text-lg font-semibold">
                 Tax Records
                 {selectedUser && (
                   <span className="text-sm font-normal text-gray-500 ml-2">
-                    ({taxes.length} records)
+                    ({taxes.length})
                   </span>
                 )}
               </h3>
+
               {!selectedUser ? (
                 <div className="text-center py-8 text-gray-500">
                   <Calculator className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p className="text-sm">
-                    Select a user to view their tax records
-                  </p>
+                  <p>Select a client to view tax records</p>
                 </div>
               ) : taxesLoading ? (
                 <div className="space-y-3">
@@ -687,10 +566,8 @@ export default function TaxManager() {
               ) : taxes.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
                   <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p className="text-sm">No tax records found for this user</p>
-                  <p className="text-xs">
-                    Create a new tax record to get started
-                  </p>
+                  <p>No tax records found</p>
+                  <p className="text-xs">Add a new tax record to get started</p>
                 </div>
               ) : (
                 <div className="space-y-3 max-h-96 overflow-y-auto">
@@ -699,47 +576,13 @@ export default function TaxManager() {
                       key={tax.id}
                       className="p-4 border rounded-lg hover:border-gray-300 transition-colors"
                     >
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-start space-x-3">
-                          <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
-                            {getTaxIcon(tax.tax_type)}
-                          </div>
-                          <div className="flex-1">
-                            <div className="flex items-center space-x-2 mb-2">
-                              <h4 className="font-medium">{tax.tax_name}</h4>
-                              <Badge className={getStatusColor(tax.status)}>
-                                {tax.status}
-                              </Badge>
-                              {tax.is_estimated && (
-                                <Badge variant="outline" className="text-xs">
-                                  Estimated
-                                </Badge>
-                              )}
-                            </div>
-                            <div className="grid grid-cols-2 gap-4 text-sm text-gray-600">
-                              <div>
-                                <span className="font-medium">Amount: </span>
-                                {formatCurrency(tax.tax_amount)}
-                              </div>
-                              <div>
-                                <span className="font-medium">Rate: </span>
-                                {(tax.tax_rate * 100).toFixed(2)}%
-                              </div>
-                              <div>
-                                <span className="font-medium">Due: </span>
-                                {formatDate(tax.due_date)}
-                              </div>
-                              <div>
-                                <span className="font-medium">Year: </span>
-                                {tax.tax_year}
-                              </div>
-                            </div>
-                            {tax.description && (
-                              <p className="text-xs text-gray-500 mt-2">
-                                {tax.description}
-                              </p>
-                            )}
-                          </div>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center space-x-2">
+                          <DollarSign className="h-4 w-4 text-gray-500" />
+                          <h4 className="font-medium">{tax.tax_name}</h4>
+                          <Badge className={getStatusColor(tax.status)}>
+                            {tax.status}
+                          </Badge>
                         </div>
                         <div className="flex space-x-1">
                           <Select
@@ -748,7 +591,7 @@ export default function TaxManager() {
                               updateTaxStatus(tax.id, newStatus)
                             }
                           >
-                            <SelectTrigger className="w-32">
+                            <SelectTrigger className="w-24 h-8">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -763,7 +606,7 @@ export default function TaxManager() {
                             size="sm"
                             variant="ghost"
                             onClick={() => handleEdit(tax)}
-                            className="text-blue-600 hover:text-blue-800 hover:bg-blue-100"
+                            className="h-8 w-8 p-0"
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
@@ -771,12 +614,29 @@ export default function TaxManager() {
                             size="sm"
                             variant="ghost"
                             onClick={() => handleDelete(tax.id)}
-                            className="text-red-600 hover:text-red-800 hover:bg-red-100"
+                            className="h-8 w-8 p-0 text-red-600 hover:text-red-800"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
                       </div>
+
+                      <div className="grid grid-cols-2 gap-4 text-sm text-gray-600">
+                        <div>
+                          <span className="font-medium">Amount: </span>
+                          {formatCurrency(tax.tax_amount)}
+                        </div>
+                        <div>
+                          <span className="font-medium">Due: </span>
+                          {formatDate(tax.due_date)}
+                        </div>
+                      </div>
+
+                      {tax.description && (
+                        <p className="text-xs text-gray-500 mt-2">
+                          {tax.description}
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>
