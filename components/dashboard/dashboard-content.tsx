@@ -163,7 +163,6 @@ export default function DashboardContent({
   );
 
   // Initialize tax data
-
   // Check if user is new and create welcome message
   useEffect(() => {
     const checkNewUserAndCreateWelcome = async () => {
@@ -173,23 +172,27 @@ export default function DashboardContent({
           data: { user },
         } = await supabase.auth.getUser();
         if (!user) return;
+
         // Check if user was created in the last 24 hours
         const userCreatedAt = new Date(user.created_at);
         const now = new Date();
         const hoursDiff =
           (now.getTime() - userCreatedAt.getTime()) / (1000 * 60 * 60);
         const isRecentUser = hoursDiff <= 24;
+
         // Check if user has any existing transactions (indicating they're not new)
         const { data: existingTransfers } = await supabase
           .from("transfers")
           .select("id")
           .eq("user_id", user.id)
           .limit(1);
+
         const { data: existingPayments } = await supabase
           .from("payments")
           .select("id")
           .eq("user_id", user.id)
           .limit(1);
+
         // Check if welcome message already exists
         const { data: existingWelcome } = await supabase
           .from("messages")
@@ -197,11 +200,14 @@ export default function DashboardContent({
           .eq("client_id", userProfile.client_id)
           .eq("message_type", "welcome")
           .limit(1);
+
         const hasActivity =
           (existingTransfers && existingTransfers.length > 0) ||
           (existingPayments && existingPayments.length > 0);
+
         const shouldShowWelcome =
           isRecentUser && !hasActivity && !existingWelcome?.length;
+
         if (shouldShowWelcome) {
           setIsNewUser(true);
           // Create welcome message in database
@@ -215,12 +221,14 @@ export default function DashboardContent({
             is_read: false,
             created_at: new Date().toISOString(),
           };
+
           // Insert welcome message into database
           const { data: insertedMessage, error: insertError } = await supabase
             .from("messages")
             .insert([welcomeData])
             .select()
             .single();
+
           if (!insertError && insertedMessage) {
             setWelcomeMessage({
               ...insertedMessage,
@@ -255,6 +263,7 @@ export default function DashboardContent({
         setHasCheckedWelcome(true);
       }
     };
+
     checkNewUserAndCreateWelcome();
   }, [userProfile, hasCheckedWelcome]);
 
@@ -268,6 +277,7 @@ export default function DashboardContent({
         const welcomeMessageTime = new Date(
           welcomeMessage.created_at
         ).getTime();
+
         // Only replace welcome message if admin message is newer
         if (latestMessageTime > welcomeMessageTime) {
           setWelcomeMessage(null); // Clear welcome message
@@ -297,16 +307,19 @@ export default function DashboardContent({
           data: { user },
         } = await supabase.auth.getUser();
         if (!user) return;
+
         const { data, error } = await supabase
           .from("payments")
           .select("*")
           .eq("user_id", user.id)
           .order("created_at", { ascending: false })
           .limit(10);
+
         if (error) {
           console.error("Error fetching payments:", error);
           return;
         }
+
         setPayments(data || []);
       } catch (error) {
         console.error("Error fetching payments:", error);
@@ -314,12 +327,15 @@ export default function DashboardContent({
         setPaymentsLoading(false);
       }
     };
+
     fetchPayments();
+
     const setupPaymentsSubscription = async () => {
       const {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) return;
+
       const paymentsSubscription = supabase
         .channel("payments_changes")
         .on(
@@ -335,10 +351,12 @@ export default function DashboardContent({
           }
         )
         .subscribe();
+
       return () => {
         paymentsSubscription.unsubscribe();
       };
     };
+
     const cleanup = setupPaymentsSubscription();
     return () => {
       cleanup?.then((fn) => fn?.());
@@ -354,6 +372,7 @@ export default function DashboardContent({
           data: { user },
         } = await supabase.auth.getUser();
         if (!user) return;
+
         // Fetch transfers
         const { data: userTransfers, error: userError } = await supabase
           .from("transfers")
@@ -361,15 +380,18 @@ export default function DashboardContent({
           .eq("user_id", user.id)
           .order("created_at", { ascending: false })
           .limit(20);
+
         if (userError) {
           console.error("Error fetching user transfers:", userError);
         }
+
         const { data: clientTransfers } = await supabase
           .from("transfers")
           .select("*")
           .eq("client_id", userProfile.client_id)
           .order("created_at", { ascending: false })
           .limit(20);
+
         const allTransfers = [
           ...(userTransfers || []),
           ...(clientTransfers || []),
@@ -378,7 +400,9 @@ export default function DashboardContent({
           (transfer, index, self) =>
             index === self.findIndex((t) => t.id === transfer.id)
         );
+
         setTransfersData(uniqueTransfers);
+
         // Fetch account activities
         const { data: userActivities, error: activitiesError } = await supabase
           .from("account_activities")
@@ -387,9 +411,11 @@ export default function DashboardContent({
           .eq("status", "active")
           .order("created_at", { ascending: false })
           .limit(20);
+
         if (activitiesError) {
           console.error("Error fetching account activities:", activitiesError);
         }
+
         const { data: clientActivities } = await supabase
           .from("account_activities")
           .select("*")
@@ -397,6 +423,7 @@ export default function DashboardContent({
           .eq("status", "active")
           .order("created_at", { ascending: false })
           .limit(20);
+
         const allActivities = [
           ...(userActivities || []),
           ...(clientActivities || []),
@@ -405,7 +432,9 @@ export default function DashboardContent({
           (activity, index, self) =>
             index === self.findIndex((a) => a.id === activity.id)
         );
+
         setAccountActivities(uniqueActivities);
+
         // Combine and sort all activities
         const combined: CombinedActivity[] = [
           ...uniqueTransfers.map((transfer) => ({
@@ -421,6 +450,7 @@ export default function DashboardContent({
             data: activity,
           })),
         ];
+
         // Sort by created_at descending, with admin credits prioritized
         const sortedCombined = combined.sort((a, b) => {
           if (a.type === "transfer" && b.type === "transfer") {
@@ -433,6 +463,7 @@ export default function DashboardContent({
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
           );
         });
+
         setCombinedActivities(sortedCombined);
       } catch (error) {
         console.error("Error fetching activities:", error);
@@ -440,12 +471,15 @@ export default function DashboardContent({
         setActivitiesLoading(false);
       }
     };
+
     fetchActivities();
+
     const setupSubscriptions = async () => {
       const {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) return;
+
       // Transfers subscription
       const transfersSubscription = supabase
         .channel(`transfers_realtime_${user.id}`)
@@ -476,6 +510,7 @@ export default function DashboardContent({
           }
         )
         .subscribe();
+
       // Account activities subscription
       const activitiesSubscription = supabase
         .channel(`account_activities_realtime_${user.id}`)
@@ -506,11 +541,13 @@ export default function DashboardContent({
           }
         )
         .subscribe();
+
       return () => {
         transfersSubscription.unsubscribe();
         activitiesSubscription.unsubscribe();
       };
     };
+
     const cleanup = setupSubscriptions();
     return () => {
       cleanup?.then((fn) => fn?.());
@@ -520,6 +557,7 @@ export default function DashboardContent({
   useEffect(() => {
     const checkForNewAdminMessages = async () => {
       if (!welcomeMessage || !userProfile) return;
+
       try {
         const { data: newerMessages } = await supabase
           .from("messages")
@@ -529,6 +567,7 @@ export default function DashboardContent({
           .gt("created_at", welcomeMessage.created_at)
           .order("created_at", { ascending: false })
           .limit(1);
+
         if (newerMessages && newerMessages.length > 0) {
           // There's a newer admin message, welcome message should step aside
           console.log(
@@ -540,6 +579,7 @@ export default function DashboardContent({
         console.error("Error checking for newer messages:", error);
       }
     };
+
     checkForNewAdminMessages();
   }, [welcomeMessage, userProfile, latestMessage]);
 
@@ -829,45 +869,45 @@ export default function DashboardContent({
 
   if (loading && !hasLoaded) {
     return (
-      <div className="flex-1 p-8 bg-gray-50 overflow-auto">
+      <div className="flex-1 p-3 sm:p-6 lg:p-8 bg-gray-50 overflow-auto [@media(max-width:500px)]:pt-16">
         <div className="max-w-7xl mx-auto">
-          <div className="mb-8 animate-pulse">
-            <div className="h-8 bg-gray-200 rounded w-1/3 mb-2"></div>
-            <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+          <div className="mb-6 sm:mb-8 animate-pulse">
+            <div className="h-6 sm:h-8 bg-gray-200 rounded w-2/3 sm:w-1/3 mb-2"></div>
+            <div className="h-3 sm:h-4 bg-gray-200 rounded w-3/4 sm:w-1/2"></div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-6 sm:mb-8">
             {[1, 2, 3, 4].map((i) => (
               <div
                 key={i}
-                className="bg-white p-6 rounded-lg shadow animate-pulse"
+                className="bg-white p-4 sm:p-6 rounded-lg shadow animate-pulse"
               >
-                <div className="h-4 bg-gray-200 rounded w-1/2 mb-4"></div>
-                <div className="h-8 bg-gray-200 rounded w-3/4 mb-2"></div>
-                <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                <div className="h-3 sm:h-4 bg-gray-200 rounded w-1/2 mb-3 sm:mb-4"></div>
+                <div className="h-6 sm:h-8 bg-gray-200 rounded w-3/4 mb-2"></div>
+                <div className="h-2 sm:h-3 bg-gray-200 rounded w-1/2"></div>
               </div>
             ))}
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8">
             {[1, 2, 3, 4].map((i) => (
               <div
                 key={i}
-                className="h-16 bg-gray-200 rounded animate-pulse"
+                className="h-12 sm:h-16 bg-gray-200 rounded animate-pulse"
               ></div>
             ))}
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
             {[1, 2].map((i) => (
               <div
                 key={i}
-                className="bg-white p-6 rounded-lg shadow animate-pulse"
+                className="bg-white p-4 sm:p-6 rounded-lg shadow animate-pulse"
               >
-                <div className="h-6 bg-gray-200 rounded w-1/3 mb-2"></div>
-                <div className="h-4 bg-gray-200 rounded w-1/2 mb-4"></div>
+                <div className="h-5 sm:h-6 bg-gray-200 rounded w-1/3 mb-2"></div>
+                <div className="h-3 sm:h-4 bg-gray-200 rounded w-1/2 mb-4"></div>
                 <div className="space-y-3">
                   {[1, 2, 3, 4].map((j) => (
                     <div key={j} className="flex justify-between">
-                      <div className="h-4 bg-gray-200 rounded w-1/3"></div>
-                      <div className="h-4 bg-gray-200 rounded w-1/4"></div>
+                      <div className="h-3 sm:h-4 bg-gray-200 rounded w-1/3"></div>
+                      <div className="h-3 sm:h-4 bg-gray-200 rounded w-1/4"></div>
                     </div>
                   ))}
                 </div>
@@ -883,16 +923,16 @@ export default function DashboardContent({
   const displayBalances = realtimeBalances;
 
   return (
-    <div className="flex-1 p-8 bg-gray-50 overflow-auto">
+    <div className="flex-1 p-3 sm:p-6 lg:p-8 bg-gray-50 overflow-auto [@media(max-width:500px)]:pt-16">
       <div className="max-w-7xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">
+        <div className="mb-6 sm:mb-8">
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 leading-tight">
             Welcome, {displayName}!
             {isNewUser && (
-              <Sparkles className="inline-block ml-2 h-6 w-6 text-[#F26623]" />
+              <Sparkles className="inline-block ml-2 h-5 w-5 sm:h-6 sm:w-6 text-[#F26623]" />
             )}
           </h1>
-          <p className="text-gray-600">
+          <p className="text-sm sm:text-base text-gray-600 mt-1">
             {isNewUser
               ? "Thank you for joining Digital Chain Bank! Here's your new account overview"
               : "Here's your account overview and recent activity"}
@@ -900,33 +940,33 @@ export default function DashboardContent({
         </div>
 
         {error && (
-          <Alert className="mb-6 border-red-500 bg-red-50">
-            <AlertDescription className="text-red-700">
+          <Alert className="mb-4 sm:mb-6 border-red-500 bg-red-50">
+            <AlertDescription className="text-red-700 text-sm">
               Error: {error}
             </AlertDescription>
           </Alert>
         )}
 
         {/* Balance Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-6 sm:mb-8">
           {Object.entries(displayBalances).map(([currency, balance]) => (
             <Card
               key={currency}
               className="hover:shadow-lg transition-shadow bg-[#F26623] relative overflow-hidden"
             >
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm text-white font-medium capitalize">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-4 sm:p-6">
+                <CardTitle className="text-xs sm:text-sm text-white font-medium capitalize">
                   {currency} Balance
                 </CardTitle>
                 {React.cloneElement(getBalanceIcon(currency), {
-                  className: "text-white w-5 h-5",
+                  className: "text-white w-4 h-4 sm:w-5 sm:h-5",
                 })}
               </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-white">
+              <CardContent className="p-4 sm:p-6 pt-0">
+                <div className="text-lg sm:text-xl lg:text-2xl font-bold text-white">
                   {formatCurrency(balance, currency)}
                 </div>
-                <p className="text-xs text-muted-foreground text-white">
+                <p className="text-xs text-muted-foreground text-white mt-1">
                   {currency === "crypto"
                     ? "Bitcoin equivalent"
                     : `${currency.toUpperCase()} account`}
@@ -937,46 +977,46 @@ export default function DashboardContent({
         </div>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8">
           <Button
             onClick={() => setActiveTab("transfers")}
-            className="h-16 bg-[#F26623] hover:bg-[#E55A1F] text-white"
+            className="h-12 sm:h-16 bg-[#F26623] hover:bg-[#E55A1F] text-white text-sm sm:text-base"
           >
-            <Send className="h-5 w-5 mr-2" />
+            <Send className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
             Transfer Money
           </Button>
           <Button
             onClick={() => setActiveTab("deposit")}
             variant="outline"
-            className="h-16"
+            className="h-12 sm:h-16 text-sm sm:text-base"
           >
-            <Wallet className="h-5 w-5 mr-2" />
+            <Wallet className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
             Deposit Funds
           </Button>
           <Button
             onClick={() => setActiveTab("crypto")}
             variant="outline"
-            className="h-16"
+            className="h-12 sm:h-16 text-sm sm:text-base"
           >
-            <Bitcoin className="h-5 w-5 mr-2" />
+            <Bitcoin className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
             Withdrawl Crypto
           </Button>
           <Button
             onClick={() => setActiveTab("card")}
             variant="outline"
-            className="h-16"
+            className="h-12 sm:h-16 text-sm sm:text-base"
           >
-            <CreditCard className="h-5 w-5 mr-2" />
+            <CreditCard className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
             Manage Cards
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          <div className="lg:col-span-2 space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
+          <div className="lg:col-span-2 space-y-4 sm:space-y-6">
             <Card className="shadow-lg border-0">
-              <CardHeader className="bg-[#F5F0F0] border-b">
-                <CardTitle className="flex items-center">
-                  <Activity className="h-5 w-5 mr-2 text-[#F26623]" />
+              <CardHeader className="bg-[#F5F0F0] border-b p-4 sm:p-6">
+                <CardTitle className="flex items-center text-base sm:text-lg">
+                  <Activity className="h-4 w-4 sm:h-5 sm:w-5 mr-2 text-[#F26623]" />
                   Account Activity
                   <Badge
                     variant="outline"
@@ -988,26 +1028,26 @@ export default function DashboardContent({
               </CardHeader>
               <CardContent className="p-0">
                 {activitiesLoading ? (
-                  <div className="space-y-2 p-6">
+                  <div className="space-y-2 p-4 sm:p-6">
                     {[1, 2, 3].map((i) => (
                       <div
                         key={i}
                         className="py-2 border-b border-gray-100 animate-pulse"
                       >
-                        <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-                        <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                        <div className="h-3 sm:h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                        <div className="h-2 sm:h-3 bg-gray-200 rounded w-1/2"></div>
                       </div>
                     ))}
                   </div>
                 ) : combinedActivities.length === 0 ? (
-                  <div className="text-center py-12 text-gray-500 p-6">
-                    <Send className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <div className="text-center py-8 sm:py-12 text-gray-500 p-4 sm:p-6">
+                    <Send className="h-8 w-8 sm:h-12 sm:w-12 mx-auto mb-3 sm:mb-4 opacity-50" />
                     <p className="text-sm">
                       {isNewUser
                         ? "Welcome! Your first transaction will appear here"
                         : "No account activity"}
                     </p>
-                    <p className="text-xs">
+                    <p className="text-xs mt-1">
                       {isNewUser
                         ? "Start by making a deposit or transfer to see your activity"
                         : "Your transactions will appear here in real-time"}
@@ -1036,25 +1076,26 @@ export default function DashboardContent({
                             activity
                           )} border-l-4 hover:border-l-[#F26623]`}
                         >
-                          <div className="p-6">
-                            <div className="flex items-start justify-between">
-                              <div className="flex items-start space-x-4 flex-1">
-                                <div className="w-12 h-12 rounded-full bg-white shadow-sm flex items-center justify-center flex-shrink-0 border-2 border-gray-100">
+                          <div className="p-3 sm:p-4 lg:p-6">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-start space-x-3 flex-1 min-w-0">
+                                <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 rounded-full bg-white shadow-sm flex items-center justify-center flex-shrink-0 border-2 border-gray-100">
                                   {React.cloneElement(
                                     getActivityIcon(activity),
                                     {
-                                      className: "h-5 w-5 text-[#F26623]",
+                                      className:
+                                        "h-4 w-4 sm:h-5 sm:w-5 text-[#F26623]",
                                     }
                                   )}
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <div className="flex items-center space-x-3 mb-3">
-                                    <h4 className="font-bold text-lg text-gray-900 leading-tight">
+                                  <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-3 mb-2 sm:mb-3">
+                                    <h4 className="font-bold text-sm sm:text-base lg:text-lg text-gray-900 leading-tight">
                                       {getActivityDescription(activity)}
                                     </h4>
                                     {activity.type === "account_activity" && (
                                       <Badge
-                                        className={`text-xs font-medium border ${getPriorityColor(
+                                        className={`text-xs font-medium border mt-1 sm:mt-0 self-start ${getPriorityColor(
                                           (activityData as AccountActivity)
                                             .priority
                                         )}`}
@@ -1066,10 +1107,10 @@ export default function DashboardContent({
                                     )}
                                   </div>
                                   {getActivityAmount(activity) && (
-                                    <div className="flex items-center space-x-2 mb-3">
-                                      <Banknote className="h-4 w-4 text-gray-500" />
+                                    <div className="flex items-center space-x-2 mb-2 sm:mb-3">
+                                      <Banknote className="h-3 w-3 sm:h-4 sm:w-4 text-gray-500" />
                                       <span
-                                        className={`font-bold text-lg ${
+                                        className={`font-bold text-sm sm:text-base lg:text-lg ${
                                           activity.type === "account_activity"
                                             ? (activityData as AccountActivity)
                                                 .display_amount > 0
@@ -1087,9 +1128,9 @@ export default function DashboardContent({
                                     </div>
                                   )}
                                   {hasDescription && (
-                                    <div className="mb-4">
+                                    <div className="mb-3 sm:mb-4">
                                       <div
-                                        className={`text-sm text-gray-700 leading-relaxed ${
+                                        className={`text-xs sm:text-sm text-gray-700 leading-relaxed ${
                                           !isExpanded && shouldShowExpand
                                             ? "line-clamp-3"
                                             : ""
@@ -1115,16 +1156,16 @@ export default function DashboardContent({
                                           onClick={() =>
                                             toggleActivityExpansion(activity.id)
                                           }
-                                          className="mt-2 text-[#F26623] hover:text-[#F26623] hover:bg-[#F26623]/10 p-0 h-auto font-medium"
+                                          className="mt-2 text-[#F26623] hover:text-[#F26623] hover:bg-[#F26623]/10 p-0 h-auto font-medium text-xs sm:text-sm"
                                         >
                                           {isExpanded ? (
                                             <>
-                                              <ChevronUp className="h-4 w-4 mr-1" />
+                                              <ChevronUp className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
                                               Show Less
                                             </>
                                           ) : (
                                             <>
-                                              <ChevronDown className="h-4 w-4 mr-1" />
+                                              <ChevronDown className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
                                               Read More
                                             </>
                                           )}
@@ -1132,7 +1173,7 @@ export default function DashboardContent({
                                       )}
                                     </div>
                                   )}
-                                  <div className="flex items-center space-x-6 text-xs text-gray-500">
+                                  <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-6 space-y-1 sm:space-y-0 text-xs text-gray-500">
                                     <div className="flex items-center space-x-1">
                                       <Clock className="h-3 w-3" />
                                       <span className="font-medium">
@@ -1197,7 +1238,7 @@ export default function DashboardContent({
                                       ).toFixed(4)}
                                     </div>
                                   )}
-                                <Badge className="text-xs px-3 py-1 rounded-full font-medium bg-gray-100 text-gray-800 border border-gray-200">
+                                <Badge className="text-xs px-2 sm:px-3 py-1 rounded-full font-medium bg-gray-100 text-gray-800 border border-gray-200">
                                   {activity.type === "account_activity"
                                     ? "Active"
                                     : (activity.data as Transfer).status ||
@@ -1215,13 +1256,13 @@ export default function DashboardContent({
             </Card>
 
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <CreditCard className="h-5 w-5 mr-2" />
+              <CardHeader className="p-4 sm:p-6">
+                <CardTitle className="flex items-center text-base sm:text-lg">
+                  <CreditCard className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
                   Payments
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-3 p-4 sm:p-6 pt-0">
                 {paymentsLoading ? (
                   <div className="space-y-2">
                     {[1, 2, 3, 4].map((i) => (
@@ -1229,18 +1270,18 @@ export default function DashboardContent({
                         key={i}
                         className="py-2 border-b border-gray-100 animate-pulse"
                       >
-                        <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
-                        <div className="h-3 bg-gray-200 rounded w-3/4"></div>
+                        <div className="h-3 sm:h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
+                        <div className="h-2 sm:h-3 bg-gray-200 rounded w-3/4"></div>
                       </div>
                     ))}
                   </div>
                 ) : payments.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <CreditCard className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <div className="text-center py-6 sm:py-8 text-gray-500">
+                    <CreditCard className="h-8 w-8 sm:h-12 sm:w-12 mx-auto mb-3 sm:mb-4 opacity-50" />
                     <p className="text-sm">
                       {isNewUser ? "No payments yet" : "No recent payments"}
                     </p>
-                    <p className="text-xs">
+                    <p className="text-xs mt-1">
                       {isNewUser
                         ? "Your payment history will appear here once you start making transactions"
                         : "Your payment history will appear here"}
@@ -1254,16 +1295,16 @@ export default function DashboardContent({
                         className="py-2 border-b border-gray-100 last:border-b-0"
                       >
                         <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <span className="text-sm font-medium">
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm font-medium block truncate">
                               {payment.payment_type}
                             </span>
-                            <span className="text-xs text-gray-600 block">
+                            <span className="text-xs text-gray-600 block truncate">
                               {payment.description || "Payment transaction"}
                             </span>
                           </div>
-                          <div className="text-right">
-                            <span className="text-sm font-medium">
+                          <div className="text-right flex-shrink-0 ml-2">
+                            <span className="text-sm font-medium block">
                               {formatCurrency(payment.amount, payment.currency)}
                             </span>
                             <Badge
@@ -1272,7 +1313,7 @@ export default function DashboardContent({
                                   ? "default"
                                   : "secondary"
                               }
-                              className="ml-2 text-xs"
+                              className="text-xs mt-1"
                             >
                               {payment.status}
                             </Badge>
@@ -1286,16 +1327,18 @@ export default function DashboardContent({
             </Card>
           </div>
 
-          <div className="lg:col-span-1 space-y-6">
+          <div className="lg:col-span-1 space-y-4 sm:space-y-6">
             {/* Tax Card - Replacing the Logo Card */}
             <TaxCard userProfile={userProfile} setActiveTab={setActiveTab} />
 
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <MessageSquare className="h-5 w-5 mr-2" />
-                    {currentMessage ? "Messages" : "Latest Message"}
+              <CardHeader className="p-4 sm:p-6">
+                <CardTitle className="flex items-center justify-between text-base sm:text-lg">
+                  <div className="flex items-center min-w-0">
+                    <MessageSquare className="h-4 w-4 sm:h-5 sm:w-5 mr-2 flex-shrink-0" />
+                    <span className="truncate">
+                      {currentMessage ? "Messages" : "Latest Message"}
+                    </span>
                     {currentMessage &&
                       (!currentMessage.is_read ||
                         (welcomeMessage &&
@@ -1307,7 +1350,7 @@ export default function DashboardContent({
                               ? "default"
                               : "destructive"
                           }
-                          className={`ml-2 text-xs ${
+                          className={`ml-2 text-xs flex-shrink-0 ${
                             welcomeMessage &&
                             currentMessage.id === welcomeMessage.id
                               ? "bg-[#F26623]"
@@ -1325,15 +1368,15 @@ export default function DashboardContent({
                   </div>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-3 p-4 sm:p-6 pt-0">
                 {loading ? (
                   <div className="p-3 rounded-lg bg-gray-100 animate-pulse">
-                    <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-                    <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                    <div className="h-3 sm:h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                    <div className="h-2 sm:h-3 bg-gray-200 rounded w-1/2"></div>
                   </div>
                 ) : currentMessage ? (
                   <div
-                    className={`p-4 rounded-lg border-l-4 transition-opacity ${
+                    className={`p-3 sm:p-4 rounded-lg border-l-4 transition-opacity ${
                       currentMessage.message_type === "welcome"
                         ? "border-[#F26623] bg-gradient-to-r from-orange-50 to-yellow-50"
                         : currentMessage.message_type === "success"
@@ -1346,9 +1389,11 @@ export default function DashboardContent({
                     } ${currentMessage.is_read ? "opacity-70" : ""}`}
                   >
                     <div className="flex items-start justify-between">
-                      <div className="flex items-start space-x-2">
-                        {getMessageIcon(currentMessage.message_type)}
-                        <div className="flex-1">
+                      <div className="flex items-start space-x-2 flex-1 min-w-0">
+                        <div className="flex-shrink-0">
+                          {getMessageIcon(currentMessage.message_type)}
+                        </div>
+                        <div className="flex-1 min-w-0">
                           <h4 className="font-semibold text-sm">
                             {currentMessage.title}
                           </h4>
@@ -1362,7 +1407,7 @@ export default function DashboardContent({
                           </p>
                           {welcomeMessage &&
                             currentMessage.id === welcomeMessage.id && (
-                              <div className="mt-3 flex space-x-2">
+                              <div className="mt-3 flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
                                 <Button
                                   size="sm"
                                   onClick={() => setActiveTab("support")}
@@ -1386,15 +1431,15 @@ export default function DashboardContent({
                         </div>
                       </div>
                       {!currentMessage.is_read && !welcomeMessage && (
-                        <div className="w-2 h-2 bg-[#F26623] rounded-full mt-1"></div>
+                        <div className="w-2 h-2 bg-[#F26623] rounded-full mt-1 flex-shrink-0"></div>
                       )}
                     </div>
                   </div>
                 ) : (
-                  <div className="text-center py-8 text-gray-500">
-                    <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <div className="text-center py-6 sm:py-8 text-gray-500">
+                    <MessageSquare className="h-8 w-8 sm:h-12 sm:w-12 mx-auto mb-3 sm:mb-4 opacity-50" />
                     <p className="text-sm">No messages</p>
-                    <p className="text-xs">
+                    <p className="text-xs mt-1">
                       Your notifications will appear here
                     </p>
                   </div>
@@ -1402,13 +1447,13 @@ export default function DashboardContent({
               </CardContent>
             </Card>
 
-            <Card className="flex justify-center items-center p-6">
+            <Card className="flex justify-center items-center p-4 sm:p-6">
               <Image
                 src="/db/1.png"
                 alt="Mobile Banking Card"
                 width={200}
                 height={300}
-                className="object-contain"
+                className="object-contain max-w-full h-auto"
               />
             </Card>
           </div>
