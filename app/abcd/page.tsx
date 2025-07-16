@@ -41,7 +41,7 @@ interface AdminSession {
   loginTime: number;
   lastActivity: number;
   isActive: boolean;
-  userId: string; // Add user identifier
+  userId: string;
 }
 
 // Global session storage for multi-user support
@@ -93,6 +93,161 @@ export default function SecureAdminPage() {
     const userAgent = navigator.userAgent;
     const timestamp = Date.now();
     return btoa(`${userAgent}-${timestamp}`).slice(0, 16);
+  };
+
+  // Fetch real location data
+  const fetchLocationData = async (): Promise<{
+    ip: string;
+    country: string;
+    city: string;
+  }> => {
+    try {
+      console.log("Login: Fetching real location data...");
+
+      // Try multiple IP services in sequence
+      let ipAddress: string | null = null;
+
+      // Service 1: ipify
+      try {
+        const ipResponse = await fetch("https://api.ipify.org?format=json", {
+          signal: AbortSignal.timeout(3000),
+        });
+        const ipData = await ipResponse.json();
+        if (ipData.ip) {
+          ipAddress = ipData.ip;
+          console.log("Login: Got IP from ipify:", ipData.ip);
+        }
+      } catch (error) {
+        console.log("Login: ipify failed:", error);
+      }
+
+      // Service 2: ipapi.co if first failed
+      if (!ipAddress) {
+        try {
+          const ipResponse = await fetch("https://ipapi.co/ip/", {
+            signal: AbortSignal.timeout(3000),
+          });
+          const ip = await ipResponse.text();
+          if (ip && ip.trim()) {
+            ipAddress = ip.trim();
+            console.log("Login: Got IP from ipapi.co:", ipAddress);
+          }
+        } catch (error) {
+          console.log("Login: ipapi.co IP failed:", error);
+        }
+      }
+
+      // Service 3: httpbin if others failed
+      if (!ipAddress) {
+        try {
+          const ipResponse = await fetch("https://httpbin.org/ip", {
+            signal: AbortSignal.timeout(3000),
+          });
+          const ipData = await ipResponse.json();
+          if (ipData.origin) {
+            ipAddress = ipData.origin.split(",")[0].trim();
+            console.log("Login: Got IP from httpbin:", ipAddress);
+          }
+        } catch (error) {
+          console.log("Login: httpbin failed:", error);
+        }
+      }
+
+      // Now try to get location data if we have an IP
+      if (ipAddress) {
+        // Try multiple location services
+        // Location Service 1: ipapi.co
+        try {
+          const locationResponse = await fetch(
+            `https://ipapi.co/${ipAddress}/json/`,
+            {
+              signal: AbortSignal.timeout(4000),
+            }
+          );
+          const locationData = await locationResponse.json();
+
+          if (
+            locationData &&
+            !locationData.error &&
+            locationData.country_name
+          ) {
+            console.log("Login: Got location from ipapi.co:", locationData);
+            return {
+              ip: ipAddress,
+              country: locationData.country_name || "Unknown",
+              city: locationData.city || "Unknown",
+            };
+          }
+        } catch (error) {
+          console.log("Login: ipapi.co location failed:", error);
+        }
+
+        // Location Service 2: ip-api.com
+        try {
+          const locationResponse = await fetch(
+            `http://ip-api.com/json/${ipAddress}`,
+            {
+              signal: AbortSignal.timeout(4000),
+            }
+          );
+          const locationData = await locationResponse.json();
+
+          if (locationData && locationData.status === "success") {
+            console.log("Login: Got location from ip-api.com:", locationData);
+            return {
+              ip: ipAddress,
+              country: locationData.country || "Unknown",
+              city: locationData.city || "Unknown",
+            };
+          }
+        } catch (error) {
+          console.log("Login: ip-api.com failed:", error);
+        }
+
+        // Location Service 3: ipinfo.io
+        try {
+          const locationResponse = await fetch(
+            `https://ipinfo.io/${ipAddress}/json`,
+            {
+              signal: AbortSignal.timeout(4000),
+            }
+          );
+          const locationData = await locationResponse.json();
+
+          if (locationData && locationData.country) {
+            console.log("Login: Got location from ipinfo.io:", locationData);
+            return {
+              ip: ipAddress,
+              country: locationData.country || "Unknown",
+              city: locationData.city || "Unknown",
+            };
+          }
+        } catch (error) {
+          console.log("Login: ipinfo.io failed:", error);
+        }
+
+        // If location services failed but we have IP
+        return {
+          ip: ipAddress,
+          country: "Location unavailable",
+          city: "Unknown",
+        };
+      }
+
+      // If no IP could be determined
+      return {
+        ip: "IP detection failed",
+        country: "Unable to determine",
+        city: "Unknown",
+      };
+    } catch (error) {
+      console.error("Login: Location fetch error:", error);
+      return {
+        ip: "Detection failed",
+        country: "Service error",
+        city: "Unknown",
+      };
+    }
   };
 
   // Global session management functions
@@ -238,13 +393,17 @@ export default function SecureAdminPage() {
   };
 
   // Log login attempt
-  const logLoginAttempt = async (success: boolean, sessionId?: string) => {
+  const logLoginAttempt = async (
+    success: boolean,
+    sessionId?: string,
+    locationData?: { ip: string; country: string }
+  ) => {
     try {
       const attempt: LoginAttempt = {
         timestamp: Date.now(),
         success,
-        ip: "Unknown", // Dashboard will handle real IP
-        country: "Unknown", // Dashboard will handle real location
+        ip: locationData?.ip || "Unknown",
+        country: locationData?.country || "Unknown",
         sessionId,
       };
 
@@ -298,7 +457,7 @@ export default function SecureAdminPage() {
     );
   };
 
-  // Handle login
+  // Handle login - NOW WITH REAL LOCATION DATA
   const handleLogin = async () => {
     if (isAccountLocked()) {
       setError("Account is locked. Please try again later.");
@@ -314,19 +473,24 @@ export default function SecureAdminPage() {
     setError("");
 
     try {
-      // Simulate network delay for security
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // Validate credentials
+      // Validate credentials first
       if (!validateCredentials()) {
         await handleFailedLogin();
         setLoading(false);
         return;
       }
 
+      // Generate session info
       const sessionId = generateSessionId();
       const userId = generateUserId();
       const now = Date.now();
+
+      console.log("Login: Credentials valid, fetching location...");
+
+      // Fetch real location data during login
+      const locationData = await fetchLocationData();
+
+      console.log("Login: Location data received:", locationData);
 
       // Set security state
       setSecurityState((prev) => ({
@@ -338,17 +502,19 @@ export default function SecureAdminPage() {
         lockoutUntil: null,
       }));
 
-      // Create session data
+      // Create session data with REAL location info
       const sessionData: AdminSession = {
         sessionId,
-        ip: "Loading...",
-        country: "Loading...",
-        city: "Loading...",
+        ip: locationData.ip,
+        country: locationData.country,
+        city: locationData.city,
         loginTime: now,
         lastActivity: now,
         isActive: true,
         userId,
       };
+
+      console.log("Login: Creating session with real data:", sessionData);
 
       // Add to global sessions
       addOrUpdateSession(sessionData);
@@ -360,8 +526,8 @@ export default function SecureAdminPage() {
       // Start session sync
       startSessionSync();
 
-      // Log successful login
-      await logLoginAttempt(true, sessionId);
+      // Log successful login with real location
+      await logLoginAttempt(true, sessionId, locationData);
 
       // Set authenticated
       setIsAuthenticated(true);
@@ -724,7 +890,7 @@ export default function SecureAdminPage() {
                 !formData.securityQuestion
             )}
           >
-            {loading ? "Authenticating..." : "Secure Login"}
+            {loading ? "Authenticating & Fetching Location..." : "Secure Login"}
           </Button>
 
           {error && (
