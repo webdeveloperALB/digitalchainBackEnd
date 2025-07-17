@@ -232,7 +232,15 @@ export default function AdminDepositCreator() {
         return "euro_balances";
       case "CAD":
         return "cad_balances";
-      case "CRYPTO":
+      case "BTC":
+      case "ETH":
+      case "USDT":
+      case "USDC":
+      case "BNB":
+      case "ADA":
+      case "DOT":
+      case "LINK":
+      case "CRYPTO": // Keep this as fallback
         return "crypto_balances";
       default:
         return "usd_balances";
@@ -498,7 +506,7 @@ export default function AdminDepositCreator() {
       // Create deposit record
       const { error: depositError } = await supabase.from("deposits").insert({
         user_id: selectedUser,
-        currency: "CRYPTO",
+        currency: cryptoForm.cryptocurrency, // Changed from "CRYPTO"
         amount: Number.parseFloat(cryptoForm.amount),
         method: "Crypto Transfer",
         reference_id: referenceId,
@@ -531,7 +539,7 @@ export default function AdminDepositCreator() {
           user_id: selectedUser,
           transaction_type: "Deposit", // Using correct column name
           amount: Number.parseFloat(cryptoForm.amount),
-          currency: "CRYPTO",
+          currency: cryptoForm.cryptocurrency, // Changed from "CRYPTO"
           description: `${cryptoForm.cryptocurrency} deposit`,
           platform: "Crypto Transfer",
           status: cryptoForm.auto_approve ? "Completed" : "Pending",
@@ -548,7 +556,7 @@ export default function AdminDepositCreator() {
         try {
           await updateUserBalance(
             selectedUser,
-            "CRYPTO",
+            cryptoForm.cryptocurrency, // Changed from "CRYPTO"
             Number.parseFloat(cryptoForm.amount)
           );
         } catch (balanceError) {

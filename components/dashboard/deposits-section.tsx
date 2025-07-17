@@ -1,135 +1,50 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { supabase } from "@/lib/supabase";
-import {
-  ArrowDownLeft,
-  Search,
-  Clock,
+  Building,
+  Wallet,
   CheckCircle,
+  Clock,
   XCircle,
   AlertCircle,
-  Loader2,
-  Bitcoin,
-  Coins,
-  Shield,
-  Network,
-  Hash,
-  Wallet,
-  TrendingUp,
-  Eye,
-  RefreshCw,
+  Download,
+  Copy,
 } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 
 interface Deposit {
   id: string;
   user_id: string;
-  transaction_type: string;
   currency: string;
-  network?: string;
   amount: number;
-  wallet_address?: string;
-  transaction_hash?: string;
+  method: string;
+  reference_id: string;
   status: string;
+  bank_details?: any;
+  crypto_details?: any;
   created_at: string;
-  confirmation_count?: number;
-  required_confirmations?: number;
-  metadata?: any;
+  updated_at: string;
+  admin_notes?: string;
 }
 
-interface BankDeposit {
-  id: string;
-  user_id: string;
-  amount: number;
-  currency: string;
-  status: string;
-  deposit_method: string;
-  reference_number: string;
-  created_at: string;
-  processed_at?: string;
-  metadata?: any;
-}
-
-export default function DepositsSection() {
-  const [deposits, setDeposits] = useState<(Deposit | BankDeposit)[]>([]);
+export default function ClientDepositsView() {
+  const [deposits, setDeposits] = useState<Deposit[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [refreshing, setRefreshing] = useState(false);
-
-  // Real cryptocurrency configurations
-  const cryptoConfigs = {
-    BTC: {
-      name: "Bitcoin",
-      symbol: "₿",
-      icon: Bitcoin,
-      color: "text-orange-500",
-      bgColor: "bg-orange-50",
-      borderColor: "border-orange-200",
-    },
-    ETH: {
-      name: "Ethereum",
-      symbol: "Ξ",
-      icon: Coins,
-      color: "text-blue-500",
-      bgColor: "bg-blue-50",
-      borderColor: "border-blue-200",
-    },
-    USDT: {
-      name: "Tether",
-      symbol: "₮",
-      icon: Shield,
-      color: "text-green-500",
-      bgColor: "bg-green-50",
-      borderColor: "border-green-200",
-    },
-  };
-
-  const networkLabels = {
-    bitcoin: "Bitcoin Mainnet",
-    "bitcoin-testnet": "Bitcoin Testnet",
-    ethereum: "Ethereum Mainnet",
-    "ethereum-goerli": "Ethereum Goerli",
-    polygon: "Polygon",
-    bsc: "Binance Smart Chain",
-    tron: "Tron (TRC-20)",
-  };
+  const [message, setMessage] = useState<{ type: string; text: string } | null>(
+    null
+  );
 
   useEffect(() => {
     fetchDeposits();
 
-    // Set up real-time subscription for crypto deposits
-    const cryptoSubscription = supabase
-      .channel("crypto_deposits")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "crypto_transactions",
-          filter: "transaction_type=eq.deposit",
-        },
-        () => {
-          fetchDeposits();
-        }
-      )
-      .subscribe();
-
-    // Set up real-time subscription for bank deposits
-    const bankSubscription = supabase
-      .channel("bank_deposits")
+    // Set up real-time subscription for deposits
+    const subscription = supabase
+      .channel("client_deposits_changes")
       .on(
         "postgres_changes",
         {
@@ -137,467 +52,429 @@ export default function DepositsSection() {
           schema: "public",
           table: "deposits",
         },
-        () => {
+        (payload) => {
+          console.log("Client deposit change received:", payload);
           fetchDeposits();
         }
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(cryptoSubscription);
-      supabase.removeChannel(bankSubscription);
+      subscription.unsubscribe();
     };
   }, []);
 
   const fetchDeposits = async () => {
     try {
-      setRefreshing(true);
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-      // Fetch crypto deposits (BTC, ETH, USDT only)
-      const { data: cryptoDeposits, error: cryptoError } = await supabase
-        .from("crypto_transactions")
-        .select("*")
-        .eq("transaction_type", "deposit")
-        .in("currency", ["BTC", "ETH", "USDT"])
-        .order("created_at", { ascending: false });
+      if (user) {
+        const { data, error } = await supabase
+          .from("deposits")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false });
 
-      if (cryptoError) throw cryptoError;
-
-      // Fetch traditional bank deposits
-      const { data: bankDeposits, error: bankError } = await supabase
-        .from("deposits")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (bankError) throw bankError;
-
-      // Combine and sort all deposits
-      const allDeposits = [
-        ...(cryptoDeposits || []).map((d) => ({
-          ...d,
-          deposit_type: "crypto",
-        })),
-        ...(bankDeposits || []).map((d) => ({ ...d, deposit_type: "bank" })),
-      ].sort(
-        (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-
-      setDeposits(allDeposits);
+        if (error) throw error;
+        setDeposits(data || []);
+      }
     } catch (error) {
       console.error("Error fetching deposits:", error);
+      setMessage({ type: "error", text: "Failed to load deposits" });
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setMessage({ type: "success", text: "Copied to clipboard!" });
+    setTimeout(() => setMessage(null), 3000);
   };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case "completed":
-      case "processed":
-        return <CheckCircle className="h-4 w-4 text-green-500" />;
-      case "pending":
-        return <Clock className="h-4 w-4 text-yellow-500" />;
-      case "failed":
-      case "rejected":
-        return <XCircle className="h-4 w-4 text-red-500" />;
+      case "Approved":
+      case "Completed":
+        return <CheckCircle className="w-4 h-4 text-green-600" />;
+      case "Pending Review":
+      case "Pending Confirmation":
+      case "Pending":
+        return <Clock className="w-4 h-4 text-yellow-600" />;
+      case "Rejected":
+      case "Failed":
+        return <XCircle className="w-4 h-4 text-red-600" />;
       default:
-        return <AlertCircle className="h-4 w-4 text-gray-500" />;
+        return <AlertCircle className="w-4 h-4 text-gray-600" />;
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "completed":
-      case "processed":
-        return "bg-green-100 text-green-800";
-      case "pending":
-        return "bg-yellow-100 text-yellow-800";
-      case "failed":
-      case "rejected":
-        return "bg-red-100 text-red-800";
+      case "Approved":
+      case "Completed":
+        return "text-green-600 bg-green-50 border-green-200";
+      case "Pending Review":
+      case "Pending Confirmation":
+      case "Pending":
+        return "text-yellow-600 bg-yellow-50 border-yellow-200";
+      case "Rejected":
+      case "Failed":
+        return "text-red-600 bg-red-50 border-red-200";
       default:
-        return "bg-gray-100 text-gray-800";
+        return "text-gray-600 bg-gray-50 border-gray-200";
     }
-  };
-
-  const isCryptoDeposit = (deposit: any): deposit is Deposit => {
-    return (
-      deposit.transaction_type === "deposit" &&
-      ["BTC", "ETH", "USDT"].includes(deposit.currency)
-    );
-  };
-
-  const filteredDeposits = deposits.filter((deposit) => {
-    const matchesSearch =
-      deposit.currency?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (isCryptoDeposit(deposit) &&
-        deposit.wallet_address
-          ?.toLowerCase()
-          .includes(searchTerm.toLowerCase())) ||
-      (isCryptoDeposit(deposit) &&
-        deposit.transaction_hash
-          ?.toLowerCase()
-          .includes(searchTerm.toLowerCase())) ||
-      (!isCryptoDeposit(deposit) &&
-        (deposit as BankDeposit).reference_number
-          ?.toLowerCase()
-          .includes(searchTerm.toLowerCase()));
-
-    const matchesStatus =
-      statusFilter === "all" || deposit.status === statusFilter;
-
-    const matchesType =
-      typeFilter === "all" ||
-      (typeFilter === "crypto" && isCryptoDeposit(deposit)) ||
-      (typeFilter === "bank" && !isCryptoDeposit(deposit));
-
-    return matchesSearch && matchesStatus && matchesType;
-  });
-
-  const formatAmount = (amount: number, currency: string) => {
-    if (["BTC", "ETH", "USDT"].includes(currency)) {
-      const config = cryptoConfigs[currency as keyof typeof cryptoConfigs];
-      return `${config.symbol}${amount.toLocaleString(undefined, {
-        minimumFractionDigits:
-          currency === "BTC" ? 8 : currency === "ETH" ? 6 : 2,
-        maximumFractionDigits:
-          currency === "BTC" ? 8 : currency === "ETH" ? 6 : 2,
-      })}`;
-    }
-    return `$${amount.toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`;
-  };
-
-  const truncateHash = (hash: string, length = 8) => {
-    if (!hash) return "N/A";
-    return `${hash.slice(0, length)}...${hash.slice(-length)}`;
-  };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
   };
 
   if (loading) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <ArrowDownLeft className="h-5 w-5 mr-2" />
-            Deposits
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="p-4 border rounded-lg animate-pulse">
-                <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-                <div className="h-3 bg-gray-200 rounded w-1/2 mb-2"></div>
-                <div className="h-3 bg-gray-200 rounded w-2/3"></div>
-              </div>
-            ))}
+      <div className="flex-1 overflow-y-auto max-h-screen">
+        <div className="p-6">
+          <div className="animate-pulse space-y-4">
+            <div className="h-8 bg-gray-200 rounded w-1/4"></div>
+            <div className="h-32 bg-gray-200 rounded"></div>
+            <div className="h-64 bg-gray-200 rounded"></div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     );
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between">
-          <div className="flex items-center">
-            <ArrowDownLeft className="h-5 w-5 mr-2" />
-            Deposits
-            <Badge variant="outline" className="ml-3 text-xs">
-              {filteredDeposits.length} total
-            </Badge>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={fetchDeposits}
-            disabled={refreshing}
-          >
-            {refreshing ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
-          </Button>
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-4 mb-6">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <Input
-              placeholder="Search by currency, address, hash, or reference..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-          <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Types</SelectItem>
-              <SelectItem value="crypto">Crypto Only</SelectItem>
-              <SelectItem value="bank">Bank Only</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="completed">Completed</SelectItem>
-              <SelectItem value="processed">Processed</SelectItem>
-              <SelectItem value="failed">Failed</SelectItem>
-              <SelectItem value="rejected">Rejected</SelectItem>
-            </SelectContent>
-          </Select>
+    <div className="flex-1 overflow-y-auto max-h-screen">
+      <div className="p-6 space-y-6">
+        <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-bold">My Deposits</h2>
+          <Badge variant="outline" className="text-sm">
+            Real-time Updates
+          </Badge>
         </div>
 
-        {/* Deposits List */}
-        {filteredDeposits.length === 0 ? (
-          <div className="text-center py-12 text-gray-500">
-            <ArrowDownLeft className="h-16 w-16 mx-auto mb-4 opacity-30" />
-            <p className="text-lg font-medium">No deposits found</p>
-            <p className="text-sm">Try adjusting your search criteria</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {filteredDeposits.map((deposit) => {
-              const isCrypto = isCryptoDeposit(deposit);
+        {message && (
+          <Alert
+            className={
+              message.type === "error"
+                ? "border-red-500 bg-red-50"
+                : "border-green-500 bg-green-50"
+            }
+          >
+            <AlertDescription
+              className={
+                message.type === "error" ? "text-red-700" : "text-green-700"
+              }
+            >
+              {message.text}
+            </AlertDescription>
+          </Alert>
+        )}
 
-              if (isCrypto) {
-                const config =
-                  cryptoConfigs[deposit.currency as keyof typeof cryptoConfigs];
-                const IconComponent = config?.icon || Bitcoin;
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            <strong>Information:</strong> Deposits are processed by our admin
+            team. You will see deposits appear here when they are processed for
+            your account. All deposits are handled securely and will reflect in
+            your balance once approved.
+          </AlertDescription>
+        </Alert>
 
-                return (
+        {/* Deposit History */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <Download className="w-5 h-5 mr-2" />
+              Deposit History
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {deposits.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <Download className="w-16 h-16 mx-auto mb-4 opacity-30" />
+                <h3 className="text-lg font-medium mb-2">No deposits yet</h3>
+                <p className="text-sm">
+                  Deposits processed by our admin team will appear here
+                  automatically.
+                </p>
+                <p className="text-xs mt-2 text-gray-400">
+                  Contact support if you're expecting a deposit that hasn't
+                  appeared.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {deposits.map((deposit) => (
                   <div
                     key={deposit.id}
-                    className={`border rounded-lg p-4 space-y-3 ${
-                      config?.borderColor || "border-gray-200"
-                    } ${config?.bgColor || "bg-gray-50"}`}
+                    className="border rounded-lg p-6 space-y-4 hover:shadow-md transition-shadow"
                   >
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-12 h-12 rounded-full bg-white border-2 flex items-center justify-center">
-                          <IconComponent
-                            className={`h-6 w-6 ${
-                              config?.color || "text-gray-500"
-                            }`}
-                          />
+                    <div className="flex justify-between items-start">
+                      <div className="space-y-2">
+                        <div className="flex items-center space-x-3">
+                          <h3 className="font-bold text-xl">
+                            {Number(deposit.amount).toLocaleString()}{" "}
+                            {deposit.currency}
+                          </h3>
+                          <Badge
+                            className={`text-sm ${getStatusColor(
+                              deposit.status
+                            )}`}
+                          >
+                            {getStatusIcon(deposit.status)}
+                            <span className="ml-2">{deposit.status}</span>
+                          </Badge>
                         </div>
-                        <div>
-                          <div className="flex items-center space-x-2">
-                            <h3 className="font-bold text-lg">
-                              {formatAmount(deposit.amount, deposit.currency)}{" "}
-                              {deposit.currency}
-                            </h3>
-                            <Badge className={getStatusColor(deposit.status)}>
-                              {deposit.status.toUpperCase()}
-                            </Badge>
-                          </div>
-                          <p className="text-sm text-gray-600">
-                            {config?.name} Deposit
-                            {deposit.network &&
-                              ` • ${
-                                networkLabels[
-                                  deposit.network as keyof typeof networkLabels
-                                ] || deposit.network
-                              }`}
+                        <div className="flex items-center text-gray-600">
+                          {deposit.method === "Bank Transfer" ? (
+                            <Building className="w-4 h-4 mr-2" />
+                          ) : (
+                            <Wallet className="w-4 h-4 mr-2" />
+                          )}
+                          <span className="font-medium">{deposit.method}</span>
+                        </div>
+                        <div className="text-sm text-gray-500 space-y-1">
+                          <p>Reference: {deposit.reference_id}</p>
+                          <p>
+                            Processed:{" "}
+                            {new Date(deposit.created_at).toLocaleString()}
                           </p>
+                          {deposit.updated_at !== deposit.created_at && (
+                            <p>
+                              Updated:{" "}
+                              {new Date(deposit.updated_at).toLocaleString()}
+                            </p>
+                          )}
                         </div>
                       </div>
-                      <div className="text-right">
-                        {getStatusIcon(deposit.status)}
-                        <p className="text-xs text-gray-500 mt-1">
-                          {new Date(deposit.created_at).toLocaleString()}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => copyToClipboard(deposit.reference_id)}
+                        className="shrink-0"
+                      >
+                        <Copy className="w-3 h-3 mr-1" />
+                        Copy Ref
+                      </Button>
+                    </div>
+
+                    {/* Bank Deposit Details */}
+                    {deposit.bank_details && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <h4 className="font-semibold text-blue-900 mb-3 flex items-center">
+                          <Building className="w-4 h-4 mr-2" />
+                          Bank Transfer Details
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                          {deposit.bank_details.bank_name && (
+                            <div>
+                              <span className="font-medium text-blue-800">
+                                Bank Name:
+                              </span>
+                              <p className="text-blue-700">
+                                {deposit.bank_details.bank_name}
+                              </p>
+                            </div>
+                          )}
+                          {deposit.bank_details.account_holder_name && (
+                            <div>
+                              <span className="font-medium text-blue-800">
+                                Account Holder:
+                              </span>
+                              <p className="text-blue-700">
+                                {deposit.bank_details.account_holder_name}
+                              </p>
+                            </div>
+                          )}
+                          {deposit.bank_details.account_number && (
+                            <div>
+                              <span className="font-medium text-blue-800">
+                                Account Number:
+                              </span>
+                              <p className="text-blue-700 font-mono">
+                                ****
+                                {deposit.bank_details.account_number.slice(-4)}
+                              </p>
+                            </div>
+                          )}
+                          {deposit.bank_details.routing_number && (
+                            <div>
+                              <span className="font-medium text-blue-800">
+                                Routing Number:
+                              </span>
+                              <p className="text-blue-700 font-mono">
+                                {deposit.bank_details.routing_number}
+                              </p>
+                            </div>
+                          )}
+                          {deposit.bank_details.swift_code && (
+                            <div>
+                              <span className="font-medium text-blue-800">
+                                SWIFT Code:
+                              </span>
+                              <p className="text-blue-700 font-mono">
+                                {deposit.bank_details.swift_code}
+                              </p>
+                            </div>
+                          )}
+                          {deposit.bank_details.iban && (
+                            <div>
+                              <span className="font-medium text-blue-800">
+                                IBAN:
+                              </span>
+                              <p className="text-blue-700 font-mono">
+                                {deposit.bank_details.iban}
+                              </p>
+                            </div>
+                          )}
+                          {deposit.bank_details.bank_address && (
+                            <div className="md:col-span-2">
+                              <span className="font-medium text-blue-800">
+                                Bank Address:
+                              </span>
+                              <p className="text-blue-700">
+                                {deposit.bank_details.bank_address}
+                              </p>
+                            </div>
+                          )}
+                          {deposit.bank_details.wire_reference && (
+                            <div className="md:col-span-2">
+                              <span className="font-medium text-blue-800">
+                                Wire Reference:
+                              </span>
+                              <p className="text-blue-700 font-mono">
+                                {deposit.bank_details.wire_reference}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Crypto Deposit Details */}
+                    {deposit.crypto_details && (
+                      <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                        <h4 className="font-semibold text-purple-900 mb-3 flex items-center">
+                          <Wallet className="w-4 h-4 mr-2" />
+                          Cryptocurrency Transfer Details
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                          {deposit.crypto_details.cryptocurrency && (
+                            <div>
+                              <span className="font-medium text-purple-800">
+                                Cryptocurrency:
+                              </span>
+                              <p className="text-purple-700 font-mono">
+                                {deposit.crypto_details.cryptocurrency}
+                              </p>
+                            </div>
+                          )}
+                          {deposit.crypto_details.network && (
+                            <div>
+                              <span className="font-medium text-purple-800">
+                                Network:
+                              </span>
+                              <p className="text-purple-700">
+                                {deposit.crypto_details.network}
+                              </p>
+                            </div>
+                          )}
+                          {deposit.crypto_details.from_wallet && (
+                            <div className="md:col-span-2">
+                              <span className="font-medium text-purple-800">
+                                From Wallet:
+                              </span>
+                              <p className="text-purple-700 font-mono text-xs break-all">
+                                {deposit.crypto_details.from_wallet}
+                              </p>
+                            </div>
+                          )}
+                          {deposit.crypto_details.to_wallet && (
+                            <div className="md:col-span-2">
+                              <span className="font-medium text-purple-800">
+                                To Wallet:
+                              </span>
+                              <p className="text-purple-700 font-mono text-xs break-all">
+                                {deposit.crypto_details.to_wallet}
+                              </p>
+                            </div>
+                          )}
+                          {deposit.crypto_details.transaction_hash && (
+                            <div className="md:col-span-2">
+                              <span className="font-medium text-purple-800">
+                                Transaction Hash:
+                              </span>
+                              <p className="text-purple-700 font-mono text-xs break-all">
+                                {deposit.crypto_details.transaction_hash}
+                              </p>
+                            </div>
+                          )}
+                          {deposit.crypto_details.block_confirmations && (
+                            <div>
+                              <span className="font-medium text-purple-800">
+                                Confirmations:
+                              </span>
+                              <p className="text-purple-700">
+                                {deposit.crypto_details.block_confirmations}
+                              </p>
+                            </div>
+                          )}
+                          {deposit.crypto_details.gas_fee && (
+                            <div>
+                              <span className="font-medium text-purple-800">
+                                Gas Fee:
+                              </span>
+                              <p className="text-purple-700">
+                                {deposit.crypto_details.gas_fee}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Admin Notes */}
+                    {deposit.admin_notes && (
+                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                        <h4 className="font-semibold text-gray-900 mb-2">
+                          Admin Notes:
+                        </h4>
+                        <p className="text-gray-700 text-sm">
+                          {deposit.admin_notes}
                         </p>
                       </div>
-                    </div>
+                    )}
 
-                    {/* Crypto-specific details */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                      {deposit.wallet_address && (
-                        <div className="space-y-1">
-                          <div className="flex items-center space-x-1 text-gray-600">
-                            <Wallet className="h-3 w-3" />
-                            <span className="font-medium">Wallet Address</span>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <code className="bg-white px-2 py-1 rounded text-xs font-mono">
-                              {truncateHash(deposit.wallet_address, 12)}
-                            </code>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() =>
-                                copyToClipboard(deposit.wallet_address!)
-                              }
-                              className="h-6 w-6 p-0"
-                            >
-                              <Eye className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-
-                      {deposit.transaction_hash && (
-                        <div className="space-y-1">
-                          <div className="flex items-center space-x-1 text-gray-600">
-                            <Hash className="h-3 w-3" />
-                            <span className="font-medium">
-                              Transaction Hash
-                            </span>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <code className="bg-white px-2 py-1 rounded text-xs font-mono">
-                              {truncateHash(deposit.transaction_hash, 12)}
-                            </code>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() =>
-                                copyToClipboard(deposit.transaction_hash!)
-                              }
-                              className="h-6 w-6 p-0"
-                            >
-                              <Eye className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-
-                      {deposit.network && (
-                        <div className="space-y-1">
-                          <div className="flex items-center space-x-1 text-gray-600">
-                            <Network className="h-3 w-3" />
-                            <span className="font-medium">Network</span>
-                          </div>
-                          <div className="text-sm">
-                            {networkLabels[
-                              deposit.network as keyof typeof networkLabels
-                            ] || deposit.network}
-                          </div>
-                        </div>
-                      )}
-
-                      {typeof deposit.confirmation_count !== "undefined" &&
-                        typeof deposit.required_confirmations !==
-                          "undefined" && (
-                          <div className="space-y-1">
-                            <div className="flex items-center space-x-1 text-gray-600">
-                              <CheckCircle className="h-3 w-3" />
-                              <span className="font-medium">Confirmations</span>
-                            </div>
-                            <div className="text-sm">
-                              {deposit.confirmation_count} /{" "}
-                              {deposit.required_confirmations}
-                              <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1">
-                                <div
-                                  className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
-                                  style={{
-                                    width: `${Math.min(
-                                      (deposit.confirmation_count /
-                                        deposit.required_confirmations) *
-                                        100,
-                                      100
-                                    )}%`,
-                                  }}
-                                ></div>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                    </div>
-                  </div>
-                );
-              } else {
-                // Bank deposit
-                const bankDeposit = deposit as BankDeposit;
-                return (
-                  <div
-                    key={bankDeposit.id}
-                    className="border rounded-lg p-4 space-y-3 border-blue-200 bg-blue-50"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-12 h-12 rounded-full bg-white border-2 flex items-center justify-center">
-                          <TrendingUp className="h-6 w-6 text-blue-500" />
-                        </div>
-                        <div>
-                          <div className="flex items-center space-x-2">
-                            <h3 className="font-bold text-lg">
-                              {formatAmount(
-                                bankDeposit.amount,
-                                bankDeposit.currency
-                              )}
-                            </h3>
-                            <Badge
-                              className={getStatusColor(bankDeposit.status)}
-                            >
-                              {bankDeposit.status.toUpperCase()}
-                            </Badge>
-                          </div>
-                          <p className="text-sm text-gray-600">
-                            Bank Deposit • {bankDeposit.deposit_method}
-                          </p>
-                        </div>
+                    {/* Status Information */}
+                    <div className="flex items-center justify-between pt-2 border-t">
+                      <div className="text-xs text-gray-500">
+                        {deposit.status === "Approved" &&
+                          "✅ Deposit approved and added to your balance"}
+                        {deposit.status === "Pending Review" &&
+                          "⏳ Deposit is being reviewed by our team"}
+                        {deposit.status === "Pending Confirmation" &&
+                          "⏳ Waiting for blockchain confirmation"}
+                        {deposit.status === "Rejected" &&
+                          "❌ Deposit was rejected - contact support"}
+                        {deposit.status === "Failed" &&
+                          "❌ Deposit failed - contact support"}
                       </div>
-                      <div className="text-right">
-                        {getStatusIcon(bankDeposit.status)}
-                        <p className="text-xs text-gray-500 mt-1">
-                          {new Date(bankDeposit.created_at).toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Bank-specific details */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                      <div className="space-y-1">
-                        <div className="flex items-center space-x-1 text-gray-600">
-                          <Hash className="h-3 w-3" />
-                          <span className="font-medium">Reference Number</span>
-                        </div>
-                        <code className="bg-white px-2 py-1 rounded text-xs font-mono">
-                          {bankDeposit.reference_number}
-                        </code>
-                      </div>
-
-                      {bankDeposit.processed_at && (
-                        <div className="space-y-1">
-                          <div className="flex items-center space-x-1 text-gray-600">
-                            <Clock className="h-3 w-3" />
-                            <span className="font-medium">Processed At</span>
-                          </div>
-                          <div className="text-sm">
-                            {new Date(
-                              bankDeposit.processed_at
-                            ).toLocaleString()}
-                          </div>
-                        </div>
+                      {deposit.status === "Approved" && (
+                        <Badge
+                          variant="outline"
+                          className="text-green-600 border-green-300"
+                        >
+                          Balance Updated
+                        </Badge>
                       )}
                     </div>
                   </div>
-                );
-              }
-            })}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 }
