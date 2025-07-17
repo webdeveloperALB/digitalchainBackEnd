@@ -13,6 +13,8 @@ import {
   Euro,
   MapIcon as Maple,
   Bitcoin,
+  Coins,
+  Shield,
   MessageSquare,
   Bell,
   Activity,
@@ -25,7 +27,6 @@ import {
   Building2,
   AlertTriangle,
   Sparkles,
-  Shield,
   ChevronDown,
   ChevronUp,
   Clock,
@@ -122,6 +123,37 @@ interface WelcomeMessage {
   is_welcome: boolean;
 }
 
+// Real cryptocurrency configurations
+const cryptoConfigs = {
+  BTC: {
+    name: "Bitcoin",
+    iconUrl:
+      "https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/svg/color/btc.svg",
+    color: "text-orange-500",
+    bgColor: "bg-orange-50",
+    borderColor: "border-orange-200",
+    decimals: 8,
+  },
+  ETH: {
+    name: "Ethereum",
+    iconUrl:
+      "https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/svg/color/eth.svg",
+    color: "text-blue-500",
+    bgColor: "bg-blue-50",
+    borderColor: "border-blue-200",
+    decimals: 6,
+  },
+  USDT: {
+    name: "Tether",
+    iconUrl:
+      "https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/svg/color/usdt.svg",
+    color: "text-green-500",
+    bgColor: "bg-green-50",
+    borderColor: "border-green-200",
+    decimals: 2,
+  },
+};
+
 export default function DashboardContent({
   userProfile,
   setActiveTab,
@@ -157,12 +189,103 @@ export default function DashboardContent({
   const [currentMessage, setCurrentMessage] = useState<
     LatestMessage | WelcomeMessage | null
   >(null);
-  // Add state for expanded activities
   const [expandedActivities, setExpandedActivities] = useState<Set<string>>(
     new Set()
   );
+  // Add state for crypto balances
+  const [cryptoBalances, setCryptoBalances] = useState<Record<string, number>>({
+    BTC: 0,
+    ETH: 0,
+    USDT: 0,
+  });
 
-  // Initialize tax data
+  // Fetch crypto balances from the correct table (newcrypto_balances)
+  useEffect(() => {
+    const fetchCryptoBalances = async () => {
+      if (!userProfile?.id) return;
+
+      try {
+        console.log("Fetching crypto balances for user:", userProfile.id);
+
+        const { data, error } = await supabase
+          .from("newcrypto_balances")
+          .select("btc_balance, eth_balance, usdt_balance")
+          .eq("user_id", userProfile.id);
+
+        if (error) {
+          console.error("Error fetching crypto balances:", error);
+          // Set default values on error
+          setCryptoBalances({
+            BTC: 0,
+            ETH: 0,
+            USDT: 0,
+          });
+          return;
+        }
+
+        console.log("Crypto balances data:", data);
+
+        // Handle case where user might not have a record yet
+        if (data && data.length > 0) {
+          const userBalance = data[0];
+          const balances = {
+            BTC: Number(userBalance.btc_balance) || 0,
+            ETH: Number(userBalance.eth_balance) || 0,
+            USDT: Number(userBalance.usdt_balance) || 0,
+          };
+
+          console.log("Setting crypto balances:", balances);
+          setCryptoBalances(balances);
+        } else {
+          // No record found, set all balances to 0
+          console.log("No crypto balance record found, setting all to 0");
+          setCryptoBalances({
+            BTC: 0,
+            ETH: 0,
+            USDT: 0,
+          });
+        }
+      } catch (error) {
+        console.error("Error in fetchCryptoBalances:", error);
+        // Set default values on any error
+        setCryptoBalances({
+          BTC: 0,
+          ETH: 0,
+          USDT: 0,
+        });
+      }
+    };
+
+    fetchCryptoBalances();
+
+    // Set up real-time subscription for crypto balances
+    const setupCryptoSubscription = () => {
+      const subscription = supabase
+        .channel(`newcrypto_balances_${userProfile.id}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "newcrypto_balances",
+            filter: `user_id=eq.${userProfile.id}`,
+          },
+          (payload) => {
+            console.log("Crypto balance change detected:", payload);
+            fetchCryptoBalances();
+          }
+        )
+        .subscribe();
+
+      return () => {
+        subscription.unsubscribe();
+      };
+    };
+
+    const cleanup = setupCryptoSubscription();
+    return cleanup;
+  }, [userProfile?.id]);
+
   // Check if user is new and create welcome message
   useEffect(() => {
     const checkNewUserAndCreateWelcome = async () => {
@@ -226,16 +349,15 @@ export default function DashboardContent({
           const { data: insertedMessage, error: insertError } = await supabase
             .from("messages")
             .insert([welcomeData])
-            .select()
-            .single();
+            .select();
 
-          if (!insertError && insertedMessage) {
+          if (!insertError && insertedMessage && insertedMessage.length > 0) {
             setWelcomeMessage({
-              ...insertedMessage,
+              ...insertedMessage[0],
               is_welcome: true,
             });
             setCurrentMessage({
-              ...insertedMessage,
+              ...insertedMessage[0],
               is_welcome: true,
             });
             setShowMessage(true);
@@ -611,17 +733,17 @@ export default function DashboardContent({
   };
 
   const formatCurrency = (amount: number, currency: string) => {
-    const symbols = {
+    const symbols: Record<string, string> = {
       usd: "$",
       euro: "€",
       cad: "C$",
-      crypto: "₿",
+      BTC: "₿",
+      ETH: "Ξ",
+      USDT: "₮",
     };
-    return `${
-      symbols[currency as keyof typeof symbols] || "$"
-    }${amount.toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+    return `${symbols[currency] || "$"}${amount.toLocaleString(undefined, {
+      minimumFractionDigits: currency === "BTC" || currency === "ETH" ? 8 : 2,
+      maximumFractionDigits: currency === "BTC" || currency === "ETH" ? 8 : 2,
     })}`;
   };
 
@@ -633,8 +755,12 @@ export default function DashboardContent({
         return <Euro className="h-4 w-4" />;
       case "cad":
         return <Maple className="h-4 w-4" />;
-      case "crypto":
-        return <Bitcoin className="h-4 w-4" />;
+      case "BTC":
+        return <span className="text-orange-600 font-bold text-lg">₿</span>;
+      case "ETH":
+        return <span className="text-blue-600 font-bold text-lg">Ξ</span>;
+      case "USDT":
+        return <span className="text-green-600 font-bold text-lg">₮</span>;
       default:
         return <DollarSign className="h-4 w-4" />;
     }
@@ -659,17 +785,24 @@ export default function DashboardContent({
       transfer.transfer_type === "admin_deposit" ||
       transfer.transfer_type === "admin_debit" ||
       transfer.transfer_type === "admin_balance_adjustment" ||
+      transfer.transfer_type === "admin_crypto_deposit" ||
+      transfer.transfer_type === "admin_crypto_debit" ||
+      transfer.transfer_type === "admin_crypto_adjustment" ||
       transfer.description?.toLowerCase().includes("account credit") ||
       transfer.description?.toLowerCase().includes("account debit") ||
       transfer.description?.toLowerCase().includes("administrative") ||
-      transfer.description?.toLowerCase().includes("balance adjustment")
+      transfer.description?.toLowerCase().includes("balance adjustment") ||
+      transfer.description?.toLowerCase().includes("crypto credit") ||
+      transfer.description?.toLowerCase().includes("crypto debit")
     );
   };
 
   const isAdminDebit = (transfer: Transfer) => {
     return (
       transfer.transfer_type === "admin_debit" ||
+      transfer.transfer_type === "admin_crypto_debit" ||
       transfer.description?.toLowerCase().includes("account debit") ||
+      transfer.description?.toLowerCase().includes("crypto debit") ||
       transfer.description?.toLowerCase().includes("debited from your account")
     );
   };
@@ -735,20 +868,35 @@ export default function DashboardContent({
     } else {
       const transfer = activity.data as Transfer;
       // Admin actions - show professional banking messages
-      if (transfer.transfer_type === "admin_deposit") {
+      if (
+        transfer.transfer_type === "admin_deposit" ||
+        transfer.transfer_type === "admin_crypto_deposit"
+      ) {
         return "Account Credit";
       }
-      if (transfer.transfer_type === "admin_debit") {
+      if (
+        transfer.transfer_type === "admin_debit" ||
+        transfer.transfer_type === "admin_crypto_debit"
+      ) {
         return "Account Debit";
       }
-      if (transfer.transfer_type === "admin_balance_adjustment") {
+      if (
+        transfer.transfer_type === "admin_balance_adjustment" ||
+        transfer.transfer_type === "admin_crypto_adjustment"
+      ) {
         return "Balance Adjustment";
       }
       // Check description for admin actions
-      if (transfer.description?.toLowerCase().includes("account credit")) {
+      if (
+        transfer.description?.toLowerCase().includes("account credit") ||
+        transfer.description?.toLowerCase().includes("crypto credit")
+      ) {
         return "Account Credit";
       }
-      if (transfer.description?.toLowerCase().includes("account debit")) {
+      if (
+        transfer.description?.toLowerCase().includes("account debit") ||
+        transfer.description?.toLowerCase().includes("crypto debit")
+      ) {
         return "Account Debit";
       }
       if (transfer.description?.toLowerCase().includes("administrative")) {
@@ -782,17 +930,26 @@ export default function DashboardContent({
       return null;
     } else {
       const transfer = activity.data as Transfer;
-      if (transfer.transfer_type === "admin_deposit") {
+      if (
+        transfer.transfer_type === "admin_deposit" ||
+        transfer.transfer_type === "admin_crypto_deposit"
+      ) {
         return `+${Number(transfer.from_amount || 0).toLocaleString()} ${(
           transfer.from_currency || "USD"
         ).toUpperCase()}`;
       }
-      if (transfer.transfer_type === "admin_debit") {
+      if (
+        transfer.transfer_type === "admin_debit" ||
+        transfer.transfer_type === "admin_crypto_debit"
+      ) {
         return `-${Number(transfer.from_amount || 0).toLocaleString()} ${(
           transfer.from_currency || "USD"
         ).toUpperCase()}`;
       }
-      if (transfer.transfer_type === "admin_balance_adjustment") {
+      if (
+        transfer.transfer_type === "admin_balance_adjustment" ||
+        transfer.transfer_type === "admin_crypto_adjustment"
+      ) {
         return `${Number(transfer.to_amount || 0).toLocaleString()} ${(
           transfer.to_currency || "USD"
         ).toUpperCase()}`;
@@ -920,7 +1077,6 @@ export default function DashboardContent({
   }
 
   const displayName = userProfile?.full_name || userProfile?.email || "User";
-  const displayBalances = realtimeBalances;
 
   return (
     <div className="flex-1 p-3 sm:p-6 lg:p-8 bg-gray-50 overflow-auto [@media(max-width:500px)]:pt-16">
@@ -947,33 +1103,84 @@ export default function DashboardContent({
           </Alert>
         )}
 
-        {/* Balance Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-6 sm:mb-8">
-          {Object.entries(displayBalances).map(([currency, balance]) => (
-            <Card
-              key={currency}
-              className="hover:shadow-lg transition-shadow bg-[#F26623] relative overflow-hidden"
-            >
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-4 sm:p-6">
-                <CardTitle className="text-xs sm:text-sm text-white font-medium capitalize">
-                  {currency} Balance
-                </CardTitle>
-                {React.cloneElement(getBalanceIcon(currency), {
-                  className: "text-white w-4 h-4 sm:w-5 sm:h-5",
-                })}
-              </CardHeader>
-              <CardContent className="p-4 sm:p-6 pt-0">
-                <div className="text-lg sm:text-xl lg:text-2xl font-bold text-white">
-                  {formatCurrency(balance, currency)}
-                </div>
-                <p className="text-xs text-muted-foreground text-white mt-1">
-                  {currency === "crypto"
-                    ? "Bitcoin equivalent"
-                    : `${currency.toUpperCase()} account`}
-                </p>
-              </CardContent>
-            </Card>
-          ))}
+        {/* Balance Cards - Traditional currencies on top row, crypto on bottom row */}
+        <div className="space-y-3 sm:space-y-6 mb-6 sm:mb-8">
+          {/* Traditional Currency Cards - USD, EUR, CAD */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6">
+            {realtimeBalances &&
+              Object.entries(realtimeBalances)
+                .filter(([currency]) =>
+                  ["usd", "euro", "cad"].includes(currency)
+                )
+                .map(([currency, balance]) => (
+                  <Card
+                    key={currency}
+                    className="hover:shadow-lg transition-shadow bg-[#F26623] relative overflow-hidden"
+                  >
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-4 sm:p-6">
+                      <CardTitle className="text-xs sm:text-sm text-white font-medium capitalize">
+                        {currency === "usd"
+                          ? "USD"
+                          : currency === "euro"
+                          ? "EUR"
+                          : "CAD"}{" "}
+                        Balance
+                      </CardTitle>
+                      {React.cloneElement(getBalanceIcon(currency), {
+                        className: "text-white w-4 h-4 sm:w-5 sm:h-5",
+                      })}
+                    </CardHeader>
+                    <CardContent className="p-4 sm:p-6 pt-0">
+                      <div className="text-lg sm:text-xl lg:text-2xl font-bold text-white">
+                        {formatCurrency(balance, currency)}
+                      </div>
+                      <p className="text-xs text-muted-foreground text-white mt-1">{`${currency.toUpperCase()} account`}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+          </div>
+
+          {/* Crypto Currency Cards - BTC, ETH, USDT */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6">
+            {["BTC", "ETH", "USDT"].map((cryptoCurrency) => {
+              const balance = cryptoBalances[cryptoCurrency] || 0;
+              const config =
+                cryptoConfigs[cryptoCurrency as keyof typeof cryptoConfigs];
+              const IconComponent = config.iconUrl;
+
+              return (
+                <Card
+                  key={cryptoCurrency}
+                  className={`hover:shadow-lg transition-shadow relative overflow-hidden ${config.bgColor} ${config.borderColor} border-2`}
+                >
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-4 sm:p-6">
+                    <CardTitle
+                      className={`text-xs sm:text-sm font-medium ${config.color}`}
+                    >
+                      {config.name}
+                    </CardTitle>
+                    <Image
+                      src={config.iconUrl}
+                      alt={`${config.name} icon`}
+                      width={36}
+                      height={36}
+                      className={`w-8 h-8 sm:w-8 sm:h-8 ${config.color}`}
+                    />
+                  </CardHeader>
+                  <CardContent className="p-4 sm:p-6 pt-0">
+                    <div
+                      className={`text-lg sm:text-xl lg:text-2xl font-bold ${config.color}`}
+                    >
+                      {formatCurrency(balance, cryptoCurrency)}
+                    </div>
+                    <p className={`text-xs mt-1 ${config.color} opacity-70`}>
+                      {cryptoCurrency} wallet
+                    </p>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
         </div>
 
         {/* Quick Actions */}
@@ -999,7 +1206,7 @@ export default function DashboardContent({
             className="h-12 sm:h-16 text-sm sm:text-base"
           >
             <Bitcoin className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
-            Withdrawl Crypto
+            Crypto Trading
           </Button>
           <Button
             onClick={() => setActiveTab("card")}
