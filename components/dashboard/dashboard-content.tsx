@@ -13,7 +13,6 @@ import {
   Euro,
   MapIcon as Maple,
   Bitcoin,
-  Coins,
   Shield,
   MessageSquare,
   Bell,
@@ -202,7 +201,83 @@ export default function DashboardContent({
   // Fetch crypto balances from the correct table (newcrypto_balances)
   useEffect(() => {
     const fetchCryptoBalances = async () => {
-      if (!userProfile?.id) return;
+      // Check if userProfile.id is valid before making the request
+      if (
+        !userProfile?.id ||
+        userProfile.id === "unknown" ||
+        userProfile.id === ""
+      ) {
+        console.log("Invalid or missing user ID:", userProfile?.id);
+
+        // Try to get the user ID from Supabase auth instead
+        try {
+          const {
+            data: { user },
+            error: authError,
+          } = await supabase.auth.getUser();
+
+          if (authError || !user) {
+            console.log("No authenticated user found:", authError);
+            setCryptoBalances({
+              BTC: 0,
+              ETH: 0,
+              USDT: 0,
+            });
+            return;
+          }
+
+          console.log("Using auth user ID:", user.id);
+
+          const { data, error } = await supabase
+            .from("newcrypto_balances")
+            .select("btc_balance, eth_balance, usdt_balance")
+            .eq("user_id", user.id);
+
+          if (error) {
+            console.error("Error fetching crypto balances:", {
+              message: error.message,
+              details: error.details,
+              hint: error.hint,
+              code: error.code,
+            });
+            setCryptoBalances({
+              BTC: 0,
+              ETH: 0,
+              USDT: 0,
+            });
+            return;
+          }
+
+          console.log("Crypto balances data:", data);
+
+          if (data && data.length > 0) {
+            const userBalance = data[0];
+            const balances = {
+              BTC: Number(userBalance.btc_balance) || 0,
+              ETH: Number(userBalance.eth_balance) || 0,
+              USDT: Number(userBalance.usdt_balance) || 0,
+            };
+
+            console.log("Setting crypto balances:", balances);
+            setCryptoBalances(balances);
+          } else {
+            console.log("No crypto balance record found, setting all to 0");
+            setCryptoBalances({
+              BTC: 0,
+              ETH: 0,
+              USDT: 0,
+            });
+          }
+        } catch (error) {
+          console.error("Error getting authenticated user:", error);
+          setCryptoBalances({
+            BTC: 0,
+            ETH: 0,
+            USDT: 0,
+          });
+        }
+        return;
+      }
 
       try {
         console.log("Fetching crypto balances for user:", userProfile.id);
@@ -213,8 +288,12 @@ export default function DashboardContent({
           .eq("user_id", userProfile.id);
 
         if (error) {
-          console.error("Error fetching crypto balances:", error);
-          // Set default values on error
+          console.error("Error fetching crypto balances:", {
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+            code: error.code,
+          });
           setCryptoBalances({
             BTC: 0,
             ETH: 0,
@@ -225,7 +304,6 @@ export default function DashboardContent({
 
         console.log("Crypto balances data:", data);
 
-        // Handle case where user might not have a record yet
         if (data && data.length > 0) {
           const userBalance = data[0];
           const balances = {
@@ -237,7 +315,6 @@ export default function DashboardContent({
           console.log("Setting crypto balances:", balances);
           setCryptoBalances(balances);
         } else {
-          // No record found, set all balances to 0
           console.log("No crypto balance record found, setting all to 0");
           setCryptoBalances({
             BTC: 0,
@@ -246,8 +323,11 @@ export default function DashboardContent({
           });
         }
       } catch (error) {
-        console.error("Error in fetchCryptoBalances:", error);
-        // Set default values on any error
+        console.error("Error in fetchCryptoBalances:", {
+          error,
+          message: error instanceof Error ? error.message : "Unknown error",
+          stack: error instanceof Error ? error.stack : undefined,
+        });
         setCryptoBalances({
           BTC: 0,
           ETH: 0,
@@ -260,15 +340,24 @@ export default function DashboardContent({
 
     // Set up real-time subscription for crypto balances
     const setupCryptoSubscription = () => {
+      // Only set up subscription if we have a valid user ID
+      const userId =
+        userProfile?.id && userProfile.id !== "unknown" ? userProfile.id : null;
+
+      if (!userId) {
+        console.log("No valid user ID for subscription");
+        return () => {};
+      }
+
       const subscription = supabase
-        .channel(`newcrypto_balances_${userProfile.id}`)
+        .channel(`newcrypto_balances_${userId}`)
         .on(
           "postgres_changes",
           {
             event: "*",
             schema: "public",
             table: "newcrypto_balances",
-            filter: `user_id=eq.${userProfile.id}`,
+            filter: `user_id=eq.${userId}`,
           },
           (payload) => {
             console.log("Crypto balance change detected:", payload);
@@ -290,6 +379,14 @@ export default function DashboardContent({
   useEffect(() => {
     const checkNewUserAndCreateWelcome = async () => {
       if (!userProfile || hasCheckedWelcome) return;
+
+      // Skip if userProfile.id is invalid
+      if (!userProfile.id || userProfile.id === "unknown") {
+        console.log("Skipping welcome check - invalid user ID");
+        setHasCheckedWelcome(true);
+        return;
+      }
+
       try {
         const {
           data: { user },
@@ -1103,6 +1200,15 @@ export default function DashboardContent({
           </Alert>
         )}
 
+        {/* Debug info - remove this in production 
+        {process.env.NODE_ENV === "development" && (
+          <Alert className="mb-4 sm:mb-6 border-blue-500 bg-blue-50">
+            <AlertDescription className="text-blue-700 text-sm">
+              Debug: User Profile ID = {userProfile?.id || "undefined"}
+            </AlertDescription>
+          </Alert> 
+        )} */}
+
         {/* Balance Cards - Traditional currencies on top row, crypto on bottom row */}
         <div className="space-y-3 sm:space-y-6 mb-6 sm:mb-8">
           {/* Traditional Currency Cards - USD, EUR, CAD */}
@@ -1146,7 +1252,6 @@ export default function DashboardContent({
               const balance = cryptoBalances[cryptoCurrency] || 0;
               const config =
                 cryptoConfigs[cryptoCurrency as keyof typeof cryptoConfigs];
-              const IconComponent = config.iconUrl;
 
               return (
                 <Card
@@ -1160,7 +1265,7 @@ export default function DashboardContent({
                       {config.name}
                     </CardTitle>
                     <Image
-                      src={config.iconUrl}
+                      src={config.iconUrl || "/placeholder.svg"}
                       alt={`${config.name} icon`}
                       width={36}
                       height={36}
