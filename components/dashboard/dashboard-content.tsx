@@ -847,11 +847,26 @@ export default function DashboardContent({
   const getBalanceIcon = (currency: string) => {
     switch (currency) {
       case "usd":
-        return <DollarSign className="h-4 w-4" />;
+        return (
+          <span className="text-xl font-bold">
+            <span className="text-3xl font-bold text-black">$</span>
+          </span>
+        );
+
       case "euro":
-        return <Euro className="h-4 w-4" />;
+        return (
+          <span className="text-2xl font-bold">
+            <span className="text-3xl font-bold text-black">€</span>
+          </span>
+        );
+
       case "cad":
-        return <Maple className="h-4 w-4" />;
+        return (
+          <span className="inline-flex items-center space-x-0.5 font-bold">
+            <span className="text-3xl font-bold text-black">C</span>
+            <span className="text-3xl font-bold text-black">$</span>
+          </span>
+        );
       case "BTC":
         return <span className="text-orange-600 font-bold text-lg">₿</span>;
       case "ETH":
@@ -1269,7 +1284,7 @@ export default function DashboardContent({
                       alt={`${config.name} icon`}
                       width={36}
                       height={36}
-                      className={`w-8 h-8 sm:w-8 sm:h-8 ${config.color}`}
+                      className={`w-10 h-10 sm:w-10 sm:h-10 ${config.color}`}
                     />
                   </CardHeader>
                   <CardContent className="p-4 sm:p-6 pt-0">
