@@ -12,6 +12,7 @@ import {
   MapPin,
   Globe,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 
 interface UserPresence {
   user_id: string;
@@ -36,6 +37,7 @@ export default function UserPresenceTracker() {
   const [onlineCount, setOnlineCount] = useState(0);
   const [totalUsers, setTotalUsers] = useState(0);
   const [countryStats, setCountryStats] = useState<Record<string, number>>({});
+  const [searchTerm, setSearchTerm] = useState("");
 
   const updateStatistics = useCallback((presences: UserPresence[]) => {
     const online = presences.filter((p) => p.is_online).length;
@@ -393,16 +395,44 @@ export default function UserPresenceTracker() {
               Live
             </Badge>
           </CardTitle>
+          <div className="mt-4">
+            <Input
+              type="text"
+              placeholder="Search by name or email..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="max-w-sm"
+            />
+          </div>
         </CardHeader>
         <CardContent>
           <div className="space-y-3 max-h-96 overflow-y-auto">
-            {userPresences.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p className="text-sm">No users found</p>
-              </div>
-            ) : (
-              userPresences.map((presence) => (
+            {(() => {
+              const filteredPresences = userPresences.filter((presence) => {
+                const searchLower = searchTerm.toLowerCase();
+                const nameMatch = (presence.user_name || "")
+                  .toLowerCase()
+                  .includes(searchLower);
+                const emailMatch = (presence.user_email || "")
+                  .toLowerCase()
+                  .includes(searchLower);
+                return nameMatch || emailMatch;
+              });
+
+              if (filteredPresences.length === 0) {
+                return (
+                  <div className="text-center py-8 text-gray-500">
+                    <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p className="text-sm">
+                      {searchTerm
+                        ? `No users found matching "${searchTerm}"`
+                        : "No users found"}
+                    </p>
+                  </div>
+                );
+              }
+
+              return filteredPresences.map((presence) => (
                 <div
                   key={presence.user_id}
                   className={`flex items-center justify-between p-4 border rounded-lg transition-all duration-200 ${
@@ -479,8 +509,8 @@ export default function UserPresenceTracker() {
                     {getStatusBadge(presence.is_online)}
                   </div>
                 </div>
-              ))
-            )}
+              ));
+            })()}
           </div>
         </CardContent>
       </Card>
