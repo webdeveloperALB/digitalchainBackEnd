@@ -1,24 +1,36 @@
 "use client";
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { getClientIPAddress } from "@/lib/geolocation-fixed";
 
-interface UseEnhancedPresenceTrackerProps {
+interface UseLocationPresenceTrackerProps {
   userId: string;
   enabled?: boolean;
   heartbeatInterval?: number;
 }
 
-export function useEnhancedPresenceTracker({
+export function useLocationPresenceTracker({
   userId,
   enabled = true,
   heartbeatInterval = 30000,
-}: UseEnhancedPresenceTrackerProps) {
+}: UseLocationPresenceTrackerProps) {
   const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
   const isOnlineRef = useRef(false);
   const lastActivityRef = useRef(Date.now());
   const lastPresenceUpdateRef = useRef(0);
+  const [clientIP, setClientIP] = useState<string>("");
 
-  // Update presence with location data
+  // Get client IP on mount
+  useEffect(() => {
+    if (enabled && userId) {
+      getClientIPAddress().then((ip) => {
+        console.log("Client IP obtained:", ip);
+        setClientIP(ip);
+      });
+    }
+  }, [enabled, userId]);
+
+  // Update presence with location tracking
   const updatePresenceWithLocation = useCallback(
     async (isOnline: boolean, force = false) => {
       if (!userId || !enabled) return;
@@ -29,10 +41,14 @@ export function useEnhancedPresenceTracker({
       }
 
       try {
-        const timestamp = new Date().toISOString();
+        console.log("Updating presence with location:", {
+          userId,
+          isOnline,
+          clientIP,
+        });
 
-        // Use the new API endpoint that includes location tracking
-        const response = await fetch("/api/presence/update-with-location", {
+        // Use the location tracking API
+        const response = await fetch("/api/presence/track-location-fixed", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -40,26 +56,23 @@ export function useEnhancedPresenceTracker({
           body: JSON.stringify({
             user_id: userId,
             is_online: isOnline,
-            last_seen: timestamp,
-            updated_at: timestamp,
+            client_ip: clientIP,
           }),
         });
 
         if (!response.ok) {
-          throw new Error("Failed to update presence");
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
 
-        console.log(
-          `Enhanced presence updated: ${
-            isOnline ? "online" : "offline"
-          } for user ${userId}`
-        );
+        const result = await response.json();
+        console.log("Presence update result:", result);
+
         isOnlineRef.current = isOnline;
         lastPresenceUpdateRef.current = now;
       } catch (error) {
-        console.error("Error in updatePresenceWithLocation:", error);
+        console.error("Error updating presence with location:", error);
 
-        // Fallback to direct Supabase update without location
+        // Fallback to direct Supabase update
         try {
           const timestamp = new Date().toISOString();
           const { error: fallbackError } = await supabase
@@ -71,29 +84,24 @@ export function useEnhancedPresenceTracker({
                 last_seen: timestamp,
                 updated_at: timestamp,
               },
-              {
-                onConflict: "user_id",
-              }
+              { onConflict: "user_id" }
             );
 
-          if (fallbackError) {
-            console.error("Fallback presence update error:", fallbackError);
-          } else {
+          if (!fallbackError) {
             isOnlineRef.current = isOnline;
             lastPresenceUpdateRef.current = now;
           }
         } catch (fallbackError) {
-          console.error("Error in fallback presence update:", fallbackError);
+          console.error("Fallback presence update failed:", fallbackError);
         }
       }
     },
-    [userId, enabled]
+    [userId, enabled, clientIP]
   );
 
   // Mark user offline
   const markOffline = useCallback(async () => {
     if (!userId) return;
-
     console.log("Marking user offline:", userId);
     await updatePresenceWithLocation(false, true);
   }, [userId, updatePresenceWithLocation]);
@@ -109,7 +117,7 @@ export function useEnhancedPresenceTracker({
     }
   }, [updatePresenceWithLocation]);
 
-  // Set up activity listeners (same as before)
+  // Set up activity listeners
   useEffect(() => {
     if (!enabled || !userId) return;
 
@@ -147,11 +155,12 @@ export function useEnhancedPresenceTracker({
     };
   }, [handleActivity, enabled, userId]);
 
-  // Set up heartbeat with location tracking
+  // Set up heartbeat
   useEffect(() => {
     if (!enabled || !userId) return;
 
-    // Initial presence update with location
+    // Initial presence update
+    console.log("Setting up presence tracking for user:", userId);
     updatePresenceWithLocation(true, true);
 
     heartbeatRef.current = setInterval(() => {
@@ -159,14 +168,17 @@ export function useEnhancedPresenceTracker({
       const timeSinceLastActivity = now - lastActivityRef.current;
       const inactivityThreshold = 120000; // 2 minutes
 
+      console.log(`Heartbeat: ${timeSinceLastActivity}ms since last activity`);
+
       if (timeSinceLastActivity > inactivityThreshold) {
         if (isOnlineRef.current) {
-          console.log("User inactive for 2+ minutes, marking offline");
+          console.log("User inactive, marking offline");
           updatePresenceWithLocation(false, true);
         }
       } else {
         if (!isOnlineRef.current) {
-          console.log("User has recent activity, marking online with location");
+          console.log("User active, marking online");
+          lastActivityRef.current = Date.now();
           updatePresenceWithLocation(true, true);
         } else {
           console.log("User still active, updating presence");
@@ -188,15 +200,14 @@ export function useEnhancedPresenceTracker({
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        console.log("Page hidden, will mark offline in 60 seconds");
+        console.log("Page hidden");
         setTimeout(() => {
           if (document.hidden) {
-            console.log("Page still hidden after 60s, marking offline");
             updatePresenceWithLocation(false, true);
           }
         }, 60000);
       } else {
-        console.log("Page visible, marking online with location");
+        console.log("Page visible, marking online");
         lastActivityRef.current = Date.now();
         updatePresenceWithLocation(true, true);
       }
@@ -208,36 +219,10 @@ export function useEnhancedPresenceTracker({
     };
   }, [updatePresenceWithLocation, enabled, userId]);
 
-  // Handle beforeunload
-  useEffect(() => {
-    if (!enabled || !userId) return;
-
-    const handleBeforeUnload = () => {
-      console.log("Page unloading, marking offline");
-      const data = JSON.stringify({
-        user_id: userId,
-        is_online: false,
-        last_seen: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
-
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon("/api/presence/offline", data);
-      }
-    };
-
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    window.addEventListener("pagehide", handleBeforeUnload);
-
-    return () => {
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-      window.removeEventListener("pagehide", handleBeforeUnload);
-    };
-  }, [userId]);
-
   return {
     updatePresence: updatePresenceWithLocation,
     markOffline,
     isOnline: isOnlineRef.current,
+    clientIP,
   };
 }

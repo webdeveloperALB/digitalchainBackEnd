@@ -3,13 +3,26 @@ import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/lib/supabase";
-import { Users, Circle, Clock, Wifi, WifiOff } from "lucide-react";
+import {
+  Users,
+  Circle,
+  Clock,
+  Wifi,
+  WifiOff,
+  MapPin,
+  Globe,
+} from "lucide-react";
 
 interface UserPresence {
   user_id: string;
   is_online: boolean;
   last_seen: string;
   updated_at: string;
+  ip_address?: string;
+  country?: string;
+  country_code?: string;
+  city?: string;
+  region?: string;
   user_email?: string;
   user_name?: string;
   first_name?: string;
@@ -22,25 +35,28 @@ export default function UserPresenceTracker() {
   const [loading, setLoading] = useState(true);
   const [onlineCount, setOnlineCount] = useState(0);
   const [totalUsers, setTotalUsers] = useState(0);
-  const [message, setMessage] = useState<{ type: string; text: string } | null>(
-    null
-  );
+  const [countryStats, setCountryStats] = useState<Record<string, number>>({});
 
-  // Memoized function to update statistics
   const updateStatistics = useCallback((presences: UserPresence[]) => {
     const online = presences.filter((p) => p.is_online).length;
     setOnlineCount(online);
     setTotalUsers(presences.length);
+
+    const countries: Record<string, number> = {};
+    presences
+      .filter((p) => p.is_online && p.country)
+      .forEach((p) => {
+        countries[p.country!] = (countries[p.country!] || 0) + 1;
+      });
+    setCountryStats(countries);
   }, []);
 
-  // Optimized function to handle real-time presence updates
   const handlePresenceUpdate = useCallback(async (payload: any) => {
     console.log("Real-time presence update:", payload);
 
     if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
       const updatedPresence = payload.new;
 
-      // Get user info for the updated presence
       let userInfo = {};
       try {
         const { data: userData } = await supabase
@@ -60,7 +76,6 @@ export default function UserPresenceTracker() {
             full_name: userData.full_name,
           };
         } else {
-          // Fallback to profiles table
           const { data: profileData } = await supabase
             .from("profiles")
             .select("email, full_name")
@@ -78,7 +93,6 @@ export default function UserPresenceTracker() {
 
       const presenceWithUserInfo = { ...updatedPresence, ...userInfo };
 
-      // Update the state directly instead of refetching everything
       setUserPresences((prev) => {
         const existingIndex = prev.findIndex(
           (p) => p.user_id === updatedPresence.user_id
@@ -86,15 +100,12 @@ export default function UserPresenceTracker() {
         let newPresences;
 
         if (existingIndex >= 0) {
-          // Update existing presence
           newPresences = [...prev];
           newPresences[existingIndex] = presenceWithUserInfo;
         } else {
-          // Add new presence
           newPresences = [...prev, presenceWithUserInfo];
         }
 
-        // Sort by online status first, then by last seen
         newPresences.sort((a, b) => {
           if (a.is_online !== b.is_online) {
             return b.is_online ? 1 : -1;
@@ -107,62 +118,16 @@ export default function UserPresenceTracker() {
         return newPresences;
       });
     } else if (payload.eventType === "DELETE") {
-      // Remove deleted presence
       setUserPresences((prev) =>
         prev.filter((p) => p.user_id !== payload.old.user_id)
       );
     }
   }, []);
 
-  const checkForOfflineUsers = async () => {
-    try {
-      // Mark users as offline if they haven't been seen in the last 3 minutes
-      const offlineThreshold = new Date(
-        Date.now() - 3 * 60 * 1000
-      ).toISOString();
-
-      const { data: staleUsers, error: selectError } = await supabase
-        .from("user_presence")
-        .select("user_id, last_seen")
-        .eq("is_online", true)
-        .lt("last_seen", offlineThreshold);
-
-      if (selectError) {
-        console.error("Error selecting stale users:", selectError);
-        return;
-      }
-
-      if (staleUsers && staleUsers.length > 0) {
-        console.log(`Found ${staleUsers.length} users to mark offline`);
-
-        const { error: updateError } = await supabase
-          .from("user_presence")
-          .update({
-            is_online: false,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("is_online", true)
-          .lt("last_seen", offlineThreshold);
-
-        if (updateError) {
-          console.error("Error updating offline users:", updateError);
-        } else {
-          console.log(`Marked ${staleUsers.length} users as offline`);
-        }
-      }
-    } catch (error) {
-      console.error("Error in checkForOfflineUsers:", error);
-    }
-  };
-
   const fetchUserPresences = async () => {
     try {
       setLoading(true);
 
-      // First, run offline check
-      await checkForOfflineUsers();
-
-      // Get all user presences with user information
       const { data: presenceData, error: presenceError } = await supabase
         .from("user_presence")
         .select("*")
@@ -175,17 +140,14 @@ export default function UserPresenceTracker() {
       }
 
       if (!presenceData || presenceData.length === 0) {
-        console.log("No presence data found");
         setUserPresences([]);
         setOnlineCount(0);
         setTotalUsers(0);
         return;
       }
 
-      // Get user details for each presence record
       const presencesWithUserInfo = await Promise.all(
         presenceData.map(async (presence) => {
-          // Try to get user info from users table first
           const { data: userData } = await supabase
             .from("users")
             .select("email, first_name, last_name, full_name")
@@ -207,7 +169,6 @@ export default function UserPresenceTracker() {
             };
           }
 
-          // Fallback to profiles table
           const { data: profileData } = await supabase
             .from("profiles")
             .select("email, full_name")
@@ -224,15 +185,8 @@ export default function UserPresenceTracker() {
 
       setUserPresences(presencesWithUserInfo);
       updateStatistics(presencesWithUserInfo);
-
-      console.log(
-        `Presence loaded: ${
-          presencesWithUserInfo.filter((p) => p.is_online).length
-        } online out of ${presencesWithUserInfo.length} total users`
-      );
     } catch (error) {
       console.error("Error fetching user presences:", error);
-      setMessage({ type: "error", text: "Failed to load user presence data" });
     } finally {
       setLoading(false);
     }
@@ -241,7 +195,6 @@ export default function UserPresenceTracker() {
   useEffect(() => {
     fetchUserPresences();
 
-    // Set up real-time subscription for presence updates
     const presenceSubscription = supabase
       .channel("user_presence_changes")
       .on(
@@ -255,18 +208,11 @@ export default function UserPresenceTracker() {
       )
       .subscribe();
 
-    // Check for offline users every 30 seconds
-    const offlineCheckInterval = setInterval(() => {
-      checkForOfflineUsers();
-    }, 30000);
-
     return () => {
       presenceSubscription.unsubscribe();
-      clearInterval(offlineCheckInterval);
     };
   }, [handlePresenceUpdate]);
 
-  // Update statistics when userPresences changes
   useEffect(() => {
     updateStatistics(userPresences);
   }, [userPresences, updateStatistics]);
@@ -305,13 +251,20 @@ export default function UserPresenceTracker() {
     );
   };
 
+  const getCountryFlag = (countryCode: string) => {
+    if (!countryCode) return "🌍";
+    return String.fromCodePoint(
+      ...[...countryCode.toUpperCase()].map((x) => 0x1f1a5 + x.charCodeAt(0))
+    );
+  };
+
   if (loading) {
     return (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center">
             <Users className="h-5 w-5 mr-2" />
-            User Presence Tracker
+            Real-Time User Presence with Location
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -338,7 +291,7 @@ export default function UserPresenceTracker() {
   return (
     <div className="space-y-6">
       {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
@@ -382,14 +335,60 @@ export default function UserPresenceTracker() {
             </div>
           </CardContent>
         </Card>
+
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Countries</p>
+                <p className="text-2xl font-bold text-purple-600">
+                  {Object.keys(countryStats).length}
+                </p>
+              </div>
+              <Globe className="h-8 w-8 text-purple-500" />
+            </div>
+          </CardContent>
+        </Card>
       </div>
+
+      {/* Country Statistics */}
+      {Object.keys(countryStats).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <Globe className="h-5 w-5 mr-2" />
+              Online Users by Country
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {Object.entries(countryStats)
+                .sort(([, a], [, b]) => b - a)
+                .map(([country, count]) => (
+                  <div
+                    key={country}
+                    className="flex items-center space-x-2 p-2 bg-gray-50 rounded-lg"
+                  >
+                    <span className="text-lg">🌍</span>
+                    <div>
+                      <p className="font-medium text-sm">{country}</p>
+                      <p className="text-xs text-gray-500">
+                        {count} user{count !== 1 ? "s" : ""}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* User Presence List */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center">
             <Users className="h-5 w-5 mr-2" />
-            Real-Time User Presence
+            Real-Time User Presence with Location
             <Badge variant="outline" className="ml-2 text-xs">
               Live
             </Badge>
@@ -406,16 +405,16 @@ export default function UserPresenceTracker() {
               userPresences.map((presence) => (
                 <div
                   key={presence.user_id}
-                  className={`flex items-center justify-between p-3 border rounded-lg transition-all duration-200 ${
+                  className={`flex items-center justify-between p-4 border rounded-lg transition-all duration-200 ${
                     presence.is_online
                       ? "hover:bg-green-50 border-green-200 bg-green-25"
                       : "hover:bg-gray-50"
                   }`}
                 >
-                  <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-4">
                     <div className="relative">
-                      <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
-                        <Users className="h-5 w-5 text-gray-500" />
+                      <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center">
+                        <Users className="h-6 w-6 text-gray-500" />
                       </div>
                       <div
                         className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white transition-colors duration-200 ${
@@ -425,15 +424,47 @@ export default function UserPresenceTracker() {
                         }`}
                       ></div>
                     </div>
-                    <div>
+                    <div className="flex-1">
                       <p className="font-medium text-sm">
                         {presence.user_name ||
                           presence.user_email ||
                           "Unknown User"}
                       </p>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-gray-500 mb-1">
                         {presence.user_email}
                       </p>
+
+                      {/* Location Information - WORKING VERSION */}
+                      {presence.is_online && (
+                        <div className="space-y-1">
+                          {presence.ip_address && (
+                            <div className="flex items-center space-x-2 text-xs bg-blue-50 p-2 rounded">
+                              <MapPin className="h-3 w-3 text-blue-500" />
+                              <span className="font-mono text-blue-700">
+                                IP: {presence.ip_address}
+                              </span>
+                            </div>
+                          )}
+                          {presence.country && (
+                            <div className="flex items-center space-x-2 text-xs bg-green-50 p-2 rounded">
+                              <Globe className="h-3 w-3 text-green-500" />
+                              <span className="text-green-700">
+                                {getCountryFlag(presence.country_code || "")}
+                                {presence.city && presence.city !== "Unknown"
+                                  ? `${presence.city}, `
+                                  : ""}
+                                {presence.country}
+                              </span>
+                            </div>
+                          )}
+                          {!presence.ip_address && !presence.country && (
+                            <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
+                              Location data not available
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       <div className="flex items-center space-x-2 mt-1">
                         <Clock className="h-3 w-3 text-gray-400" />
                         <span className="text-xs text-gray-500">
@@ -453,18 +484,6 @@ export default function UserPresenceTracker() {
           </div>
         </CardContent>
       </Card>
-
-      {message && (
-        <div
-          className={`p-4 rounded-lg ${
-            message.type === "error"
-              ? "bg-red-50 text-red-700"
-              : "bg-blue-50 text-blue-700"
-          }`}
-        >
-          {message.text}
-        </div>
-      )}
     </div>
   );
 }

@@ -512,6 +512,10 @@ export default function EnhancedAdminDashboard({
               <DollarSign className="w-4 h-4 mr-2" />
               Balances
             </TabsTrigger>
+            <TabsTrigger value="taxes" className="flex items-center">
+              <Calculator className="w-4 h-4 mr-2" />
+              Taxes
+            </TabsTrigger>
             <TabsTrigger value="messages" className="flex items-center">
               <Mail className="w-4 h-4 mr-2" />
               Messages
@@ -523,10 +527,6 @@ export default function EnhancedAdminDashboard({
             <TabsTrigger value="database" className="flex items-center">
               <Database className="w-4 h-4 mr-2" />
               Database
-            </TabsTrigger>
-            <TabsTrigger value="taxes" className="flex items-center">
-              <Calculator className="w-4 h-4 mr-2" />
-              Taxes
             </TabsTrigger>
           </TabsList>
 
@@ -990,6 +990,10 @@ export default function EnhancedAdminDashboard({
             <BalanceUpdater />
           </TabsContent>
 
+          <TabsContent value="taxes">
+            <TaxManager />
+          </TabsContent>
+
           <TabsContent value="messages">
             <MessageManager />
           </TabsContent>
@@ -1000,10 +1004,6 @@ export default function EnhancedAdminDashboard({
 
           <TabsContent value="database">
             <DatabaseTest />
-          </TabsContent>
-
-          <TabsContent value="taxes">
-            <TaxManager />
           </TabsContent>
         </Tabs>
       </div>

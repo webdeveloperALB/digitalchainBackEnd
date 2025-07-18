@@ -17,8 +17,27 @@ export function usePresenceTracker({
   const isOnlineRef = useRef(false);
   const lastActivityRef = useRef(Date.now());
   const lastPresenceUpdateRef = useRef(0);
+  const [userIP, setUserIP] = useState<string>("");
 
-  // Update presence in database
+  // Get user's IP address on component mount
+  useEffect(() => {
+    const getUserIP = async () => {
+      try {
+        const response = await fetch("https://api.ipify.org?format=json");
+        const data = await response.json();
+        setUserIP(data.ip);
+        console.log("User IP detected:", data.ip);
+      } catch (error) {
+        console.error("Failed to get user IP:", error);
+      }
+    };
+
+    if (enabled && userId) {
+      getUserIP();
+    }
+  }, [enabled, userId]);
+
+  // Update presence in database WITH LOCATION
   const updatePresence = useCallback(
     async (isOnline: boolean, force = false) => {
       if (!userId || !enabled) return;
@@ -31,24 +50,57 @@ export function usePresenceTracker({
 
       try {
         const timestamp = new Date().toISOString();
+        let updateData: any = {
+          user_id: userId,
+          is_online: isOnline,
+          last_seen: timestamp,
+          updated_at: timestamp,
+        };
 
-        const { error } = await supabase.from("user_presence").upsert(
-          {
-            user_id: userId,
-            is_online: isOnline,
-            last_seen: timestamp,
-            updated_at: timestamp,
-          },
-          {
-            onConflict: "user_id",
+        // If user is coming online and we have an IP, get location data
+        if (isOnline && userIP) {
+          try {
+            console.log("Getting location for IP:", userIP);
+            const locationResponse = await fetch(
+              `https://ipapi.co/${userIP}/json/`
+            );
+            const locationData = await locationResponse.json();
+
+            if (!locationData.error) {
+              updateData = {
+                ...updateData,
+                ip_address: userIP,
+                country: locationData.country_name || "Unknown",
+                country_code: locationData.country_code || "",
+                city: locationData.city || "Unknown",
+                region: locationData.region || "",
+              };
+              console.log("Location data added:", {
+                ip: userIP,
+                country: locationData.country_name,
+                city: locationData.city,
+              });
+            } else {
+              console.warn("Location API error:", locationData.reason);
+              updateData.ip_address = userIP; // Save IP even if location fails
+            }
+          } catch (locationError) {
+            console.error("Error getting location:", locationError);
+            updateData.ip_address = userIP; // Save IP even if location fails
           }
-        );
+        }
+
+        const { error } = await supabase
+          .from("user_presence")
+          .upsert(updateData, {
+            onConflict: "user_id",
+          });
 
         if (error) {
           console.error("Error updating presence:", error);
         } else {
           console.log(
-            `Presence updated: ${
+            `Presence updated with location: ${
               isOnline ? "online" : "offline"
             } for user ${userId}`
           );
@@ -59,13 +111,12 @@ export function usePresenceTracker({
         console.error("Error in updatePresence:", error);
       }
     },
-    [userId, enabled]
+    [userId, enabled, userIP]
   );
 
   // Mark user offline (exposed function)
   const markOffline = useCallback(async () => {
     if (!userId) return;
-
     console.log("Marking user offline:", userId);
     try {
       const timestamp = new Date().toISOString();
@@ -80,7 +131,6 @@ export function usePresenceTracker({
           onConflict: "user_id",
         }
       );
-
       if (error) {
         console.error("Error marking user offline:", error);
       } else {
@@ -96,10 +146,9 @@ export function usePresenceTracker({
   const handleActivity = useCallback(() => {
     const now = Date.now();
     lastActivityRef.current = now;
-
     // If user was offline, mark them as online
     if (!isOnlineRef.current) {
-      console.log("User became active, marking online");
+      console.log("User became active, marking online with location");
       updatePresence(true);
     }
   }, [updatePresence]);
@@ -122,7 +171,6 @@ export function usePresenceTracker({
     let throttleTimeout: NodeJS.Timeout | null = null;
     const throttledHandleActivity = () => {
       if (throttleTimeout) return;
-
       throttleTimeout = setTimeout(() => {
         handleActivity();
         throttleTimeout = null;
@@ -147,7 +195,8 @@ export function usePresenceTracker({
   useEffect(() => {
     if (!enabled || !userId) return;
 
-    // Initial presence update
+    // Initial presence update with location
+    console.log("Starting presence tracking with location for user:", userId);
     updatePresence(true, true);
 
     // Set up heartbeat
@@ -169,11 +218,11 @@ export function usePresenceTracker({
       } else {
         // User has been active recently
         if (!isOnlineRef.current) {
-          console.log("User has recent activity, marking online");
+          console.log("User has recent activity, marking online with location");
           updatePresence(true, true);
         } else {
-          // Just update last_seen without changing online status
-          console.log("User still active, updating last_seen");
+          // Just update last_seen and refresh location data
+          console.log("User still active, updating presence with location");
           updatePresence(true);
         }
       }
@@ -201,7 +250,7 @@ export function usePresenceTracker({
           }
         }, 60000); // Wait 1 minute before marking offline
       } else {
-        console.log("Page visible, marking online");
+        console.log("Page visible, marking online with location");
         // Page is visible, mark as online and update activity
         lastActivityRef.current = Date.now();
         updatePresence(true, true);
@@ -209,7 +258,6 @@ export function usePresenceTracker({
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
-
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
@@ -254,6 +302,7 @@ export function usePresenceTracker({
     updatePresence,
     markOffline,
     isOnline: isOnlineRef.current,
+    userIP,
   };
 }
 
@@ -266,7 +315,7 @@ export default function PresenceTracker() {
   } | null>(null);
 
   // Store the presence tracker functions
-  const { updatePresence, markOffline, isOnline } = usePresenceTracker({
+  const { updatePresence, markOffline, isOnline, userIP } = usePresenceTracker({
     userId: user?.id || "",
     enabled: !!user && !loading,
     heartbeatInterval: 30000,
@@ -300,7 +349,6 @@ export default function PresenceTracker() {
       // Handle logout events
       if (event === "SIGNED_OUT") {
         console.log("User signed out, marking offline");
-
         // Mark the current user offline before clearing the user state
         if (user?.id) {
           try {
@@ -349,6 +397,17 @@ export default function PresenceTracker() {
     };
   }, [user?.id]);
 
+  // Show debug info in development
+  useEffect(() => {
+    if (process.env.NODE_ENV === "development" && user && userIP) {
+      console.log("Location tracking active:", {
+        userId: user.id,
+        userIP,
+        isOnline,
+      });
+    }
+  }, [user, userIP, isOnline]);
+
   return null; // This component doesn't render anything
 }
 
@@ -356,7 +415,6 @@ export default function PresenceTracker() {
 export function usePresenceLogout() {
   const markUserOffline = useCallback(async (userId: string) => {
     if (!userId) return;
-
     console.log("Manual logout - marking user offline:", userId);
     try {
       const timestamp = new Date().toISOString();
@@ -371,7 +429,6 @@ export function usePresenceLogout() {
           onConflict: "user_id",
         }
       );
-
       if (error) {
         console.error("Error marking user offline on manual logout:", error);
       } else {
