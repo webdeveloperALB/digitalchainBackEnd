@@ -123,6 +123,7 @@ export default function EnhancedActivityManager() {
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   const [previewMode, setPreviewMode] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
+  const [userSearchTerm, setUserSearchTerm] = useState("");
 
   const activityTypes = [
     // Banking Operations
@@ -910,6 +911,18 @@ export default function EnhancedActivityManager() {
                           {selectedUsers.length} selected
                         </Badge>
                       </Label>
+
+                      {/* Search Input */}
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        <Input
+                          placeholder="Search users by name or email..."
+                          value={userSearchTerm}
+                          onChange={(e) => setUserSearchTerm(e.target.value)}
+                          className="pl-10"
+                        />
+                      </div>
+
                       <div className="border rounded-lg p-4 max-h-48 overflow-y-auto bg-gray-50">
                         {usersLoading ? (
                           <div className="text-center py-4">
@@ -917,34 +930,66 @@ export default function EnhancedActivityManager() {
                           </div>
                         ) : (
                           <div className="space-y-2">
-                            {users.map((user) => (
-                              <div
-                                key={user.id}
-                                className="flex items-center space-x-3 p-2 hover:bg-white rounded"
-                              >
-                                <Checkbox
-                                  checked={selectedUsers.includes(user.id)}
-                                  onCheckedChange={(checked) =>
-                                    handleUserSelection(
-                                      user.id,
-                                      checked as boolean
-                                    )
-                                  }
-                                />
-                                <Users className="h-4 w-4 text-gray-500" />
-                                <div className="flex-1">
-                                  <span className="font-medium text-sm">
-                                    {user.full_name || user.email}
-                                  </span>
-                                  <Badge
-                                    variant="outline"
-                                    className="ml-2 text-xs"
-                                  >
-                                    {user.client_id}
-                                  </Badge>
+                            {users
+                              .filter((user) => {
+                                if (!userSearchTerm) return true;
+                                const searchLower =
+                                  userSearchTerm.toLowerCase();
+                                const nameMatch = user.full_name
+                                  ?.toLowerCase()
+                                  .includes(searchLower);
+                                const emailMatch = user.email
+                                  ?.toLowerCase()
+                                  .includes(searchLower);
+                                return nameMatch || emailMatch;
+                              })
+                              .map((user) => (
+                                <div
+                                  key={user.id}
+                                  className="flex items-center space-x-3 p-2 hover:bg-white rounded"
+                                >
+                                  <Checkbox
+                                    checked={selectedUsers.includes(user.id)}
+                                    onCheckedChange={(checked) =>
+                                      handleUserSelection(
+                                        user.id,
+                                        checked as boolean
+                                      )
+                                    }
+                                  />
+                                  <Users className="h-4 w-4 text-gray-500" />
+                                  <div className="flex-1">
+                                    <span className="font-medium text-sm">
+                                      {user.full_name || user.email}
+                                    </span>
+                                    <Badge
+                                      variant="outline"
+                                      className="ml-2 text-xs"
+                                    >
+                                      {user.client_id}
+                                    </Badge>
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
+                              ))}
+                            {users.filter((user) => {
+                              if (!userSearchTerm) return true;
+                              const searchLower = userSearchTerm.toLowerCase();
+                              const nameMatch = user.full_name
+                                ?.toLowerCase()
+                                .includes(searchLower);
+                              const emailMatch = user.email
+                                ?.toLowerCase()
+                                .includes(searchLower);
+                              return nameMatch || emailMatch;
+                            }).length === 0 &&
+                              userSearchTerm && (
+                                <div className="text-center py-4 text-gray-500">
+                                  <Users className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                                  <p className="text-sm">
+                                    No users found matching "{userSearchTerm}"
+                                  </p>
+                                </div>
+                              )}
                           </div>
                         )}
                       </div>

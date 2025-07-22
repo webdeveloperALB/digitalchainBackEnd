@@ -10,8 +10,6 @@ import { useLatestMessage } from "@/hooks/use-latest-message";
 import { supabase } from "@/lib/supabase";
 import {
   DollarSign,
-  Euro,
-  MapIcon as Maple,
   Bitcoin,
   Shield,
   MessageSquare,
@@ -191,6 +189,7 @@ export default function DashboardContent({
   const [expandedActivities, setExpandedActivities] = useState<Set<string>>(
     new Set()
   );
+  const [showAllActivities, setShowAllActivities] = useState(false);
   // Add state for crypto balances
   const [cryptoBalances, setCryptoBalances] = useState<Record<string, number>>({
     BTC: 0,
@@ -849,22 +848,22 @@ export default function DashboardContent({
       case "usd":
         return (
           <span className="text-xl font-bold">
-            <span className="text-3xl font-bold text-black">$</span>
+            <span className="text-3xl font-bold text-white">$</span>
           </span>
         );
 
       case "euro":
         return (
           <span className="text-2xl font-bold">
-            <span className="text-3xl font-bold text-black">€</span>
+            <span className="text-3xl font-bold text-white">€</span>
           </span>
         );
 
       case "cad":
         return (
           <span className="inline-flex items-center space-x-0.5 font-bold">
-            <span className="text-3xl font-bold text-black">C</span>
-            <span className="text-3xl font-bold text-black">$</span>
+            <span className="text-3xl font-bold text-white">C</span>
+            <span className="text-3xl font-bold text-white">$</span>
           </span>
         );
       case "BTC":
@@ -1382,201 +1381,232 @@ export default function DashboardContent({
                   </div>
                 ) : (
                   <div className="divide-y divide-gray-100">
-                    {combinedActivities.slice(0, 8).map((activity) => {
-                      const isExpanded = expandedActivities.has(activity.id);
-                      const activityData = activity.data;
-                      const hasDescription =
-                        activity.type === "account_activity"
-                          ? (activityData as AccountActivity).description
-                          : (activityData as Transfer).description;
-                      const description =
-                        activity.type === "account_activity"
-                          ? (activityData as AccountActivity).description
-                          : (activityData as Transfer).description;
-                      const shouldShowExpand =
-                        description && description.length > 100;
+                    {combinedActivities
+                      .slice(
+                        0,
+                        showAllActivities ? combinedActivities.length : 3
+                      )
+                      .map((activity) => {
+                        const isExpanded = expandedActivities.has(activity.id);
+                        const activityData = activity.data;
+                        const hasDescription =
+                          activity.type === "account_activity"
+                            ? (activityData as AccountActivity).description
+                            : (activityData as Transfer).description;
+                        const description =
+                          activity.type === "account_activity"
+                            ? (activityData as AccountActivity).description
+                            : (activityData as Transfer).description;
+                        const shouldShowExpand =
+                          description && description.length > 100;
 
-                      return (
-                        <div
-                          key={activity.id}
-                          className={`transition-all duration-200 hover:bg-gray-50/50 ${getActivityColor(
-                            activity
-                          )} border-l-4 hover:border-l-[#F26623]`}
-                        >
-                          <div className="p-3 sm:p-4 lg:p-6">
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="flex items-start space-x-3 flex-1 min-w-0">
-                                <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 rounded-full bg-white shadow-sm flex items-center justify-center flex-shrink-0 border-2 border-gray-100">
-                                  {React.cloneElement(
-                                    getActivityIcon(activity),
-                                    {
-                                      className:
-                                        "h-4 w-4 sm:h-5 sm:w-5 text-[#F26623]",
-                                    }
-                                  )}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-3 mb-2 sm:mb-3">
-                                    <h4 className="font-bold text-sm sm:text-base lg:text-lg text-gray-900 leading-tight">
-                                      {getActivityDescription(activity)}
-                                    </h4>
-                                    {activity.type === "account_activity" && (
-                                      <Badge
-                                        className={`text-xs font-medium border mt-1 sm:mt-0 self-start ${getPriorityColor(
-                                          (activityData as AccountActivity)
-                                            .priority
-                                        )}`}
-                                      >
-                                        {(
-                                          activityData as AccountActivity
-                                        ).priority.toUpperCase()}
-                                      </Badge>
+                        return (
+                          <div
+                            key={activity.id}
+                            className={`transition-all duration-200 hover:bg-gray-50/50 ${getActivityColor(
+                              activity
+                            )} border-l-4 hover:border-l-[#F26623]`}
+                          >
+                            <div className="p-3 sm:p-4 lg:p-6">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-start space-x-3 flex-1 min-w-0">
+                                  <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 rounded-full bg-white shadow-sm flex items-center justify-center flex-shrink-0 border-2 border-gray-100">
+                                    {React.cloneElement(
+                                      getActivityIcon(activity),
+                                      {
+                                        className:
+                                          "h-4 w-4 sm:h-5 sm:w-5 text-[#F26623]",
+                                      }
                                     )}
                                   </div>
-                                  {getActivityAmount(activity) && (
-                                    <div className="flex items-center space-x-2 mb-2 sm:mb-3">
-                                      <Banknote className="h-3 w-3 sm:h-4 sm:w-4 text-gray-500" />
-                                      <span
-                                        className={`font-bold text-sm sm:text-base lg:text-lg ${
-                                          activity.type === "account_activity"
-                                            ? (activityData as AccountActivity)
-                                                .display_amount > 0
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-3 mb-2 sm:mb-3">
+                                      <h4 className="font-bold text-sm sm:text-base lg:text-lg text-gray-900 leading-tight">
+                                        {getActivityDescription(activity)}
+                                      </h4>
+                                      {activity.type === "account_activity" && (
+                                        <Badge
+                                          className={`text-xs font-medium border mt-1 sm:mt-0 self-start ${getPriorityColor(
+                                            (activityData as AccountActivity)
+                                              .priority
+                                          )}`}
+                                        >
+                                          {(
+                                            activityData as AccountActivity
+                                          ).priority.toUpperCase()}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    {getActivityAmount(activity) && (
+                                      <div className="flex items-center space-x-2 mb-2 sm:mb-3">
+                                        <Banknote className="h-3 w-3 sm:h-4 sm:w-4 text-gray-500" />
+                                        <span
+                                          className={`font-bold text-sm sm:text-base lg:text-lg ${
+                                            activity.type === "account_activity"
+                                              ? (
+                                                  activityData as AccountActivity
+                                                ).display_amount > 0
+                                                ? "text-[#F26623]"
+                                                : "text-gray-600"
+                                              : getActivityAmount(
+                                                  activity
+                                                )?.startsWith("+")
                                               ? "text-[#F26623]"
                                               : "text-gray-600"
-                                            : getActivityAmount(
-                                                activity
-                                              )?.startsWith("+")
-                                            ? "text-[#F26623]"
-                                            : "text-gray-600"
-                                        }`}
-                                      >
-                                        {getActivityAmount(activity)}
-                                      </span>
-                                    </div>
-                                  )}
-                                  {hasDescription && (
-                                    <div className="mb-3 sm:mb-4">
-                                      <div
-                                        className={`text-xs sm:text-sm text-gray-700 leading-relaxed ${
-                                          !isExpanded && shouldShowExpand
-                                            ? "line-clamp-3"
-                                            : ""
-                                        }`}
-                                      >
-                                        {description
-                                          ?.split("\n")
-                                          .map((line, index) => (
-                                            <div
-                                              key={index}
-                                              className={
-                                                index > 0 ? "mt-2" : ""
-                                              }
-                                            >
-                                              {line}
-                                            </div>
-                                          ))}
-                                      </div>
-                                      {shouldShowExpand && (
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() =>
-                                            toggleActivityExpansion(activity.id)
-                                          }
-                                          className="mt-2 text-[#F26623] hover:text-[#F26623] hover:bg-[#F26623]/10 p-0 h-auto font-medium text-xs sm:text-sm"
+                                          }`}
                                         >
-                                          {isExpanded ? (
-                                            <>
-                                              <ChevronUp className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
-                                              Show Less
-                                            </>
-                                          ) : (
-                                            <>
-                                              <ChevronDown className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
-                                              Read More
-                                            </>
-                                          )}
-                                        </Button>
-                                      )}
-                                    </div>
-                                  )}
-                                  <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-6 space-y-1 sm:space-y-0 text-xs text-gray-500">
-                                    <div className="flex items-center space-x-1">
-                                      <Clock className="h-3 w-3" />
-                                      <span className="font-medium">
-                                        {new Date(
-                                          activity.created_at
-                                        ).toLocaleDateString("en-US", {
-                                          month: "short",
-                                          day: "numeric",
-                                          year: "numeric",
-                                        })}{" "}
-                                        at{" "}
-                                        {new Date(
-                                          activity.created_at
-                                        ).toLocaleTimeString("en-US", {
-                                          hour: "2-digit",
-                                          minute: "2-digit",
-                                        })}
-                                      </span>
-                                    </div>
-                                    {activity.type === "account_activity" &&
-                                      (activityData as AccountActivity)
-                                        .expires_at && (
-                                        <div className="flex items-center space-x-1">
-                                          <Calendar className="h-3 w-3" />
-                                          <span>
-                                            Expires:{" "}
-                                            {new Date(
-                                              (
-                                                activityData as AccountActivity
-                                              ).expires_at!
-                                            ).toLocaleDateString()}
-                                          </span>
+                                          {getActivityAmount(activity)}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {hasDescription && (
+                                      <div className="mb-3 sm:mb-4">
+                                        <div
+                                          className={`text-xs sm:text-sm text-gray-700 leading-relaxed ${
+                                            !isExpanded && shouldShowExpand
+                                              ? "line-clamp-3"
+                                              : ""
+                                          }`}
+                                        >
+                                          {description
+                                            ?.split("\n")
+                                            .map((line, index) => (
+                                              <div
+                                                key={index}
+                                                className={
+                                                  index > 0 ? "mt-2" : ""
+                                                }
+                                              >
+                                                {line}
+                                              </div>
+                                            ))}
                                         </div>
-                                      )}
-                                    {activity.type === "account_activity" &&
-                                      (activityData as AccountActivity)
-                                        .created_by && (
-                                        <div className="flex items-center space-x-1">
-                                          <User className="h-3 w-3" />
-                                          <span>Admin</span>
-                                        </div>
-                                      )}
+                                        {shouldShowExpand && (
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() =>
+                                              toggleActivityExpansion(
+                                                activity.id
+                                              )
+                                            }
+                                            className="mt-2 text-[#F26623] hover:text-[#F26623] hover:bg-[#F26623]/10 p-0 h-auto font-medium text-xs sm:text-sm"
+                                          >
+                                            {isExpanded ? (
+                                              <>
+                                                <ChevronUp className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                                                Show Less
+                                              </>
+                                            ) : (
+                                              <>
+                                                <ChevronDown className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                                                Read More
+                                              </>
+                                            )}
+                                          </Button>
+                                        )}
+                                      </div>
+                                    )}
+                                    <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-6 space-y-1 sm:space-y-0 text-xs text-gray-500">
+                                      <div className="flex items-center space-x-1">
+                                        <Clock className="h-3 w-3" />
+                                        <span className="font-medium">
+                                          {new Date(
+                                            activity.created_at
+                                          ).toLocaleDateString("en-US", {
+                                            month: "short",
+                                            day: "numeric",
+                                            year: "numeric",
+                                          })}{" "}
+                                          at{" "}
+                                          {new Date(
+                                            activity.created_at
+                                          ).toLocaleTimeString("en-US", {
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                          })}
+                                        </span>
+                                      </div>
+                                      {activity.type === "account_activity" &&
+                                        (activityData as AccountActivity)
+                                          .expires_at && (
+                                          <div className="flex items-center space-x-1">
+                                            <Calendar className="h-3 w-3" />
+                                            <span>
+                                              Expires:{" "}
+                                              {new Date(
+                                                (
+                                                  activityData as AccountActivity
+                                                ).expires_at!
+                                              ).toLocaleDateString()}
+                                            </span>
+                                          </div>
+                                        )}
+                                      {activity.type === "account_activity" &&
+                                        (activityData as AccountActivity)
+                                          .created_by && (
+                                          <div className="flex items-center space-x-1">
+                                            <User className="h-3 w-3" />
+                                            <span>Admin</span>
+                                          </div>
+                                        )}
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                              <div className="flex flex-col items-end space-y-2 flex-shrink-0">
-                                {activity.type === "transfer" &&
-                                  !isAdminCredit(activity.data as Transfer) &&
-                                  !isRegularDeposit(
-                                    activity.data as Transfer
-                                  ) &&
-                                  (activity.data as Transfer).exchange_rate &&
-                                  (activity.data as Transfer).exchange_rate !==
-                                    1.0 && (
-                                    <div className="text-xs text-gray-500 text-right">
-                                      <span className="font-medium">
-                                        Rate:{" "}
-                                      </span>
-                                      {Number(
-                                        (activity.data as Transfer)
-                                          .exchange_rate
-                                      ).toFixed(4)}
-                                    </div>
-                                  )}
-                                <Badge className="text-xs px-2 sm:px-3 py-1 rounded-full font-medium bg-gray-100 text-gray-800 border border-gray-200">
-                                  {activity.type === "account_activity"
-                                    ? "Active"
-                                    : (activity.data as Transfer).status ||
-                                      "Completed"}
-                                </Badge>
+                                <div className="flex flex-col items-end space-y-2 flex-shrink-0">
+                                  {activity.type === "transfer" &&
+                                    !isAdminCredit(activity.data as Transfer) &&
+                                    !isRegularDeposit(
+                                      activity.data as Transfer
+                                    ) &&
+                                    (activity.data as Transfer).exchange_rate &&
+                                    (activity.data as Transfer)
+                                      .exchange_rate !== 1.0 && (
+                                      <div className="text-xs text-gray-500 text-right">
+                                        <span className="font-medium">
+                                          Rate:{" "}
+                                        </span>
+                                        {Number(
+                                          (activity.data as Transfer)
+                                            .exchange_rate
+                                        ).toFixed(4)}
+                                      </div>
+                                    )}
+                                  <Badge className="text-xs px-2 sm:px-3 py-1 rounded-full font-medium bg-gray-100 text-gray-800 border border-gray-200">
+                                    {activity.type === "account_activity"
+                                      ? "Active"
+                                      : (activity.data as Transfer).status ||
+                                        "Completed"}
+                                  </Badge>
+                                </div>
                               </div>
                             </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    {combinedActivities.length > 3 && (
+                      <div className="p-4 text-center border-t border-gray-100">
+                        <Button
+                          variant="ghost"
+                          onClick={() =>
+                            setShowAllActivities(!showAllActivities)
+                          }
+                          className="text-[#F26623] hover:text-[#F26623] hover:bg-[#F26623]/10 font-medium"
+                        >
+                          {showAllActivities ? (
+                            <>
+                              <ChevronUp className="h-4 w-4 mr-2" />
+                              Show Less
+                            </>
+                          ) : (
+                            <>
+                              <ChevronDown className="h-4 w-4 mr-2" />
+                              Read More ({combinedActivities.length - 3} more)
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
               </CardContent>

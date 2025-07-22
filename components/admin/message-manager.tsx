@@ -60,6 +60,7 @@ export default function MessageManager() {
     message_type: "info",
     target_user: "all",
   });
+  const [userSearch, setUserSearch] = useState("");
 
   useEffect(() => {
     fetchMessages();
@@ -108,6 +109,14 @@ export default function MessageManager() {
       setAlert(`Error fetching messages: ${error.message || "Unknown error"}`);
     }
   };
+
+  const filteredUsers = users.filter((user) => {
+    if (!userSearch.trim()) return true;
+    const searchTerm = userSearch.toLowerCase();
+    const fullName = user.full_name?.toLowerCase() || "";
+    const email = user.email?.toLowerCase() || "";
+    return fullName.includes(searchTerm) || email.includes(searchTerm);
+  });
 
   const getUserName = (userId: string) => {
     const user = users.find((u) => u.id === userId);
@@ -273,26 +282,39 @@ export default function MessageManager() {
               <label className="text-sm font-medium mb-2 block">
                 Target Audience
               </label>
-              <Select
-                value={newMessage.target_user}
-                onValueChange={(value) =>
-                  setNewMessage({ ...newMessage, target_user: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select target" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">
-                    All Users ({users.length})
-                  </SelectItem>
-                  {users.map((user) => (
-                    <SelectItem key={user.id} value={user.id}>
-                      {user.full_name || user.email} ({user.client_id})
+              <div className="space-y-2">
+                <Input
+                  placeholder="Search users by name or email..."
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  className="w-full"
+                />
+                <Select
+                  value={newMessage.target_user}
+                  onValueChange={(value) =>
+                    setNewMessage({ ...newMessage, target_user: value })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select target" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">
+                      All Users ({users.length})
                     </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                    {filteredUsers.map((user) => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.full_name || user.email} ({user.client_id})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {userSearch.trim() && (
+                  <p className="text-xs text-gray-500">
+                    Showing {filteredUsers.length} of {users.length} users
+                  </p>
+                )}
+              </div>
             </div>
             <div>
               <label className="text-sm font-medium mb-2 block">

@@ -5,7 +5,15 @@ import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Users, RefreshCw, DollarSign, Euro, Bitcoin } from "lucide-react";
+import {
+  Users,
+  RefreshCw,
+  DollarSign,
+  Euro,
+  Bitcoin,
+  Search,
+} from "lucide-react";
+import { Input } from "@/components/ui/input";
 
 interface User {
   id: string;
@@ -26,6 +34,7 @@ export default function UserManagementTest() {
   const [users, setUsers] = useState<User[]>([]);
   const [userBalances, setUserBalances] = useState<UserBalance[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
 
   const fetchAllUsers = async () => {
     setLoading(true);
@@ -124,6 +133,15 @@ export default function UserManagementTest() {
     );
   };
 
+  const filteredUsers = users.filter((user) => {
+    if (!searchTerm) return true;
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      user.full_name?.toLowerCase().includes(searchLower) ||
+      user.email?.toLowerCase().includes(searchLower)
+    );
+  });
+
   return (
     <Card>
       <CardHeader>
@@ -156,14 +174,31 @@ export default function UserManagementTest() {
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">
-                All Users ({users.length})
-              </h3>
-              <Badge variant="outline">{users.length} users loaded</Badge>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
+              <div className="flex items-center gap-4">
+                <h3 className="text-lg font-semibold">
+                  All Users ({users.length})
+                </h3>
+                <Badge variant="outline">{users.length} users loaded</Badge>
+              </div>
+              <div className="relative w-full sm:w-80">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Input
+                  type="text"
+                  placeholder="Search by name or email..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
             </div>
+            {searchTerm && (
+              <div className="text-sm text-gray-600 mb-2">
+                Showing {filteredUsers.length} of {users.length} users
+              </div>
+            )}
             <div className="grid grid-cols-1 gap-4">
-              {users.map((user) => {
+              {filteredUsers.map((user) => {
                 const balance = getUserBalance(user.id);
                 return (
                   <div key={user.id} className="border rounded-lg p-4">

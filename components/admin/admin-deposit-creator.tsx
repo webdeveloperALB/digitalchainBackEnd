@@ -72,6 +72,7 @@ export default function AdminDepositCreator() {
   );
   const [submitting, setSubmitting] = useState(false);
   const [selectedDeposit, setSelectedDeposit] = useState<Deposit | null>(null);
+  const [userSearch, setUserSearch] = useState("");
 
   // Bank deposit form
   const [bankForm, setBankForm] = useState({
@@ -769,19 +770,55 @@ export default function AdminDepositCreator() {
                     />
                   </SelectTrigger>
                   <SelectContent>
-                    {users.map((user) => (
-                      <SelectItem key={user.id} value={user.id}>
-                        <div className="flex items-center space-x-2">
-                          <Users className="h-4 w-4" />
-                          <span>{user.full_name || user.email}</span>
-                          {user.client_id && (
-                            <Badge variant="outline" className="text-xs">
-                              {user.client_id}
-                            </Badge>
-                          )}
-                        </div>
-                      </SelectItem>
-                    ))}
+                    <div className="p-2 border-b">
+                      <Input
+                        placeholder="Search by name or email..."
+                        value={userSearch}
+                        onChange={(e) => setUserSearch(e.target.value)}
+                        className="h-8"
+                      />
+                    </div>
+                    <div className="max-h-60 overflow-y-auto">
+                      {users
+                        .filter((user) => {
+                          if (!userSearch) return true;
+                          const searchLower = userSearch.toLowerCase();
+                          const name = (user.full_name || "").toLowerCase();
+                          const email = (user.email || "").toLowerCase();
+                          return (
+                            name.includes(searchLower) ||
+                            email.includes(searchLower)
+                          );
+                        })
+                        .map((user) => (
+                          <SelectItem key={user.id} value={user.id}>
+                            <div className="flex items-center space-x-2">
+                              <Users className="h-4 w-4" />
+                              <span>{user.full_name || user.email}</span>
+                              {user.client_id && (
+                                <Badge variant="outline" className="text-xs">
+                                  {user.client_id}
+                                </Badge>
+                              )}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      {users.filter((user) => {
+                        if (!userSearch) return true;
+                        const searchLower = userSearch.toLowerCase();
+                        const name = (user.full_name || "").toLowerCase();
+                        const email = (user.email || "").toLowerCase();
+                        return (
+                          name.includes(searchLower) ||
+                          email.includes(searchLower)
+                        );
+                      }).length === 0 &&
+                        userSearch && (
+                          <div className="p-4 text-center text-gray-500 text-sm">
+                            No users found matching "{userSearch}"
+                          </div>
+                        )}
+                    </div>
                   </SelectContent>
                 </Select>
               </div>

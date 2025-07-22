@@ -81,6 +81,7 @@ export default function SimplifiedTaxManager() {
   );
   const [editingTax, setEditingTax] = useState<Tax | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [userSearchTerm, setUserSearchTerm] = useState<string>("");
 
   // Simplified form states - only essential fields
   const [taxType, setTaxType] = useState<string>("");
@@ -118,6 +119,23 @@ export default function SimplifiedTaxManager() {
       fetchTaxesForUser(selectedUser);
     }
   }, [selectedUser]);
+
+  const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
+
+  useEffect(() => {
+    if (!userSearchTerm.trim()) {
+      setFilteredUsers(users);
+    } else {
+      const filtered = users.filter(
+        (user) =>
+          user.full_name
+            ?.toLowerCase()
+            .includes(userSearchTerm.toLowerCase()) ||
+          user.email?.toLowerCase().includes(userSearchTerm.toLowerCase())
+      );
+      setFilteredUsers(filtered);
+    }
+  }, [users, userSearchTerm]);
 
   const setupRealtimeSubscription = () => {
     const subscription = supabase
@@ -501,6 +519,17 @@ export default function SimplifiedTaxManager() {
             {/* User Selection */}
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">Select Client</h3>
+              <div className="space-y-2">
+                <Label htmlFor="user-search">Search Clients</Label>
+                <Input
+                  id="user-search"
+                  type="text"
+                  placeholder="Search by name or email..."
+                  value={userSearchTerm}
+                  onChange={(e) => setUserSearchTerm(e.target.value)}
+                  className="w-full"
+                />
+              </div>
               <div>
                 <Label htmlFor="user-select">Choose Client *</Label>
                 <Select value={selectedUser} onValueChange={setSelectedUser}>
@@ -512,14 +541,20 @@ export default function SimplifiedTaxManager() {
                     />
                   </SelectTrigger>
                   <SelectContent>
-                    {users.map((user) => (
-                      <SelectItem key={user.id} value={user.id}>
-                        <div className="flex items-center space-x-2">
-                          <Users className="h-4 w-4" />
-                          <span>{user.full_name || user.email}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
+                    {filteredUsers.length === 0 && userSearchTerm ? (
+                      <div className="p-2 text-sm text-gray-500">
+                        No clients found
+                      </div>
+                    ) : (
+                      filteredUsers.map((user) => (
+                        <SelectItem key={user.id} value={user.id}>
+                          <div className="flex items-center space-x-2">
+                            <Users className="h-4 w-4" />
+                            <span>{user.full_name || user.email}</span>
+                          </div>
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
