@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,14 +13,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
   Phone,
@@ -33,6 +25,7 @@ import {
   Loader2,
   Send,
 } from "lucide-react";
+import LiveChatClient from "./live-chat-client";
 
 export default function SupportSection() {
   const { toast } = useToast();
@@ -45,6 +38,14 @@ export default function SupportSection() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [chatOpen, setChatOpen] = useState(false);
+
+  useEffect(() => {
+    // Check for existing chat session when component mounts
+    const savedSession = localStorage.getItem("chat_session");
+    if (savedSession) {
+      setChatOpen(true);
+    }
+  }, []);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -111,15 +112,6 @@ export default function SupportSection() {
     }
   };
 
-  const startLiveChat = () => {
-    setChatOpen(true);
-    // In a real app, this would initialize your chat widget
-    toast({
-      title: "Live Chat Starting",
-      description: "Connecting you with a support agent...",
-    });
-  };
-
   const faqItems = [
     {
       question: "How do I transfer money between currencies?",
@@ -174,6 +166,14 @@ export default function SupportSection() {
       default:
         return "text-green-600";
     }
+  };
+
+  const startLiveChat = () => {
+    setChatOpen(true);
+    toast({
+      title: "Live Chat",
+      description: "Opening chat window...",
+    });
   };
 
   return (
@@ -239,29 +239,13 @@ export default function SupportSection() {
               <MessageCircle className="w-8 h-8 mx-auto mb-3 text-[#F26623]" />
               <h3 className="font-medium mb-2">Live Chat</h3>
               <p className="text-sm text-gray-600 mb-3">Mon-Fri 9AM-6PM</p>
-              <Dialog open={chatOpen} onOpenChange={setChatOpen}>
-                <DialogTrigger asChild>
-                  <Button
-                    size="sm"
-                    className="bg-[#F26623] hover:bg-[#E55A1F] mt-3"
-                    onClick={startLiveChat}
-                  >
-                    Start Chat
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Live Chat Support</DialogTitle>
-                    <DialogDescription>
-                      You're being connected to a support agent. Please wait...
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="flex items-center justify-center p-8">
-                    <Loader2 className="w-8 h-8 animate-spin text-[#F26623]" />
-                    <span className="ml-2">Connecting...</span>
-                  </div>
-                </DialogContent>
-              </Dialog>
+              <Button
+                size="sm"
+                className="bg-[#F26623] hover:bg-[#E55A1F] mt-3"
+                onClick={() => startLiveChat()}
+              >
+                Start Chat
+              </Button>
             </CardContent>
           </Card>
         </div>
@@ -422,6 +406,7 @@ export default function SupportSection() {
           </CardContent>
         </Card>
       </div>
+      <LiveChatClient isOpen={chatOpen} onClose={() => setChatOpen(false)} />
     </div>
   );
 }

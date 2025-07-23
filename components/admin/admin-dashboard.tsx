@@ -32,6 +32,7 @@ import TaxManager from "./tax-manager";
 import UserPresenceTracker from "./user-presence-tracker";
 import PresenceManager from "./presence-manager";
 import AdminDepositCreator from "./admin-deposit-creator";
+import LiveChatAdmin from "./live-chat-admin";
 
 interface LocationInfo {
   ip: string;
@@ -1006,6 +1007,9 @@ export default function EnhancedAdminDashboard({
             <DatabaseTest />
           </TabsContent>
         </Tabs>
+
+        {/* Live Chat Admin Component */}
+        <LiveChatAdmin />
       </div>
     </div>
   );
