@@ -843,7 +843,7 @@ export default function DashboardContent({
     })}`;
   };
 
-  const getBalanceIcon = (currency: string) => {
+ {/* const getBalanceIcon = (currency: string) => {
     switch (currency) {
       case "usd":
         return (
@@ -875,7 +875,7 @@ export default function DashboardContent({
       default:
         return <DollarSign className="h-4 w-4" />;
     }
-  };
+  }; */}
 
   const getMessageIcon = (type: string) => {
     switch (type) {
@@ -1246,9 +1246,9 @@ export default function DashboardContent({
                           : "CAD"}{" "}
                         Balance
                       </CardTitle>
-                      {React.cloneElement(getBalanceIcon(currency), {
+                    {/* {React.cloneElement(getBalanceIcon(currency), {
                         className: "text-white w-4 h-4 sm:w-5 sm:h-5",
-                      })}
+                      })} */}
                     </CardHeader>
                     <CardContent className="p-4 sm:p-6 pt-0">
                       <div className="text-lg sm:text-xl lg:text-2xl font-bold text-white">
