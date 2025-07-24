@@ -549,11 +549,18 @@ export default function LiveChatAdmin() {
                         onClick={() => setActiveSession(session.id)}
                       >
                         <div className="flex items-center justify-between mb-1">
-                          <div className="flex items-center min-w-0">
-                            <User className="w-3 h-3 mr-2 text-gray-600 flex-shrink-0" />
-                            <span className="font-medium truncate text-gray-800">
-                              {session.client_name || "Anonymous"}
-                            </span>
+                          <div className="flex flex-col min-w-0">
+                            <div className="flex items-center min-w-0">
+                              <User className="w-3 h-3 mr-2 text-gray-600 flex-shrink-0" />
+                              <span className="font-medium truncate text-gray-800">
+                                {session.client_name || "Anonymous"}
+                              </span>
+                            </div>
+                            {session.client_email && (
+                              <div className="text-xs text-gray-500 truncate ml-5">
+                                {session.client_email}
+                              </div>
+                            )}
                           </div>
                           {session.unread_count! > 0 && (
                             <Badge
@@ -585,9 +592,20 @@ export default function LiveChatAdmin() {
                     {/* Chat Header - Fixed height */}
                     <div className="p-3 border-b bg-gray-50 flex-shrink-0">
                       <div className="flex items-center justify-between">
-                        <div className="text-sm font-medium truncate">
+                        <div className="flex flex-col">
+                          <div className="text-sm font-medium truncate">
+                            {sessions.find((s) => s.id === activeSession)
+                              ?.client_name || "Anonymous"}
+                          </div>
                           {sessions.find((s) => s.id === activeSession)
-                            ?.client_name || "Anonymous"}
+                            ?.client_email && (
+                            <div className="text-xs text-gray-500 truncate">
+                              {
+                                sessions.find((s) => s.id === activeSession)
+                                  ?.client_email
+                              }
+                            </div>
+                          )}
                         </div>
                         <Button
                           variant="ghost"
@@ -684,11 +702,18 @@ export default function LiveChatAdmin() {
                     className="p-2 rounded bg-gray-50 text-xs"
                   >
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        <User className="w-3 h-3 mr-1" />
-                        <span className="font-medium">
-                          {session.client_name || "Anonymous"}
-                        </span>
+                      <div className="flex flex-col">
+                        <div className="flex items-center">
+                          <User className="w-3 h-3 mr-1" />
+                          <span className="font-medium">
+                            {session.client_name || "Anonymous"}
+                          </span>
+                        </div>
+                        {session.client_email && (
+                          <div className="text-xs text-gray-500 ml-4">
+                            {session.client_email}
+                          </div>
+                        )}
                       </div>
                       <Badge variant="secondary" className="text-xs">
                         Closed

@@ -123,12 +123,21 @@ export default function LiveChatClient({
       return;
     }
 
+    if (!clientEmail.trim()) {
+      toast({
+        title: "Email Required",
+        description: "Please enter your email to start the chat",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       const { data, error } = await supabase
         .from("chat_sessions")
         .insert({
           client_name: clientName.trim(),
-          client_email: clientEmail.trim() || null,
+          client_email: clientEmail.trim(),
           status: "active",
         })
         .select()
@@ -562,7 +571,7 @@ export default function LiveChatClient({
                 />
               </div>
               <div>
-                <Label htmlFor="clientEmail">Email (Optional)</Label>
+                <Label htmlFor="clientEmail">Email *</Label>
                 <Input
                   id="clientEmail"
                   type="email"
@@ -574,7 +583,7 @@ export default function LiveChatClient({
               <Button
                 onClick={startChat}
                 className="w-full bg-[#F26623] hover:bg-[#E55A1F]"
-                disabled={!clientName.trim()}
+                disabled={!clientName.trim() || !clientEmail.trim()}
               >
                 Start Chat
               </Button>
