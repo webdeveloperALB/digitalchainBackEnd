@@ -16,7 +16,20 @@ import {
   Settings,
 } from "lucide-react";
 
-export default function CardSection() {
+interface UserProfile {
+  id: string;
+  client_id: string;
+  full_name: string;
+  email: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+interface CardSectionProps {
+  userProfile: UserProfile;
+}
+
+export default function CardSection({ userProfile }: CardSectionProps) {
   const [cards, setCards] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCardForm, setShowCardForm] = useState(false);
@@ -33,23 +46,22 @@ export default function CardSection() {
   });
 
   useEffect(() => {
-    fetchCards();
-  }, []);
+    if (userProfile?.id) {
+      fetchCards();
+    }
+  }, [userProfile?.id]);
 
   const fetchCards = async () => {
+    if (!userProfile?.id) return;
+
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user) {
-        const { data, error } = await supabase
-          .from("cards")
-          .select("*")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: false });
-        if (error) throw error;
-        setCards(data || []);
-      }
+      const { data, error } = await supabase
+        .from("cards")
+        .select("*")
+        .eq("user_id", userProfile.id)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      setCards(data || []);
     } catch (error) {
       console.error("Error fetching cards:", error);
     } finally {
@@ -84,49 +96,40 @@ export default function CardSection() {
   };
 
   const createCard = async () => {
+    if (!userProfile?.id) return;
+
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("full_name")
-          .eq("id", user.id)
-          .single();
+      const cardData = {
+        user_id: userProfile.id,
+        card_number: generateCardNumber(),
+        card_holder_name: userProfile.full_name?.toUpperCase() || "CARD HOLDER",
+        expiry_month: 12,
+        expiry_year: new Date().getFullYear() + 3,
+        cvv: generateCVV(),
+        pin: generatePIN(),
+        account_number: generateAccountNumber(),
+        card_type: "Virtual",
+        card_design: "orange-gradient",
+        spending_limit: Number.parseFloat(formData.spending_limit),
+        daily_limit: Number.parseFloat(formData.daily_limit),
+        international_enabled: formData.international_enabled,
+        delivery_address: null,
+        expected_delivery: null,
+        status: "Pending",
+        is_activated: false,
+      };
 
-        const cardData = {
-          user_id: user.id,
-          card_number: generateCardNumber(),
-          card_holder_name: profile?.full_name?.toUpperCase() || "CARD HOLDER",
-          expiry_month: 12,
-          expiry_year: new Date().getFullYear() + 3,
-          cvv: generateCVV(),
-          pin: generatePIN(),
-          account_number: generateAccountNumber(),
-          card_type: "Virtual",
-          card_design: "orange-gradient",
-          spending_limit: Number.parseFloat(formData.spending_limit),
-          daily_limit: Number.parseFloat(formData.daily_limit),
-          international_enabled: formData.international_enabled,
-          delivery_address: null,
-          expected_delivery: null,
-          status: "Pending",
-          is_activated: false,
-        };
+      const { error } = await supabase.from("cards").insert(cardData);
+      if (error) throw error;
 
-        const { error } = await supabase.from("cards").insert(cardData);
-        if (error) throw error;
-
-        setFormData({
-          spending_limit: "5000",
-          daily_limit: "1000",
-          international_enabled: false,
-        });
-        setShowCardForm(false);
-        fetchCards();
-        alert("New card request submitted! Your card is pending approval.");
-      }
+      setFormData({
+        spending_limit: "5000",
+        daily_limit: "1000",
+        international_enabled: false,
+      });
+      setShowCardForm(false);
+      fetchCards();
+      alert("New card request submitted! Your card is pending approval.");
     } catch (error: any) {
       alert(`Error: ${error.message}`);
     }

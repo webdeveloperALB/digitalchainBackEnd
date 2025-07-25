@@ -29,6 +29,19 @@ import {
   ChevronDown,
 } from "lucide-react";
 
+interface UserProfile {
+  id: string;
+  client_id: string;
+  full_name: string;
+  email: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+interface TransfersSectionProps {
+  userProfile: UserProfile;
+}
+
 // Define interfaces
 interface Currency {
   code: string;
@@ -66,7 +79,9 @@ interface Transfer {
   fee_amount: number;
 }
 
-export default function TransfersSection() {
+export default function TransfersSection({
+  userProfile,
+}: TransfersSectionProps) {
   const { balances, loading, error } = useRealtimeData();
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [currencies, setCurrencies] = useState<Currency[]>([]);
@@ -112,13 +127,15 @@ export default function TransfersSection() {
   const [showHistoryOnMobile, setShowHistoryOnMobile] = useState(false);
 
   useEffect(() => {
-    fetchTransfers();
-    initializeCurrencies();
-    initializeExchangeRates();
+    if (userProfile?.id) {
+      fetchTransfers();
+      initializeCurrencies();
+      initializeExchangeRates();
+    }
     return () => {
       exchangeRateService.cleanup();
     };
-  }, []);
+  }, [userProfile?.id]);
 
   const initializeExchangeRates = async () => {
     await exchangeRateService.initialize();
@@ -236,22 +253,19 @@ export default function TransfersSection() {
   };
 
   const fetchTransfers = async () => {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user) {
-        const { data, error } = await supabase
-          .from("transfers")
-          .select("*")
-          .eq("user_id", user.id)
-          // Filter to only show transfers created by this component
-          .in("transfer_type", ["internal", "bank_transfer"])
-          .order("created_at", { ascending: false });
+    if (!userProfile?.id) return;
 
-        if (error) throw error;
-        setTransfers(data || []);
-      }
+    try {
+      const { data, error } = await supabase
+        .from("transfers")
+        .select("*")
+        .eq("user_id", userProfile.id)
+        // Filter to only show transfers created by this component
+        .in("transfer_type", ["internal", "bank_transfer"])
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setTransfers(data || []);
     } catch (error) {
       console.error("Error fetching transfers:", error);
     }
@@ -300,12 +314,9 @@ export default function TransfersSection() {
   };
 
   const executeInternalTransfer = async () => {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
+    if (!userProfile?.id) return;
 
+    try {
       const amount = Number.parseFloat(internalFormData.amount);
       const fromCurrency = internalFormData.from_currency.toUpperCase();
       const toCurrency = internalFormData.to_currency.toUpperCase();
@@ -328,7 +339,7 @@ export default function TransfersSection() {
       const { data: transferData, error: transferError } = await supabase
         .from("transfers")
         .insert({
-          user_id: user.id,
+          user_id: userProfile.id,
           from_currency: internalFormData.from_currency,
           to_currency: internalFormData.to_currency,
           from_amount: amount,
@@ -358,18 +369,18 @@ export default function TransfersSection() {
           supabase
             .from(fromTable)
             .update({ balance: newFromBalance })
-            .eq("user_id", user.id),
+            .eq("user_id", userProfile.id),
           supabase
             .from(toTable)
             .update({ balance: newToBalance })
-            .eq("user_id", user.id),
+            .eq("user_id", userProfile.id),
         ]);
       }
 
       // Add transaction records
       await supabase.from("transactions").insert([
         {
-          user_id: user.id,
+          user_id: userProfile.id,
           type: "Transfer Out",
           amount: amount + transferFee,
           currency: internalFormData.from_currency,
@@ -377,7 +388,7 @@ export default function TransfersSection() {
           status: "Successful",
         },
         {
-          user_id: user.id,
+          user_id: userProfile.id,
           type: "Transfer In",
           amount: toAmount,
           currency: internalFormData.to_currency,
@@ -403,12 +414,9 @@ export default function TransfersSection() {
   };
 
   const executeBankTransfer = async () => {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
+    if (!userProfile?.id) return;
 
+    try {
       const amount = Number.parseFloat(bankFormData.amount);
       const fromCurrency = bankFormData.from_currency.toUpperCase();
       const toCurrency = bankFormData.to_currency.toUpperCase();
@@ -428,7 +436,7 @@ export default function TransfersSection() {
       const { data: transferData, error: transferError } = await supabase
         .from("transfers")
         .insert({
-          user_id: user.id,
+          user_id: userProfile.id,
           from_currency: bankFormData.from_currency,
           to_currency: bankFormData.to_currency,
           from_amount: amount,
@@ -462,12 +470,12 @@ export default function TransfersSection() {
         await supabase
           .from(fromTable)
           .update({ balance: newFromBalance })
-          .eq("user_id", user.id);
+          .eq("user_id", userProfile.id);
       }
 
       // Add transaction record
       await supabase.from("transactions").insert({
-        user_id: user.id,
+        user_id: userProfile.id,
         type: "Bank Transfer",
         amount: amount + transferFee,
         currency: bankFormData.from_currency,

@@ -24,8 +24,33 @@ import {
   ArrowUpDown,
 } from "lucide-react";
 
-export default function PaymentsSection() {
-  const [payments, setPayments] = useState<any[]>([]);
+interface UserProfile {
+  id: string;
+  client_id: string;
+  full_name: string;
+  email: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+interface PaymentsSectionProps {
+  userProfile: UserProfile;
+}
+
+interface Payment {
+  id: string;
+  amount: number;
+  currency: string;
+  recipient: string;
+  status: string;
+  created_at: string;
+  due_date?: string;
+  payment_type: string;
+  description: string;
+}
+
+export default function PaymentsSection({ userProfile }: PaymentsSectionProps) {
+  const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [formData, setFormData] = useState({
@@ -38,25 +63,23 @@ export default function PaymentsSection() {
   });
 
   useEffect(() => {
-    fetchPayments();
-  }, []);
+    if (userProfile?.id) {
+      fetchPayments();
+    }
+  }, [userProfile?.id]);
 
   const fetchPayments = async () => {
+    if (!userProfile?.id) return;
+
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const { data, error } = await supabase
+        .from("payments")
+        .select("*")
+        .eq("user_id", userProfile.id)
+        .order("created_at", { ascending: false });
 
-      if (user) {
-        const { data, error } = await supabase
-          .from("payments")
-          .select("*")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
-        setPayments(data || []);
-      }
+      if (error) throw error;
+      setPayments(data || []);
     } catch (error) {
       console.error("Error fetching payments:", error);
     } finally {
@@ -65,49 +88,45 @@ export default function PaymentsSection() {
   };
 
   const submitPayment = async () => {
+    if (!userProfile?.id) return;
+
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const { error } = await supabase.from("payments").insert({
+        user_id: userProfile.id,
+        payment_type: formData.payment_type,
+        amount: Number.parseFloat(formData.amount),
+        currency: formData.currency,
+        description: formData.description,
+        recipient: formData.recipient,
+        due_date: formData.due_date || null,
+        status: "Pending",
+      });
 
-      if (user) {
-        const { error } = await supabase.from("payments").insert({
-          user_id: user.id,
-          payment_type: formData.payment_type,
-          amount: Number.parseFloat(formData.amount),
-          currency: formData.currency,
-          description: formData.description,
-          recipient: formData.recipient,
-          due_date: formData.due_date || null,
-          status: "Pending",
-        });
+      if (error) throw error;
 
-        if (error) throw error;
+      // Add transaction record
+      await supabase.from("transactions").insert({
+        user_id: userProfile.id,
+        type: "Payment",
+        amount: Number.parseFloat(formData.amount),
+        currency: formData.currency,
+        description: `${formData.payment_type} - ${formData.description}`,
+        platform: "Digital Chain Bank",
+        status: "Pending",
+        recipient_name: formData.recipient,
+      });
 
-        // Add transaction record
-        await supabase.from("transactions").insert({
-          user_id: user.id,
-          type: "Payment",
-          amount: Number.parseFloat(formData.amount),
-          currency: formData.currency,
-          description: `${formData.payment_type} - ${formData.description}`,
-          platform: "Digital Chain Bank",
-          status: "Pending",
-          recipient_name: formData.recipient,
-        });
-
-        setFormData({
-          payment_type: "",
-          amount: "",
-          currency: "EUR",
-          description: "",
-          recipient: "",
-          due_date: "",
-        });
-        setShowPaymentForm(false);
-        fetchPayments();
-        alert("Payment request submitted successfully!");
-      }
+      setFormData({
+        payment_type: "",
+        amount: "",
+        currency: "EUR",
+        description: "",
+        recipient: "",
+        due_date: "",
+      });
+      setShowPaymentForm(false);
+      fetchPayments();
+      alert("Payment request submitted successfully!");
     } catch (error: any) {
       alert(`Error: ${error.message}`);
     }

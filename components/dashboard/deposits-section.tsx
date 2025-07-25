@@ -17,6 +17,19 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
+interface UserProfile {
+  id: string;
+  client_id: string;
+  full_name: string;
+  email: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+interface DepositsSectionProps {
+  userProfile: UserProfile;
+}
+
 interface Deposit {
   id: string;
   user_id: string;
@@ -32,7 +45,9 @@ interface Deposit {
   admin_notes?: string;
 }
 
-export default function ClientDepositsView() {
+export default function ClientDepositsView({
+  userProfile,
+}: DepositsSectionProps) {
   const [deposits, setDeposits] = useState<Deposit[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ type: string; text: string } | null>(
@@ -40,46 +55,45 @@ export default function ClientDepositsView() {
   );
 
   useEffect(() => {
-    fetchDeposits();
+    if (userProfile?.id) {
+      fetchDeposits();
 
-    // Set up real-time subscription for deposits
-    const subscription = supabase
-      .channel("client_deposits_changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "deposits",
-        },
-        (payload) => {
-          console.log("Client deposit change received:", payload);
-          fetchDeposits();
-        }
-      )
-      .subscribe();
+      // Set up real-time subscription for deposits
+      const subscription = supabase
+        .channel("client_deposits_changes")
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "deposits",
+            filter: `user_id=eq.${userProfile.id}`,
+          },
+          (payload) => {
+            console.log("Client deposit change received:", payload);
+            fetchDeposits();
+          }
+        )
+        .subscribe();
 
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
+      return () => {
+        subscription.unsubscribe();
+      };
+    }
+  }, [userProfile?.id]);
 
   const fetchDeposits = async () => {
+    if (!userProfile?.id) return;
+
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const { data, error } = await supabase
+        .from("deposits")
+        .select("*")
+        .eq("user_id", userProfile.id)
+        .order("created_at", { ascending: false });
 
-      if (user) {
-        const { data, error } = await supabase
-          .from("deposits")
-          .select("*")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
-        setDeposits(data || []);
-      }
+      if (error) throw error;
+      setDeposits(data || []);
     } catch (error) {
       console.error("Error fetching deposits:", error);
       setMessage({ type: "error", text: "Failed to load deposits" });

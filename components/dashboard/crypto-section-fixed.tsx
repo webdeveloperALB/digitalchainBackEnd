@@ -29,6 +29,19 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 
+interface UserProfile {
+  id: string;
+  client_id: string;
+  full_name: string;
+  email: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+interface CryptoSectionProps {
+  userProfile: UserProfile;
+}
+
 interface CryptoTransaction {
   id: string;
   user_id: string;
@@ -51,7 +64,9 @@ interface CryptoBalances {
   usdt_balance: number;
 }
 
-export default function RealCryptoTransferSection() {
+export default function RealCryptoTransferSection({
+  userProfile,
+}: CryptoSectionProps) {
   const [cryptoTransactions, setCryptoTransactions] = useState<
     CryptoTransaction[]
   >([]);
@@ -85,7 +100,8 @@ export default function RealCryptoTransferSection() {
       value: "BTC",
       label: "Bitcoin",
       symbol: "₿",
-      iconUrl: "https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/svg/color/btc.svg",
+      iconUrl:
+        "https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/svg/color/btc.svg",
       color: "bg-orange-500",
       decimals: 8,
       networks: [
@@ -97,7 +113,8 @@ export default function RealCryptoTransferSection() {
       value: "ETH",
       label: "Ethereum",
       symbol: "Ξ",
-      iconUrl: "https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/svg/color/eth.svg",
+      iconUrl:
+        "https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/svg/color/eth.svg",
       color: "bg-blue-500",
       decimals: 8,
       networks: [
@@ -111,7 +128,8 @@ export default function RealCryptoTransferSection() {
       value: "USDT",
       label: "Tether USD",
       symbol: "$",
-      iconUrl: "https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/svg/color/usdt.svg",
+      iconUrl:
+        "https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/svg/color/usdt.svg",
       color: "bg-green-500",
       decimals: 6,
       networks: [
@@ -125,10 +143,12 @@ export default function RealCryptoTransferSection() {
   ];
 
   useEffect(() => {
-    fetchCryptoTransactions();
-    fetchCryptoBalances();
-    setupRealtimeSubscription();
-  }, []);
+    if (userProfile?.id) {
+      fetchCryptoTransactions();
+      fetchCryptoBalances();
+      setupRealtimeSubscription();
+    }
+  }, [userProfile?.id]);
 
   useEffect(() => {
     const pending = cryptoTransactions.filter(
@@ -138,67 +158,61 @@ export default function RealCryptoTransferSection() {
   }, [cryptoTransactions]);
 
   const fetchCryptoBalances = async () => {
+    if (!userProfile?.id) return;
+
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user) {
-        const { data, error } = await supabase
-          .from("newcrypto_balances")
-          .select("btc_balance, eth_balance, usdt_balance")
-          .eq("user_id", user.id)
-          .single();
+      const { data, error } = await supabase
+        .from("newcrypto_balances")
+        .select("btc_balance, eth_balance, usdt_balance")
+        .eq("user_id", userProfile.id)
+        .single();
 
-        if (error) {
-          if (error.code === "PGRST116") {
-            // No record found, create one
-            const { error: insertError } = await supabase
-              .from("newcrypto_balances")
-              .insert({
-                user_id: user.id,
-                btc_balance: 0,
-                eth_balance: 0,
-                usdt_balance: 0,
-              });
+      if (error) {
+        if (error.code === "PGRST116") {
+          // No record found, create one
+          const { error: insertError } = await supabase
+            .from("newcrypto_balances")
+            .insert({
+              user_id: userProfile.id,
+              btc_balance: 0,
+              eth_balance: 0,
+              usdt_balance: 0,
+            });
 
-            if (!insertError) {
-              setCryptoBalances({
-                btc_balance: 0,
-                eth_balance: 0,
-                usdt_balance: 0,
-              });
-            }
+          if (!insertError) {
+            setCryptoBalances({
+              btc_balance: 0,
+              eth_balance: 0,
+              usdt_balance: 0,
+            });
           }
-          throw error;
         }
-
-        setCryptoBalances({
-          btc_balance: Number(data?.btc_balance) || 0,
-          eth_balance: Number(data?.eth_balance) || 0,
-          usdt_balance: Number(data?.usdt_balance) || 0,
-        });
+        throw error;
       }
+
+      setCryptoBalances({
+        btc_balance: Number(data?.btc_balance) || 0,
+        eth_balance: Number(data?.eth_balance) || 0,
+        usdt_balance: Number(data?.usdt_balance) || 0,
+      });
     } catch (error) {
       console.error("Error fetching crypto balances:", error);
     }
   };
 
   const fetchCryptoTransactions = async () => {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user) {
-        const { data, error } = await supabase
-          .from("crypto_transactions")
-          .select("*")
-          .eq("user_id", user.id)
-          .eq("transaction_type", "Transfer")
-          .order("created_at", { ascending: false });
+    if (!userProfile?.id) return;
 
-        if (error) throw error;
-        setCryptoTransactions(data || []);
-      }
+    try {
+      const { data, error } = await supabase
+        .from("crypto_transactions")
+        .select("*")
+        .eq("user_id", userProfile.id)
+        .eq("transaction_type", "Transfer")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setCryptoTransactions(data || []);
     } catch (error) {
       console.error("Error fetching crypto transactions:", error);
     } finally {
@@ -207,10 +221,7 @@ export default function RealCryptoTransferSection() {
   };
 
   const setupRealtimeSubscription = async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!userProfile?.id) return;
 
     const transactionSubscription = supabase
       .channel("crypto_transaction_changes")
@@ -220,7 +231,7 @@ export default function RealCryptoTransferSection() {
           event: "*",
           schema: "public",
           table: "crypto_transactions",
-          filter: `user_id=eq.${user.id}`,
+          filter: `user_id=eq.${userProfile.id}`,
         },
         (payload) => {
           console.log("Transaction status changed:", payload);
@@ -245,7 +256,7 @@ export default function RealCryptoTransferSection() {
           event: "*",
           schema: "public",
           table: "newcrypto_balances",
-          filter: `user_id=eq.${user.id}`,
+          filter: `user_id=eq.${userProfile.id}`,
         },
         () => {
           fetchCryptoBalances();
@@ -284,16 +295,10 @@ export default function RealCryptoTransferSection() {
   };
 
   const submitTransfer = async () => {
+    if (!userProfile?.id) return;
+
     try {
       setSubmitting(true);
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        alert("User not authenticated");
-        return;
-      }
 
       const amount = Number.parseFloat(formData.amount);
       const gasFee = Number.parseFloat(formData.gas_fee);
@@ -314,7 +319,7 @@ export default function RealCryptoTransferSection() {
       const { data, error } = await supabase.rpc(
         "process_real_crypto_transfer",
         {
-          p_user_id: user.id,
+          p_user_id: userProfile.id,
           p_crypto_type: formData.crypto_type,
           p_network: formData.network,
           p_amount: amount,
@@ -340,7 +345,7 @@ export default function RealCryptoTransferSection() {
 
       // Add to general transactions for tracking
       await supabase.from("transactions").insert({
-        user_id: user.id,
+        user_id: userProfile.id,
         transaction_type: "Crypto Transfer",
         amount: totalAmount,
         currency: formData.crypto_type,

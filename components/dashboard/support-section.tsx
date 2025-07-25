@@ -27,7 +27,20 @@ import {
 } from "lucide-react";
 import LiveChatClient from "./live-chat-client";
 
-export default function SupportSection() {
+interface UserProfile {
+  id: string;
+  client_id: string;
+  full_name: string;
+  email: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+interface SupportSectionProps {
+  userProfile: UserProfile;
+}
+
+export default function SupportSection({ userProfile }: SupportSectionProps) {
   const { toast } = useToast();
   const [ticketForm, setTicketForm] = useState({
     subject: "",

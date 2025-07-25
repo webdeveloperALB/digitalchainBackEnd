@@ -15,7 +15,20 @@ import {
 } from "@/components/ui/select";
 import { Plus, Trash2, CheckCircle, XCircle, AlertCircle } from "lucide-react";
 
-export default function AccountsSection() {
+interface UserProfile {
+  id: string;
+  client_id: string;
+  full_name: string;
+  email: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+interface AccountsSectionProps {
+  userProfile: UserProfile;
+}
+
+export default function AccountsSection({ userProfile }: AccountsSectionProps) {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -30,31 +43,22 @@ export default function AccountsSection() {
   });
 
   useEffect(() => {
-    fetchAccounts();
-  }, []);
+    if (userProfile?.id) {
+      fetchAccounts();
+    }
+  }, [userProfile?.id]);
 
   const fetchAccounts = async () => {
+    if (!userProfile?.id) return;
+
     try {
       setError(null);
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError) {
-        throw new Error(`Authentication error: ${userError.message}`);
-      }
-
-      if (!user) {
-        throw new Error("No authenticated user found");
-      }
-
-      console.log("Fetching accounts for user:", user.id);
+      console.log("Fetching accounts for user:", userProfile.id);
 
       const { data, error: fetchError } = await supabase
         .from("external_accounts")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("user_id", userProfile.id)
         .order("created_at", { ascending: false });
 
       if (fetchError) {
@@ -73,18 +77,13 @@ export default function AccountsSection() {
   };
 
   const addAccount = async () => {
+    if (!userProfile?.id) return;
+
     try {
       setError(null);
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        throw new Error("No authenticated user found");
-      }
 
       const { error } = await supabase.from("external_accounts").insert({
-        user_id: user.id,
+        user_id: userProfile.id,
         ...formData,
       });
 
@@ -154,7 +153,7 @@ export default function AccountsSection() {
                     onClick={fetchAccounts}
                     variant="outline"
                     size="sm"
-                    className="mt-3 border-red-300 text-red-700 hover:bg-red-100"
+                    className="mt-3 border-red-300 text-red-700 hover:bg-red-100 bg-transparent"
                   >
                     Try Again
                   </Button>

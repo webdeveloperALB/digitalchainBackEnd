@@ -13,54 +13,42 @@ import {
   Trash2,
 } from "lucide-react";
 
-export default function MessageSection() {
+interface UserProfile {
+  id: string;
+  client_id: string;
+  full_name: string;
+  email: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+interface MessageSectionProps {
+  userProfile: UserProfile;
+}
+
+export default function MessageSection({ userProfile }: MessageSectionProps) {
   const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [userProfile, setUserProfile] = useState<any>(null);
 
   useEffect(() => {
-    fetchUserProfile();
-    fetchMessages();
-  }, []);
-
-  const fetchUserProfile = async () => {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (user) {
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", user.id)
-          .single();
-
-        if (error) throw error;
-        setUserProfile(data);
-      }
-    } catch (error) {
-      console.error("Error fetching user profile:", error);
+    if (userProfile?.id) {
+      fetchMessages();
     }
-  };
+  }, [userProfile?.id]);
 
   const fetchMessages = async () => {
+    if (!userProfile?.id) return;
+
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const { data, error } = await supabase
+        .from("user_messages")
+        .select("*")
+        .eq("user_id", userProfile.id)
+        .order("created_at", { ascending: false });
 
-      if (user) {
-        const { data, error } = await supabase
-          .from("user_messages")
-          .select("*")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
-        setMessages(data || []);
-        console.log("Fetched messages from database:", data);
-      }
+      if (error) throw error;
+      setMessages(data || []);
+      console.log("Fetched messages from database:", data);
     } catch (error) {
       console.error("Error fetching messages:", error);
     } finally {
@@ -70,7 +58,6 @@ export default function MessageSection() {
 
   const markAsRead = async (messageId: string) => {
     try {
-      // Remove the updated_at field since it doesn't exist in your schema
       const { error } = await supabase
         .from("user_messages")
         .update({ is_read: true })
@@ -148,12 +135,10 @@ export default function MessageSection() {
         <div className="flex justify-between items-center">
           <div>
             <h2 className="text-2xl font-bold">Messages</h2>
-            {userProfile && (
-              <p className="text-sm text-gray-600">
-                Welcome {userProfile.full_name} (Client ID:{" "}
-                {userProfile.client_id})
-              </p>
-            )}
+            <p className="text-sm text-gray-600">
+              Welcome {userProfile.full_name} (Client ID:{" "}
+              {userProfile.client_id})
+            </p>
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-gray-600">

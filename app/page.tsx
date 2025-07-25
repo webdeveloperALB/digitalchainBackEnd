@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import AuthForm from "@/components/auth/auth-form";
 import Dashboard from "@/components/dashboard/dashboard";
@@ -11,9 +11,36 @@ export default function Page() {
   const [loading, setLoading] = useState(true);
   const [kycStatus, setKycStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const hasInitialized = useRef(false);
+  const isCheckingKYC = useRef(false);
+
+  // Prevent re-initialization on tab switch by checking if we already have user data
+  useEffect(() => {
+    const checkPersistedSession = async () => {
+      if (!loading || user) return; // Skip if already loaded or has user
+
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (session?.user) {
+          setUser(session.user);
+          setLoading(false);
+          await checkKYCStatus(session.user.id);
+        }
+      } catch (error) {
+        console.error("Session check error:", error);
+      }
+    };
+
+    checkPersistedSession();
+  }, []); // Empty dependency array - only run once on mount
 
   // Simplified KYC status check
   const checkKYCStatus = async (userId: string) => {
+    if (isCheckingKYC.current) return; // Prevent double execution
+    isCheckingKYC.current = true;
+
     try {
       console.log("Checking KYC status for user:", userId);
 
@@ -37,16 +64,22 @@ export default function Page() {
       console.error("Error checking KYC status:", error);
       // Default to approved on error to avoid blocking users
       setKycStatus("approved");
+    } finally {
+      isCheckingKYC.current = false;
     }
   };
 
-  // Initialize authentication
+  // Initialize authentication - separate from auth listener
   useEffect(() => {
     let mounted = true;
 
     const initializeAuth = async () => {
+      // Prevent re-initialization if already done
+      if (hasInitialized.current || user) return;
+
       try {
         console.log("Initializing authentication...");
+        hasInitialized.current = true;
 
         const {
           data: { session },
@@ -86,7 +119,19 @@ export default function Page() {
       }
     };
 
-    initializeAuth();
+    // Only initialize if we don't have a user yet and we're still loading
+    if (loading && !user && !hasInitialized.current) {
+      initializeAuth();
+    }
+
+    return () => {
+      mounted = false;
+    };
+  }, []); // Empty dependency array - only run once on mount
+
+  // Separate useEffect for auth listener - runs only once
+  useEffect(() => {
+    let mounted = true;
 
     // Listen for auth changes
     const {
@@ -95,6 +140,9 @@ export default function Page() {
       console.log("Auth state changed:", event, session?.user?.id || "No user");
 
       if (!mounted) return;
+
+      // Only handle actual auth changes, not initial session
+      if (event === "INITIAL_SESSION") return;
 
       const currentUser = session?.user ?? null;
       setUser(currentUser);
@@ -113,7 +161,7 @@ export default function Page() {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, []); // Empty dependency array - only run once on mount
 
   // Loading screen component
   const LoadingScreen = ({ message }: { message: string }) => (
@@ -255,5 +303,6 @@ export default function Page() {
 
   // Default to dashboard - this will handle approved, skipped, or any other status
   console.log("Loading dashboard for user:", user.id);
+  console.trace("Dashboard render trace"); // This will show us the call stack
   return <Dashboard />;
 }

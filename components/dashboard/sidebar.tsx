@@ -74,38 +74,62 @@ export default function Sidebar({
 
   // Function to refresh menu items from backend/database
   const refreshMenuItems = useCallback(async () => {
+    if (!userProfile?.id) {
+      console.log("No user profile available, skipping menu refresh");
+      return;
+    }
+
     try {
-      // This is where you would fetch updated menu items from your backend
-      // For now, I'll simulate a refresh that might update badges, enabled states, etc.
-
-      // Example: Fetch menu permissions or notifications
-      const { data: userPermissions }: { data: UserPermissionData[] | null } =
-        await supabase
+      // Fetch user permissions with error handling
+      let userPermissions: UserPermissionData[] = [];
+      try {
+        const { data, error } = await supabase
           .from("user_permissions")
-          .select("*")
-          .eq("user_id", userProfile?.id);
+          .select("menu_item, is_enabled")
+          .eq("user_id", userProfile.id);
 
-      // Example: Fetch notification counts for menu items
-      const { data: notifications }: { data: NotificationData[] | null } =
-        await supabase
+        if (error) {
+          console.warn("Could not fetch user permissions:", error.message);
+          // If table doesn't exist or other error, use default permissions
+        } else if (data) {
+          userPermissions = data;
+        }
+      } catch (permError) {
+        console.warn("Error fetching permissions:", permError);
+      }
+
+      // Fetch notification counts with error handling
+      let notifications: NotificationData[] = [];
+      try {
+        const { data, error } = await supabase
           .from("notifications")
           .select("menu_item, count")
-          .eq("user_id", userProfile?.id)
+          .eq("user_id", userProfile.id)
           .eq("is_read", false);
+
+        if (error) {
+          console.warn("Could not fetch notifications:", error.message);
+          // If table doesn't exist or other error, continue without notifications
+        } else if (data) {
+          notifications = data;
+        }
+      } catch (notifError) {
+        console.warn("Error fetching notifications:", notifError);
+      }
 
       // Update menu items with fresh data while preserving structure
       setMenuItems((prevItems) =>
         prevItems.map((item) => {
           // Find if there are notifications for this menu item
-          const notification = notifications?.find(
+          const notification = notifications.find(
             (n) => n.menu_item === item.id
           );
 
           // Check if user has permission for this menu item
-          const hasPermission =
-            userPermissions?.some(
-              (p) => p.menu_item === item.id && p.is_enabled
-            ) ?? true; // Default to true if no permissions data
+          const permission = userPermissions.find(
+            (p) => p.menu_item === item.id
+          );
+          const hasPermission = permission ? permission.is_enabled : true; // Default to true if no permissions data
 
           return {
             ...item,
@@ -117,24 +141,21 @@ export default function Sidebar({
           };
         })
       );
-
-      // Silent background refresh - no console logs in production
-      // console.log('Menu items refreshed silently');
     } catch (error) {
       // Silent error handling - don't disrupt user experience
       console.error("Background menu refresh failed:", error);
     }
   }, [userProfile?.id]);
 
-  // Set up background refresh every 2 seconds
+  // Set up background refresh every 30 seconds (reduced frequency)
   useEffect(() => {
     // Initial refresh
     refreshMenuItems();
 
-    // Set up interval for background refresh
+    // Set up interval for background refresh (increased to 30 seconds to reduce load)
     const refreshInterval = setInterval(() => {
       refreshMenuItems();
-    }, 2000); // 2 seconds
+    }, 30000); // 30 seconds
 
     // Cleanup interval on unmount
     return () => {
@@ -154,26 +175,33 @@ export default function Sidebar({
       if (user) {
         console.log("Logging out user:", user.id);
 
-        // Mark user as offline before signing out
-        const timestamp = new Date().toISOString();
-        const { error: presenceError } = await supabase
-          .from("user_presence")
-          .upsert(
-            {
-              user_id: user.id,
-              is_online: false,
-              last_seen: timestamp,
-              updated_at: timestamp,
-            },
-            {
-              onConflict: "user_id",
-            }
-          );
+        // Try to mark user as offline before signing out
+        try {
+          const timestamp = new Date().toISOString();
+          const { error: presenceError } = await supabase
+            .from("user_presence")
+            .upsert(
+              {
+                user_id: user.id,
+                is_online: false,
+                last_seen: timestamp,
+                updated_at: timestamp,
+              },
+              {
+                onConflict: "user_id",
+              }
+            );
 
-        if (presenceError) {
-          console.error("Error updating presence on logout:", presenceError);
-        } else {
-          console.log("Successfully marked user offline on logout");
+          if (presenceError) {
+            console.warn(
+              "Could not update presence on logout:",
+              presenceError.message
+            );
+          } else {
+            console.log("Successfully marked user offline on logout");
+          }
+        } catch (presenceError) {
+          console.warn("Error updating presence on logout:", presenceError);
         }
 
         // Small delay to ensure the presence update completes
@@ -235,13 +263,12 @@ export default function Sidebar({
         <div className="px-6 pt-2 flex-shrink-0 border-b border-gray-200/50">
           <div className="flex items-center">
             <Image
-              src="/logo.svg"
+              src="/logo.svg?height=96&width=160&text=Digital+Chain+Bank"
               alt="Digital Chain Bank Logo"
               width={160}
               height={96}
               className="mr-3 w-[160px] h-[96px] object-contain"
             />
-            {/* your text or other elements */}
           </div>
         </div>
 

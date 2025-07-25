@@ -214,13 +214,9 @@ export default function LoansSection({}: LoansSectionProps) {
   const renderStep1 = () => (
     <div className="space-y-6">
       <div className="text-center mb-8">
-        <DollarSign className="h-10 w-10 sm:h-12 sm:w-12 text-[#F26623] mx-auto mb-4" />
-        <h3 className="text-lg sm:text-xl font-semibold text-gray-900">
-          Loan Details
-        </h3>
-        <p className="text-sm sm:text-base text-gray-600 mt-2">
-          Tell us about the loan you need
-        </p>
+        <DollarSign className="h-12 w-12 text-[#F26623] mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900">Loan Details</h3>
+        <p className="text-gray-600 mt-2">Tell us about the loan you need</p>
       </div>
 
       <div className="space-y-4">
@@ -282,11 +278,11 @@ export default function LoansSection({}: LoansSectionProps) {
   const renderStep2 = () => (
     <div className="space-y-6">
       <div className="text-center mb-8">
-        <Briefcase className="h-10 w-10 sm:h-12 sm:w-12 text-[#F26623] mx-auto mb-4" />
-        <h3 className="text-lg sm:text-xl font-semibold text-gray-900">
+        <Briefcase className="h-12 w-12 text-[#F26623] mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900">
           Employment Information
         </h3>
-        <p className="text-sm sm:text-base text-gray-600 mt-2">
+        <p className="text-gray-600 mt-2">
           Help us understand your financial situation
         </p>
       </div>
@@ -382,16 +378,16 @@ export default function LoansSection({}: LoansSectionProps) {
   const renderStep3 = () => (
     <div className="space-y-6">
       <div className="text-center mb-8">
-        <User className="h-10 w-10 sm:h-12 sm:w-12 text-[#F26623] mx-auto mb-4" />
-        <h3 className="text-lg sm:text-xl font-semibold text-gray-900">
+        <User className="h-12 w-12 text-[#F26623] mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900">
           Personal Information
         </h3>
-        <p className="text-sm sm:text-base text-gray-600 mt-2">
+        <p className="text-gray-600 mt-2">
           We need your personal details for verification
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <Label htmlFor="firstName">First Name *</Label>
           <Input
@@ -449,7 +445,7 @@ export default function LoansSection({}: LoansSectionProps) {
           )}
         </div>
 
-        <div className="sm:col-span-2">
+        <div className="md:col-span-2">
           <Label htmlFor="address">Address *</Label>
           <Input
             id="address"
@@ -529,11 +525,11 @@ export default function LoansSection({}: LoansSectionProps) {
   const renderStep4 = () => (
     <div className="space-y-6">
       <div className="text-center mb-8">
-        <FileText className="h-10 w-10 sm:h-12 sm:w-12 text-[#F26623] mx-auto mb-4" />
-        <h3 className="text-lg sm:text-xl font-semibold text-gray-900">
+        <FileText className="h-12 w-12 text-[#F26623] mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900">
           Financial Information
         </h3>
-        <p className="text-sm sm:text-base text-gray-600 mt-2">
+        <p className="text-gray-600 mt-2">
           Final details to complete your application
         </p>
       </div>
@@ -618,13 +614,13 @@ export default function LoansSection({}: LoansSectionProps) {
   };
 
   return (
-    <div className="flex-1 p-4 pt-0 pt-xs-16 sm:p-6 lg:p-8 bg-gray-50 overflow-auto">
+    <div className="flex-1 p-3 sm:p-6 lg:p-8 bg-gray-50 overflow-auto">
       <div className="max-w-4xl mx-auto">
         <div className="mb-6 sm:mb-8">
-          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 leading-tight">
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 leading-tight">
             Loan Application
           </h1>
-          <p className="text-base sm:text-lg text-gray-600 mt-1">
+          <p className="text-sm sm:text-base text-gray-600 mt-1">
             Apply for a loan with Digital Chain Bank - Fast, secure, and
             reliable
           </p>
@@ -636,7 +632,7 @@ export default function LoansSection({}: LoansSectionProps) {
             {Array.from({ length: totalSteps }, (_, i) => i + 1).map((step) => (
               <div key={step} className="flex items-center">
                 <div
-                  className={`w-10 h-10 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
                     step <= currentStep
                       ? "bg-[#F26623] text-white"
                       : "bg-gray-200 text-gray-600"
@@ -650,7 +646,7 @@ export default function LoansSection({}: LoansSectionProps) {
                 </div>
                 {step < totalSteps && (
                   <div
-                    className={`w-8 sm:w-16 h-1 mx-1 sm:mx-2 ${
+                    className={`w-16 h-1 mx-2 ${
                       step < currentStep ? "bg-[#F26623]" : "bg-gray-200"
                     }`}
                   />
@@ -659,7 +655,7 @@ export default function LoansSection({}: LoansSectionProps) {
             ))}
           </div>
           <div className="text-center">
-            <span className="text-xs sm:text-sm text-gray-600">
+            <span className="text-sm text-gray-600">
               Step {currentStep} of {totalSteps}
             </span>
           </div>
@@ -667,23 +663,23 @@ export default function LoansSection({}: LoansSectionProps) {
 
         {/* Form Card */}
         <Card className="shadow-lg border-0">
-          <CardHeader className="bg-[#F5F0F0] border-b p-4 sm:p-6">
-            <CardTitle className="flex items-center text-base sm:text-lg">
-              <Building2 className="h-4 w-4 sm:h-5 sm:w-5 mr-2 text-[#F26623]" />
+          <CardHeader className="bg-[#F5F0F0] border-b p-6">
+            <CardTitle className="flex items-center text-lg">
+              <Building2 className="h-5 w-5 mr-2 text-[#F26623]" />
               Digital Chain Bank Loan Application
               <Badge className="ml-2 bg-[#F26623] text-white">Secure</Badge>
             </CardTitle>
           </CardHeader>
-          <CardContent className="p-4 sm:p-6">
+          <CardContent className="p-6">
             {renderStepContent()}
 
             {/* Navigation Buttons */}
-            <div className="flex flex-col sm:flex-row gap-4 sm:gap-0 sm:justify-between mt-8 pt-6 border-t">
+            <div className="flex justify-between mt-8 pt-6 border-t">
               <Button
                 variant="outline"
                 onClick={handlePrevious}
                 disabled={currentStep === 1}
-                className="bg-transparent w-full sm:w-auto"
+                className="bg-transparent"
               >
                 Previous
               </Button>
@@ -691,7 +687,7 @@ export default function LoansSection({}: LoansSectionProps) {
               {currentStep < totalSteps ? (
                 <Button
                   onClick={handleNext}
-                  className="bg-[#F26623] hover:bg-[#E55A1F] text-white w-full sm:w-auto"
+                  className="bg-[#F26623] hover:bg-[#E55A1F] text-white"
                 >
                   Next Step
                 </Button>
@@ -699,7 +695,7 @@ export default function LoansSection({}: LoansSectionProps) {
                 <Button
                   onClick={handleSubmit}
                   disabled={isSubmitting}
-                  className="bg-[#F26623] hover:bg-[#E55A1F] text-white w-full sm:w-auto"
+                  className="bg-[#F26623] hover:bg-[#E55A1F] text-white"
                 >
                   {isSubmitting ? "Processing..." : "Submit Application"}
                 </Button>
@@ -709,14 +705,14 @@ export default function LoansSection({}: LoansSectionProps) {
         </Card>
 
         {/* Information Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
           <Card>
-            <CardContent className="p-4 sm:p-6 text-center">
-              <CheckCircle className="h-10 w-10 sm:h-12 sm:w-12 text-[#F26623] mx-auto mb-4" />
-              <h3 className="text-sm sm:text-base font-semibold text-gray-900 mb-2">
+            <CardContent className="p-6 text-center">
+              <CheckCircle className="h-12 w-12 text-[#F26623] mx-auto mb-4" />
+              <h3 className="font-semibold text-gray-900 mb-2">
                 Quick Approval
               </h3>
-              <p className="text-xs sm:text-sm text-gray-600">
+              <p className="text-sm text-gray-600">
                 Get approved in as little as 24 hours with our streamlined
                 process
               </p>
@@ -724,24 +720,24 @@ export default function LoansSection({}: LoansSectionProps) {
           </Card>
 
           <Card>
-            <CardContent className="p-4 sm:p-6 text-center">
-              <CreditCard className="h-10 w-10 sm:h-12 sm:w-12 text-[#F26623] mx-auto mb-4" />
-              <h3 className="text-sm sm:text-base font-semibold text-gray-900 mb-2">
+            <CardContent className="p-6 text-center">
+              <CreditCard className="h-12 w-12 text-[#F26623] mx-auto mb-4" />
+              <h3 className="font-semibold text-gray-900 mb-2">
                 Competitive Rates
               </h3>
-              <p className="text-xs sm:text-sm text-gray-600">
+              <p className="text-sm text-gray-600">
                 Enjoy competitive interest rates starting from 3.99% APR
               </p>
             </CardContent>
           </Card>
 
           <Card>
-            <CardContent className="p-4 sm:p-6 text-center">
-              <Info className="h-10 w-10 sm:h-12 sm:w-12 text-[#F26623] mx-auto mb-4" />
-              <h3 className="text-sm sm:text-base font-semibold text-gray-900 mb-2">
+            <CardContent className="p-6 text-center">
+              <Info className="h-12 w-12 text-[#F26623] mx-auto mb-4" />
+              <h3 className="font-semibold text-gray-900 mb-2">
                 No Hidden Fees
               </h3>
-              <p className="text-xs sm:text-sm text-gray-600">
+              <p className="text-sm text-gray-600">
                 Transparent pricing with no hidden fees or prepayment penalties
               </p>
             </CardContent>
@@ -753,7 +749,7 @@ export default function LoansSection({}: LoansSectionProps) {
           open={showRestrictionDialog}
           onOpenChange={setShowRestrictionDialog}
         >
-          <DialogContent className="max-w-sm sm:max-w-md">
+          <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <div className="flex items-center justify-center w-12 h-12 mx-auto mb-4 bg-red-100 rounded-full">
                 <AlertTriangle className="h-6 w-6 text-red-600" />
@@ -761,7 +757,7 @@ export default function LoansSection({}: LoansSectionProps) {
               <DialogTitle className="text-center text-xl font-semibold text-gray-900">
                 Application Not Available
               </DialogTitle>
-              <DialogDescription className="text-center text-sm sm:text-base text-gray-600 mt-4">
+              <DialogDescription className="text-center text-gray-600 mt-4">
                 We appreciate your interest in Digital Chain Bank's loan
                 services. Unfortunately, our loan products are currently
                 available exclusively to citizens and permanent residents of

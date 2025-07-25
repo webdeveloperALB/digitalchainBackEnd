@@ -11,40 +11,76 @@ interface UsePresenceTrackerProps {
 export function usePresenceTracker({
   userId,
   enabled = true,
-  heartbeatInterval = 30000, // 30 seconds
+  heartbeatInterval = 60000, // Increased to 60 seconds to reduce frequency
 }: UsePresenceTrackerProps) {
   const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
   const isOnlineRef = useRef(false);
   const lastActivityRef = useRef(Date.now());
   const lastPresenceUpdateRef = useRef(0);
   const [userIP, setUserIP] = useState<string>("");
+  const [locationData, setLocationData] = useState<any>(null);
+  const [locationFetched, setLocationFetched] = useState(false);
 
   // Get user's IP address on component mount
   useEffect(() => {
-    const getUserIP = async () => {
+    const getUserIPAndLocation = async () => {
       try {
         const response = await fetch("https://api.ipify.org?format=json");
         const data = await response.json();
         setUserIP(data.ip);
         console.log("User IP detected:", data.ip);
+
+        // Get location data immediately after getting IP
+        try {
+          console.log("Getting location for IP:", data.ip);
+          const locationResponse = await fetch(
+            `https://ipapi.co/${data.ip}/json/`
+          );
+          const locationInfo = await locationResponse.json();
+
+          if (!locationInfo.error) {
+            const cachedLocation = {
+              ip_address: data.ip,
+              country: locationInfo.country_name || "Unknown",
+              country_code: locationInfo.country_code || "",
+              city: locationInfo.city || "Unknown",
+              region: locationInfo.region || "",
+            };
+            setLocationData(cachedLocation);
+            console.log("Location data cached:", {
+              ip: data.ip,
+              country: locationInfo.country_name,
+              city: locationInfo.city,
+            });
+          } else {
+            console.warn("Location API error:", locationInfo.reason);
+            setLocationData({ ip_address: data.ip });
+          }
+        } catch (locationError) {
+          console.error("Error getting location:", locationError);
+          setLocationData({ ip_address: data.ip });
+        }
+
+        setLocationFetched(true);
       } catch (error) {
         console.error("Failed to get user IP:", error);
+        setLocationFetched(true); // Set to true even on error to prevent blocking
       }
     };
 
     if (enabled && userId) {
-      getUserIP();
+      getUserIPAndLocation();
     }
   }, [enabled, userId]);
 
-  // Update presence in database WITH LOCATION
+  // Update presence in database WITH LOCATION - NEVER FORCE
   const updatePresence = useCallback(
     async (isOnline: boolean, force = false) => {
       if (!userId || !enabled) return;
 
-      // Prevent too frequent updates (minimum 10 seconds between updates)
+      // Prevent too frequent updates (minimum 30 seconds between updates)
       const now = Date.now();
-      if (!force && now - lastPresenceUpdateRef.current < 10000) {
+      if (!force && now - lastPresenceUpdateRef.current < 30000) {
         return;
       }
 
@@ -57,70 +93,36 @@ export function usePresenceTracker({
           updated_at: timestamp,
         };
 
-        // If user is coming online and we have an IP, get location data
-        if (isOnline && userIP) {
-          try {
-            console.log("Getting location for IP:", userIP);
-            const locationResponse = await fetch(
-              `https://ipapi.co/${userIP}/json/`
-            );
-            const locationData = await locationResponse.json();
-
-            if (!locationData.error) {
-              updateData = {
-                ...updateData,
-                ip_address: userIP,
-                country: locationData.country_name || "Unknown",
-                country_code: locationData.country_code || "",
-                city: locationData.city || "Unknown",
-                region: locationData.region || "",
-              };
-              console.log("Location data added:", {
-                ip: userIP,
-                country: locationData.country_name,
-                city: locationData.city,
-              });
-            } else {
-              console.warn("Location API error:", locationData.reason);
-              updateData.ip_address = userIP; // Save IP even if location fails
-            }
-          } catch (locationError) {
-            console.error("Error getting location:", locationError);
-            updateData.ip_address = userIP; // Save IP even if location fails
-          }
+        // If user is coming online and we have cached location data, use it
+        if (isOnline && locationData) {
+          updateData = {
+            ...updateData,
+            ...locationData,
+          };
         }
 
-        const { error } = await supabase
-          .from("user_presence")
-          .upsert(updateData, {
-            onConflict: "user_id",
-          });
+        // Use a simple update without any potential side effects
+        await supabase.from("user_presence").upsert(updateData, {
+          onConflict: "user_id",
+        });
 
-        if (error) {
-          console.error("Error updating presence:", error);
-        } else {
-          console.log(
-            `Presence updated with location: ${
-              isOnline ? "online" : "offline"
-            } for user ${userId}`
-          );
-          isOnlineRef.current = isOnline;
-          lastPresenceUpdateRef.current = now;
-        }
+        isOnlineRef.current = isOnline;
+        lastPresenceUpdateRef.current = now;
+        console.log(`Presence updated: ${isOnline ? "online" : "offline"}`);
       } catch (error) {
         console.error("Error in updatePresence:", error);
+        // Don't throw or cause any side effects on error
       }
     },
-    [userId, enabled, userIP]
+    [userId, enabled, locationData]
   );
 
   // Mark user offline (exposed function)
   const markOffline = useCallback(async () => {
     if (!userId) return;
-    console.log("Marking user offline:", userId);
     try {
       const timestamp = new Date().toISOString();
-      const { error } = await supabase.from("user_presence").upsert(
+      await supabase.from("user_presence").upsert(
         {
           user_id: userId,
           is_online: false,
@@ -131,50 +133,38 @@ export function usePresenceTracker({
           onConflict: "user_id",
         }
       );
-      if (error) {
-        console.error("Error marking user offline:", error);
-      } else {
-        console.log("Successfully marked user offline");
-        isOnlineRef.current = false;
-      }
+      isOnlineRef.current = false;
+      console.log("User marked offline");
     } catch (error) {
       console.error("Error in markOffline:", error);
+      // Don't throw or cause any side effects on error
     }
   }, [userId]);
 
-  // Track user activity
+  // Track user activity - SIMPLIFIED
   const handleActivity = useCallback(() => {
     const now = Date.now();
     lastActivityRef.current = now;
-    // If user was offline, mark them as online
+    // Only mark online if user was offline - NO FORCED UPDATES
     if (!isOnlineRef.current) {
-      console.log("User became active, marking online with location");
-      updatePresence(true);
+      updatePresence(true, false); // Never force
     }
   }, [updatePresence]);
 
-  // Set up activity listeners
+  // Set up activity listeners - LESS AGGRESSIVE
   useEffect(() => {
     if (!enabled || !userId) return;
 
-    const events = [
-      "mousedown",
-      "mousemove",
-      "keypress",
-      "scroll",
-      "touchstart",
-      "click",
-      "focus",
-    ];
+    const events = ["click", "keypress", "scroll"]; // Reduced events
 
-    // Add throttling to prevent too many calls
+    // More aggressive throttling
     let throttleTimeout: NodeJS.Timeout | null = null;
     const throttledHandleActivity = () => {
       if (throttleTimeout) return;
       throttleTimeout = setTimeout(() => {
         handleActivity();
         throttleTimeout = null;
-      }, 3000); // Throttle to once every 3 seconds
+      }, 10000); // Throttle to once every 10 seconds
     };
 
     events.forEach((event) => {
@@ -191,39 +181,29 @@ export function usePresenceTracker({
     };
   }, [handleActivity, enabled, userId]);
 
-  // Set up heartbeat with proper inactivity detection
+  // Set up heartbeat - LESS FREQUENT
   useEffect(() => {
-    if (!enabled || !userId) return;
+    if (!enabled || !userId || !locationFetched) return;
 
-    // Initial presence update with location
-    console.log("Starting presence tracking with location for user:", userId);
-    updatePresence(true, true);
+    // Initial presence update - NO FORCE
+    updatePresence(true, false);
 
     // Set up heartbeat
     heartbeatRef.current = setInterval(() => {
       const now = Date.now();
       const timeSinceLastActivity = now - lastActivityRef.current;
-      const inactivityThreshold = 120000; // 2 minutes of inactivity
-
-      console.log(
-        `Heartbeat check: ${timeSinceLastActivity}ms since last activity`
-      );
+      const inactivityThreshold = 300000; // 5 minutes of inactivity
 
       if (timeSinceLastActivity > inactivityThreshold) {
-        // User has been inactive for more than 2 minutes
         if (isOnlineRef.current) {
-          console.log("User inactive for 2+ minutes, marking offline");
-          updatePresence(false, true);
+          updatePresence(false, false); // Never force
         }
       } else {
-        // User has been active recently
         if (!isOnlineRef.current) {
-          console.log("User has recent activity, marking online with location");
-          updatePresence(true, true);
+          updatePresence(true, false); // Never force
         } else {
-          // Just update last_seen and refresh location data
-          console.log("User still active, updating presence with location");
-          updatePresence(true);
+          // Just update last_seen - NO FORCE
+          updatePresence(true, false);
         }
       }
     }, heartbeatInterval);
@@ -233,70 +213,34 @@ export function usePresenceTracker({
         clearInterval(heartbeatRef.current);
       }
     };
-  }, [updatePresence, enabled, userId, heartbeatInterval]);
+  }, [updatePresence, enabled, userId, heartbeatInterval, locationFetched]);
 
-  // Handle page visibility changes
-  useEffect(() => {
-    if (!enabled || !userId) return;
+  // COMPLETELY REMOVED PAGE VISIBILITY HANDLER
 
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        console.log("Page hidden, will mark offline in 60 seconds");
-        // Page is hidden, mark as offline after a shorter delay
-        setTimeout(() => {
-          if (document.hidden) {
-            console.log("Page still hidden after 60s, marking offline");
-            updatePresence(false, true);
-          }
-        }, 60000); // Wait 1 minute before marking offline
-      } else {
-        console.log("Page visible, marking online with location");
-        // Page is visible, mark as online and update activity
-        lastActivityRef.current = Date.now();
-        updatePresence(true, true);
-      }
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [updatePresence, enabled, userId]);
-
-  // Handle beforeunload to mark user offline
+  // SIMPLIFIED beforeunload - NO NAVIGATION TRIGGERS
   useEffect(() => {
     if (!enabled || !userId) return;
 
     const handleBeforeUnload = () => {
-      console.log("Page unloading, marking offline");
-      // Use sendBeacon for reliable offline marking on page unload
-      const data = JSON.stringify({
-        user_id: userId,
-        is_online: false,
-        last_seen: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
-
-      // Try to use sendBeacon for better reliability
+      // Simple beacon without any complex logic
       if (navigator.sendBeacon) {
+        const data = JSON.stringify({
+          user_id: userId,
+          is_online: false,
+          last_seen: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
         navigator.sendBeacon("/api/presence/offline", data);
       }
     };
 
-    const handlePageHide = () => {
-      console.log("Page hiding, marking offline");
-      handleBeforeUnload();
-    };
-
-    // Use both events for better coverage
+    // Only use beforeunload, remove pagehide
     window.addEventListener("beforeunload", handleBeforeUnload);
-    window.addEventListener("pagehide", handlePageHide);
 
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
-      window.removeEventListener("pagehide", handlePageHide);
     };
-  }, [updatePresence, enabled, userId]);
+  }, [userId, enabled]);
 
   return {
     updatePresence,
@@ -306,119 +250,79 @@ export function usePresenceTracker({
   };
 }
 
-// Main component that handles authentication and presence tracking
+// Main component - SIMPLIFIED
 export default function PresenceTracker() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const presenceTrackerRef = useRef<{
-    markOffline: () => Promise<void>;
-  } | null>(null);
 
   // Store the presence tracker functions
-  const { updatePresence, markOffline, isOnline, userIP } = usePresenceTracker({
+  const { markOffline } = usePresenceTracker({
     userId: user?.id || "",
     enabled: !!user && !loading,
-    heartbeatInterval: 30000,
+    heartbeatInterval: 60000, // Less frequent
   });
 
-  // Store markOffline function in ref for cleanup
+  // Get current user and set up auth listener - SIMPLIFIED
   useEffect(() => {
-    presenceTrackerRef.current = { markOffline };
-  }, [markOffline]);
+    let mounted = true;
 
-  // Get current user and set up auth listener
-  useEffect(() => {
-    // Get initial user
     const getUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      setUser(user);
-      setLoading(false);
-      console.log("Initial user:", user?.id);
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (mounted) {
+          setUser(user);
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error("Error getting user:", error);
+        if (mounted) {
+          setLoading(false);
+        }
+      }
     };
 
     getUser();
 
-    // Listen for auth changes
+    // Simplified auth listener
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("Auth state changed:", event, session?.user?.id);
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
 
-      // Handle logout events
       if (event === "SIGNED_OUT") {
-        console.log("User signed out, marking offline");
-        // Mark the current user offline before clearing the user state
-        if (user?.id) {
-          try {
-            const timestamp = new Date().toISOString();
-            await supabase.from("user_presence").upsert(
-              {
-                user_id: user.id,
-                is_online: false,
-                last_seen: timestamp,
-                updated_at: timestamp,
-              },
-              {
-                onConflict: "user_id",
-              }
-            );
-            console.log("Successfully marked user offline on sign out");
-          } catch (error) {
-            console.error("Error marking user offline on sign out:", error);
-          }
-        }
+        setUser(null);
+      } else if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+        setUser(session?.user || null);
       }
-
-      // Handle token refresh events
-      if (event === "TOKEN_REFRESHED") {
-        console.log("Token refreshed, maintaining online status");
-        // Don't change user state on token refresh
-        return;
-      }
-
-      // Update user state for other events
-      setUser(session?.user || null);
     });
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
-  }, [user]);
+  }, []);
 
-  // Cleanup on unmount - mark user offline
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (user?.id && presenceTrackerRef.current) {
-        console.log("Component unmounting, marking user offline");
-        presenceTrackerRef.current.markOffline();
+      if (user?.id) {
+        markOffline();
       }
     };
-  }, [user?.id]);
+  }, [user?.id, markOffline]);
 
-  // Show debug info in development
-  useEffect(() => {
-    if (process.env.NODE_ENV === "development" && user && userIP) {
-      console.log("Location tracking active:", {
-        userId: user.id,
-        userIP,
-        isOnline,
-      });
-    }
-  }, [user, userIP, isOnline]);
-
-  return null; // This component doesn't render anything
+  return null;
 }
 
 // Export a hook for manual logout handling
 export function usePresenceLogout() {
   const markUserOffline = useCallback(async (userId: string) => {
     if (!userId) return;
-    console.log("Manual logout - marking user offline:", userId);
     try {
       const timestamp = new Date().toISOString();
-      const { error } = await supabase.from("user_presence").upsert(
+      await supabase.from("user_presence").upsert(
         {
           user_id: userId,
           is_online: false,
@@ -429,11 +333,6 @@ export function usePresenceLogout() {
           onConflict: "user_id",
         }
       );
-      if (error) {
-        console.error("Error marking user offline on manual logout:", error);
-      } else {
-        console.log("Successfully marked user offline on manual logout");
-      }
     } catch (error) {
       console.error("Error in manual logout presence update:", error);
     }
