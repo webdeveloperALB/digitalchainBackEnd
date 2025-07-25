@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +24,24 @@ interface SidebarProps {
   userProfile: any;
 }
 
+interface NotificationData {
+  menu_item: string;
+  count: number;
+}
+
+interface UserPermissionData {
+  menu_item: string;
+  is_enabled: boolean;
+}
+
+interface MenuItem {
+  id: string;
+  label: string;
+  icon: any;
+  isEnabled?: boolean;
+  badge?: string | number;
+}
+
 export default function Sidebar({
   activeTab,
   setActiveTab,
@@ -31,6 +49,98 @@ export default function Sidebar({
 }: SidebarProps) {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([
+    {
+      id: "dashboard",
+      label: "Dashboard",
+      icon: LayoutDashboard,
+      isEnabled: true,
+    },
+    { id: "accounts", label: "Accounts", icon: Wallet, isEnabled: true },
+    {
+      id: "transfers",
+      label: "Transfers",
+      icon: ArrowLeftRight,
+      isEnabled: true,
+    },
+    { id: "deposit", label: "Deposit", icon: Download, isEnabled: true },
+    { id: "payments", label: "Payments", icon: CreditCard, isEnabled: true },
+    { id: "loans", label: "Loans", icon: Banknote, isEnabled: true },
+    { id: "card", label: "Card", icon: CreditCard, isEnabled: true },
+    { id: "crypto", label: "Crypto", icon: Bitcoin, isEnabled: true },
+    { id: "message", label: "Message", icon: MessageSquare, isEnabled: true },
+    { id: "support", label: "Support", icon: HelpCircle, isEnabled: true },
+  ]);
+
+  // Function to refresh menu items from backend/database
+  const refreshMenuItems = useCallback(async () => {
+    try {
+      // This is where you would fetch updated menu items from your backend
+      // For now, I'll simulate a refresh that might update badges, enabled states, etc.
+
+      // Example: Fetch menu permissions or notifications
+      const { data: userPermissions }: { data: UserPermissionData[] | null } =
+        await supabase
+          .from("user_permissions")
+          .select("*")
+          .eq("user_id", userProfile?.id);
+
+      // Example: Fetch notification counts for menu items
+      const { data: notifications }: { data: NotificationData[] | null } =
+        await supabase
+          .from("notifications")
+          .select("menu_item, count")
+          .eq("user_id", userProfile?.id)
+          .eq("is_read", false);
+
+      // Update menu items with fresh data while preserving structure
+      setMenuItems((prevItems) =>
+        prevItems.map((item) => {
+          // Find if there are notifications for this menu item
+          const notification = notifications?.find(
+            (n) => n.menu_item === item.id
+          );
+
+          // Check if user has permission for this menu item
+          const hasPermission =
+            userPermissions?.some(
+              (p) => p.menu_item === item.id && p.is_enabled
+            ) ?? true; // Default to true if no permissions data
+
+          return {
+            ...item,
+            isEnabled: hasPermission,
+            badge:
+              notification && notification.count && notification.count > 0
+                ? notification.count
+                : undefined,
+          };
+        })
+      );
+
+      // Silent background refresh - no console logs in production
+      // console.log('Menu items refreshed silently');
+    } catch (error) {
+      // Silent error handling - don't disrupt user experience
+      console.error("Background menu refresh failed:", error);
+    }
+  }, [userProfile?.id]);
+
+  // Set up background refresh every 2 seconds
+  useEffect(() => {
+    // Initial refresh
+    refreshMenuItems();
+
+    // Set up interval for background refresh
+    const refreshInterval = setInterval(() => {
+      refreshMenuItems();
+    }, 2000); // 2 seconds
+
+    // Cleanup interval on unmount
+    return () => {
+      clearInterval(refreshInterval);
+    };
+  }, [refreshMenuItems]);
 
   const handleSignOut = async () => {
     setIsLoggingOut(true);
@@ -85,19 +195,6 @@ export default function Sidebar({
       setIsLoggingOut(false);
     }
   };
-
-  const menuItems = [
-    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { id: "accounts", label: "Accounts", icon: Wallet },
-    { id: "transfers", label: "Transfers", icon: ArrowLeftRight },
-    { id: "deposit", label: "Deposit", icon: Download },
-    { id: "payments", label: "Payments", icon: CreditCard },
-    { id: "loans", label: "Loans", icon: Banknote },
-    { id: "card", label: "Card", icon: CreditCard },
-    { id: "crypto", label: "Crypto", icon: Bitcoin },
-    { id: "message", label: "Message", icon: MessageSquare },
-    { id: "support", label: "Support", icon: HelpCircle },
-  ];
 
   return (
     <>
@@ -166,17 +263,33 @@ export default function Sidebar({
               <li key={item.id}>
                 <button
                   onClick={() => {
-                    setActiveTab(item.id);
-                    setIsMobileMenuOpen(false); // Close mobile menu on item click
+                    if (item.isEnabled) {
+                      setActiveTab(item.id);
+                      setIsMobileMenuOpen(false); // Close mobile menu on item click
+                    }
                   }}
-                  className={`w-full flex items-center px-0 py-4 text-left transition-all duration-200 ${
+                  disabled={!item.isEnabled}
+                  className={`w-full flex items-center px-0 py-4 text-left transition-all duration-200 relative ${
                     activeTab === item.id
                       ? "text-[#F26623]"
-                      : "text-gray-800 hover:text-[#F26623]"
+                      : item.isEnabled
+                      ? "text-gray-800 hover:text-[#F26623]"
+                      : "text-gray-400 cursor-not-allowed"
                   }`}
                 >
-                  <item.icon className="w-5 h-5 mr-4 text-gray-600" />
+                  <item.icon
+                    className={`w-5 h-5 mr-4 ${
+                      item.isEnabled ? "text-gray-600" : "text-gray-400"
+                    }`}
+                  />
                   <span className="font-medium text-base">{item.label}</span>
+
+                  {/* Badge for notifications */}
+                  {item.badge && (
+                    <span className="ml-auto bg-red-500 text-white text-xs rounded-full px-2 py-1 min-w-[20px] h-5 flex items-center justify-center">
+                      {item.badge}
+                    </span>
+                  )}
                 </button>
               </li>
             ))}
