@@ -187,7 +187,7 @@ export default function SupportSection() {
           display: none;
         }
       `}</style>
-      <div className="p-6 space-y-6 max-w-7xl mx-auto">
+      <div className="p-6 pt-4 pt-xs-16 space-y-6 max-w-7xl mx-auto">
         <div>
           <h2 className="text-2xl font-bold">Support Center</h2>
           <p className="text-gray-600 mt-1">Get help when you need it</p>

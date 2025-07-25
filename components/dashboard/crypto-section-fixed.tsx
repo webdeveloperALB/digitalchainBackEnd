@@ -447,7 +447,7 @@ export default function RealCryptoTransferSection() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="p-6 space-y-6 relative min-h-full">
+      <div className="p-6 pt-4 pt-xs-16 space-y-6 relative min-h-full">
         {/* Floating Notifications */}
         {(showSuccessMessage || activeNotifications.length > 0) && (
           <div className="fixed inset-0 pointer-events-none z-50">

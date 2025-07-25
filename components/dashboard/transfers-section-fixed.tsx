@@ -25,6 +25,8 @@ import {
   CheckCircle,
   XCircle,
   TrendingUp,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 
 // Define interfaces
@@ -107,6 +109,7 @@ export default function TransfersSection() {
   const [exchangeRate, setExchangeRate] = useState<number>(1);
   const [estimatedAmount, setEstimatedAmount] = useState<number>(0);
   const [transferFee, setTransferFee] = useState<number>(0);
+  const [showHistoryOnMobile, setShowHistoryOnMobile] = useState(false);
 
   useEffect(() => {
     fetchTransfers();
@@ -571,7 +574,7 @@ export default function TransfersSection() {
   }
 
   return (
-    <div className="h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex flex-col">
       <style jsx>{`
         .custom-scrollbar {
           scrollbar-width: none; /* Firefox */
@@ -626,11 +629,20 @@ export default function TransfersSection() {
             opacity: 0.7;
           }
         }
+        @media (max-width: 1023px) {
+          .mobile-form-priority {
+            min-height: calc(100vh - 200px);
+          }
+          .custom-scrollbar {
+            max-height: 40vh;
+            overflow-y: auto;
+          }
+        }
       `}</style>
 
       {/* Header - Fixed */}
-      <div className="text-center py-6 px-6 flex-shrink-0">
-        <h2 className="text-3xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent mb-1">
+      <div className="text-center py-14 md:py-6 px-4 md:px-6 flex-shrink-0">
+        <h2 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent mb-1">
           Currency Transfers
         </h2>
         <p className="text-slate-600">
@@ -648,12 +660,12 @@ export default function TransfersSection() {
       </div>
 
       {/* Main Layout - Fixed Height */}
-      <div className="flex flex-1 overflow-hidden px-6 pb-6 gap-6">
+      <div className="flex flex-col lg:flex-row flex-1 overflow-hidden px-4 md:px-6 pb-6 gap-6">
         {/* Main Content - Scrollable */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
+        <div className="flex-1 lg:flex-1 overflow-y-auto custom-scrollbar min-h-0 mobile-form-priority">
           <div className="space-y-6 pr-4">
             {/* Current Balances - Enhanced with more currencies */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
               <Card className="balance-card">
                 <CardContent className="p-4 text-center">
                   <div className="w-10 h-10 bg-[#F26623] rounded-full flex items-center justify-center mx-auto mb-3">
@@ -737,7 +749,7 @@ export default function TransfersSection() {
                   </TabsList>
 
                   <TabsContent value="internal" className="space-y-6 mt-6">
-                    <div className="flex flex-col lg:flex-row items-center gap-6">
+                    <div className="flex flex-col md:flex-row items-center gap-4 md:gap-6">
                       <div className="flex-1 w-full">
                         <Label className="text-sm font-semibold mb-3 block text-slate-700">
                           From Currency
@@ -814,7 +826,7 @@ export default function TransfersSection() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
                       <div>
                         <Label className="text-sm font-semibold mb-3 block text-slate-700">
                           Amount to Transfer
@@ -871,7 +883,7 @@ export default function TransfersSection() {
 
                   <TabsContent value="bank" className="space-y-6 mt-6">
                     {/* Bank Transfer Currency Selection - Now includes crypto */}
-                    <div className="flex flex-col lg:flex-row items-center gap-6">
+                    <div className="flex flex-col md:flex-row items-center gap-4 md:gap-6">
                       <div className="flex-1 w-full">
                         <Label className="text-sm font-semibold mb-3 block text-slate-700">
                           From Currency
@@ -949,7 +961,7 @@ export default function TransfersSection() {
                     </div>
 
                     {/* Amount and Fees */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
                       <div>
                         <Label className="text-sm font-semibold mb-3 block text-slate-700">
                           Amount to Transfer
@@ -995,7 +1007,7 @@ export default function TransfersSection() {
                       <h3 className="text-lg font-semibold text-slate-800 mb-4">
                         Bank Details
                       </h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
                         <div>
                           <Label className="text-sm font-semibold mb-2 block text-slate-700">
                             Bank Name *
@@ -1168,94 +1180,115 @@ export default function TransfersSection() {
           </div>
         </div>
 
-        {/* Transfer History - Static Sidebar */}
-        <div className="w-96 flex-shrink-0">
-          <Card className="history-card h-full flex flex-col">
-            <CardHeader className="pb-4 flex-shrink-0">
-              <CardTitle className="text-xl font-bold text-slate-800">
-                Transfer History
-              </CardTitle>
-              <p className="text-slate-600 text-sm">Your recent transactions</p>
-            </CardHeader>
-            <CardContent className="p-4 flex-1 overflow-hidden">
-              {transfers.length === 0 ? (
-                <div className="text-center py-8 flex-1 flex flex-col justify-center">
-                  <div className="w-12 h-12 bg-gradient-to-br from-slate-200 to-slate-300 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <span className="text-slate-500 text-xl">📋</span>
-                  </div>
-                  <p className="text-slate-500">No transfers yet</p>
-                  <p className="text-slate-400 text-xs mt-1">
-                    Your transfer history will appear here
-                  </p>
-                </div>
+        {/* Transfer History - Collapsible on Mobile */}
+        <div className="w-full lg:w-96 flex-shrink-0 lg:block">
+          <div className="lg:hidden mb-4">
+            <Button
+              variant="outline"
+              onClick={() => setShowHistoryOnMobile(!showHistoryOnMobile)}
+              className="w-full flex items-center justify-between"
+            >
+              <span>Transfer History ({transfers.length})</span>
+              {showHistoryOnMobile ? (
+                <ChevronUp className="w-4 h-4" />
               ) : (
-                <div className="space-y-3 h-full overflow-y-auto custom-scrollbar pr-2">
-                  {transfers.map((transfer) => (
-                    <div
-                      key={transfer.id}
-                      className="transfer-item p-4 rounded-lg"
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-bold text-slate-800 text-sm">
-                              {transfer.from_currency}
-                            </span>
-                            <ArrowLeftRight className="w-3 h-3 text-[#F26623]" />
-                            <span className="font-bold text-slate-800 text-sm">
-                              {transfer.to_currency}
-                            </span>
-                            {transfer.transfer_type === "bank_transfer" && (
-                              <Building2 className="w-3 h-3 text-blue-600" />
-                            )}
-                            {(currencies.find(
-                              (c) => c.code === transfer.from_currency
-                            )?.type === "crypto" ||
-                              currencies.find(
-                                (c) => c.code === transfer.to_currency
-                              )?.type === "crypto") && (
-                              <Coins className="w-3 h-3 text-orange-600" />
-                            )}
-                          </div>
-                          <div className="text-xs text-slate-600">
-                            <span className="font-medium">
-                              {Number(transfer.from_amount).toLocaleString()}
-                            </span>
-                            <span className="mx-1">→</span>
-                            <span className="font-medium">
-                              {Number(transfer.to_amount).toLocaleString()}
-                            </span>
-                            {transfer.fee_amount > 0 && (
-                              <span className="text-red-600 text-xs ml-1">
-                                (Fee: {Number(transfer.fee_amount).toFixed(8)})
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        {getStatusBadge(transfer.status)}
-                      </div>
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-500">
-                          {new Date(transfer.created_at).toLocaleDateString()}
-                        </span>
-                        {transfer.reference_number && (
-                          <span className="text-slate-600 bg-slate-100 px-2 py-1 rounded text-xs">
-                            {transfer.reference_number}
-                          </span>
-                        )}
-                      </div>
-                      {transfer.transfer_type === "bank_transfer" &&
-                        transfer.status === "Pending" && (
-                          <div className="mt-2 text-xs text-amber-600 bg-amber-50 p-2 rounded">
-                            Bank transfer pending admin approval
-                          </div>
-                        )}
-                    </div>
-                  ))}
-                </div>
+                <ChevronDown className="w-4 h-4" />
               )}
-            </CardContent>
-          </Card>
+            </Button>
+          </div>
+          <div
+            className={`${showHistoryOnMobile ? "block" : "hidden"} lg:block`}
+          >
+            <Card className="history-card h-full flex flex-col">
+              <CardHeader className="pb-4 flex-shrink-0">
+                <CardTitle className="text-xl font-bold text-slate-800">
+                  Transfer History
+                </CardTitle>
+                <p className="text-slate-600 text-sm">
+                  Your recent transactions
+                </p>
+              </CardHeader>
+              <CardContent className="p-4 flex-1 overflow-hidden">
+                {transfers.length === 0 ? (
+                  <div className="text-center py-8 flex-1 flex flex-col justify-center">
+                    <div className="w-12 h-12 bg-gradient-to-br from-slate-200 to-slate-300 rounded-full flex items-center justify-center mx-auto mb-3">
+                      <span className="text-slate-500 text-xl">📋</span>
+                    </div>
+                    <p className="text-slate-500">No transfers yet</p>
+                    <p className="text-slate-400 text-xs mt-1">
+                      Your transfer history will appear here
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 h-full overflow-y-auto custom-scrollbar pr-2">
+                    {transfers.map((transfer) => (
+                      <div
+                        key={transfer.id}
+                        className="transfer-item p-4 rounded-lg"
+                      >
+                        <div className="flex flex-col sm:flex-row justify-between items-start mb-2">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-bold text-slate-800 text-sm">
+                                {transfer.from_currency}
+                              </span>
+                              <ArrowLeftRight className="w-3 h-3 text-[#F26623]" />
+                              <span className="font-bold text-slate-800 text-sm">
+                                {transfer.to_currency}
+                              </span>
+                              {transfer.transfer_type === "bank_transfer" && (
+                                <Building2 className="w-3 h-3 text-blue-600" />
+                              )}
+                              {(currencies.find(
+                                (c) => c.code === transfer.from_currency
+                              )?.type === "crypto" ||
+                                currencies.find(
+                                  (c) => c.code === transfer.to_currency
+                                )?.type === "crypto") && (
+                                <Coins className="w-3 h-3 text-orange-600" />
+                              )}
+                            </div>
+                            <div className="text-xs text-slate-600">
+                              <span className="font-medium">
+                                {Number(transfer.from_amount).toLocaleString()}
+                              </span>
+                              <span className="mx-1">→</span>
+                              <span className="font-medium">
+                                {Number(transfer.to_amount).toLocaleString()}
+                              </span>
+                              {transfer.fee_amount > 0 && (
+                                <span className="text-red-600 text-xs ml-1">
+                                  (Fee: {Number(transfer.fee_amount).toFixed(8)}
+                                  )
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          {getStatusBadge(transfer.status)}
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-500">
+                            {new Date(transfer.created_at).toLocaleDateString()}
+                          </span>
+                          {transfer.reference_number && (
+                            <span className="text-slate-600 bg-slate-100 px-2 py-1 rounded text-xs">
+                              {transfer.reference_number}
+                            </span>
+                          )}
+                        </div>
+                        {transfer.transfer_type === "bank_transfer" &&
+                          transfer.status === "Pending" && (
+                            <div className="mt-2 text-xs text-amber-600 bg-amber-50 p-2 rounded">
+                              Bank transfer pending admin approval
+                            </div>
+                          )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
     </div>

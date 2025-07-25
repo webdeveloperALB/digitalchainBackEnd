@@ -131,11 +131,11 @@ export default function ClientDepositsView() {
   if (loading) {
     return (
       <div className="flex-1 overflow-y-auto max-h-screen">
-        <div className="p-6">
+        <div className="p-3 sm:p-4 md:p-6">
           <div className="animate-pulse space-y-4">
-            <div className="h-8 bg-gray-200 rounded w-1/4"></div>
-            <div className="h-32 bg-gray-200 rounded"></div>
-            <div className="h-64 bg-gray-200 rounded"></div>
+            <div className="h-6 sm:h-8 bg-gray-200 rounded w-1/2 sm:w-1/4"></div>
+            <div className="h-24 sm:h-32 bg-gray-200 rounded"></div>
+            <div className="h-48 sm:h-64 bg-gray-200 rounded"></div>
           </div>
         </div>
       </div>
@@ -144,10 +144,10 @@ export default function ClientDepositsView() {
 
   return (
     <div className="flex-1 overflow-y-auto max-h-screen">
-      <div className="p-6 space-y-6">
-        <div className="flex justify-between items-center">
-          <h2 className="text-2xl font-bold">My Deposits</h2>
-          <Badge variant="outline" className="text-sm">
+      <div className="p-4 pt-20 sm:p-4 md:p-6 space-y-4 sm:space-y-6">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-0">
+          <h2 className="text-xl sm:text-2xl font-bold">My Deposits</h2>
+          <Badge variant="outline" className="text-xs sm:text-sm w-fit">
             Real-time Updates
           </Badge>
         </div>
@@ -161,9 +161,9 @@ export default function ClientDepositsView() {
             }
           >
             <AlertDescription
-              className={
+              className={`text-sm ${
                 message.type === "error" ? "text-red-700" : "text-green-700"
-              }
+              }`}
             >
               {message.text}
             </AlertDescription>
@@ -171,8 +171,8 @@ export default function ClientDepositsView() {
         )}
 
         <Alert>
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
+          <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+          <AlertDescription className="text-sm">
             <strong>Information:</strong> Deposits are processed by our admin
             team. You will see deposits appear here when they are processed for
             your account. All deposits are handled securely and will reflect in
@@ -182,22 +182,24 @@ export default function ClientDepositsView() {
 
         {/* Deposit History */}
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <Download className="w-5 h-5 mr-2" />
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-center text-lg sm:text-xl">
+              <Download className="w-4 h-4 sm:w-5 sm:h-5 mr-2 flex-shrink-0" />
               Deposit History
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-0">
             {deposits.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                <Download className="w-16 h-16 mx-auto mb-4 opacity-30" />
-                <h3 className="text-lg font-medium mb-2">No deposits yet</h3>
-                <p className="text-sm">
+              <div className="text-center py-8 sm:py-12 text-gray-500">
+                <Download className="w-12 h-12 sm:w-16 sm:h-16 mx-auto mb-3 sm:mb-4 opacity-30" />
+                <h3 className="text-base sm:text-lg font-medium mb-2">
+                  No deposits yet
+                </h3>
+                <p className="text-sm px-4">
                   Deposits processed by our admin team will appear here
                   automatically.
                 </p>
-                <p className="text-xs mt-2 text-gray-400">
+                <p className="text-xs mt-2 text-gray-400 px-4">
                   Contact support if you're expecting a deposit that hasn't
                   appeared.
                 </p>
@@ -207,17 +209,17 @@ export default function ClientDepositsView() {
                 {deposits.map((deposit) => (
                   <div
                     key={deposit.id}
-                    className="border rounded-lg p-6 space-y-4 hover:shadow-md transition-shadow"
+                    className="border rounded-lg p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 hover:shadow-md transition-shadow"
                   >
-                    <div className="flex justify-between items-start">
-                      <div className="space-y-2">
-                        <div className="flex items-center space-x-3">
-                          <h3 className="font-bold text-xl">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 sm:gap-4">
+                      <div className="space-y-2 flex-1 min-w-0">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                          <h3 className="font-bold text-lg sm:text-xl break-words">
                             {Number(deposit.amount).toLocaleString()}{" "}
                             {deposit.currency}
                           </h3>
                           <Badge
-                            className={`text-sm ${getStatusColor(
+                            className={`text-xs sm:text-sm w-fit ${getStatusColor(
                               deposit.status
                             )}`}
                           >
@@ -225,16 +227,18 @@ export default function ClientDepositsView() {
                             <span className="ml-2">{deposit.status}</span>
                           </Badge>
                         </div>
-                        <div className="flex items-center text-gray-600">
+                        <div className="flex items-center text-gray-600 text-sm sm:text-base">
                           {deposit.method === "Bank Transfer" ? (
-                            <Building className="w-4 h-4 mr-2" />
+                            <Building className="w-4 h-4 mr-2 flex-shrink-0" />
                           ) : (
-                            <Wallet className="w-4 h-4 mr-2" />
+                            <Wallet className="w-4 h-4 mr-2 flex-shrink-0" />
                           )}
                           <span className="font-medium">{deposit.method}</span>
                         </div>
-                        <div className="text-sm text-gray-500 space-y-1">
-                          <p>Reference: {deposit.reference_id}</p>
+                        <div className="text-xs sm:text-sm text-gray-500 space-y-1">
+                          <p className="break-words">
+                            Reference: {deposit.reference_id}
+                          </p>
                           <p>
                             Processed:{" "}
                             {new Date(deposit.created_at).toLocaleString()}
@@ -251,7 +255,7 @@ export default function ClientDepositsView() {
                         variant="outline"
                         size="sm"
                         onClick={() => copyToClipboard(deposit.reference_id)}
-                        className="shrink-0"
+                        className="shrink-0 w-full sm:w-auto text-xs sm:text-sm"
                       >
                         <Copy className="w-3 h-3 mr-1" />
                         Copy Ref
@@ -260,15 +264,15 @@ export default function ClientDepositsView() {
 
                     {/* Bank Deposit Details */}
                     {deposit.bank_details && (
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                        <h4 className="font-semibold text-blue-900 mb-3 flex items-center">
-                          <Building className="w-4 h-4 mr-2" />
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4">
+                        <h4 className="font-semibold text-blue-900 mb-3 flex items-center text-sm sm:text-base">
+                          <Building className="w-4 h-4 mr-2 flex-shrink-0" />
                           Bank Transfer Details
                         </h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 text-xs sm:text-sm">
                           {deposit.bank_details.bank_name && (
-                            <div>
-                              <span className="font-medium text-blue-800">
+                            <div className="break-words">
+                              <span className="font-medium text-blue-800 block">
                                 Bank Name:
                               </span>
                               <p className="text-blue-700">
@@ -277,8 +281,8 @@ export default function ClientDepositsView() {
                             </div>
                           )}
                           {deposit.bank_details.account_holder_name && (
-                            <div>
-                              <span className="font-medium text-blue-800">
+                            <div className="break-words">
+                              <span className="font-medium text-blue-800 block">
                                 Account Holder:
                               </span>
                               <p className="text-blue-700">
@@ -287,8 +291,8 @@ export default function ClientDepositsView() {
                             </div>
                           )}
                           {deposit.bank_details.account_number && (
-                            <div>
-                              <span className="font-medium text-blue-800">
+                            <div className="break-words">
+                              <span className="font-medium text-blue-800 block">
                                 Account Number:
                               </span>
                               <p className="text-blue-700 font-mono">
@@ -298,8 +302,8 @@ export default function ClientDepositsView() {
                             </div>
                           )}
                           {deposit.bank_details.routing_number && (
-                            <div>
-                              <span className="font-medium text-blue-800">
+                            <div className="break-words">
+                              <span className="font-medium text-blue-800 block">
                                 Routing Number:
                               </span>
                               <p className="text-blue-700 font-mono">
@@ -308,8 +312,8 @@ export default function ClientDepositsView() {
                             </div>
                           )}
                           {deposit.bank_details.swift_code && (
-                            <div>
-                              <span className="font-medium text-blue-800">
+                            <div className="break-words">
+                              <span className="font-medium text-blue-800 block">
                                 SWIFT Code:
                               </span>
                               <p className="text-blue-700 font-mono">
@@ -318,18 +322,18 @@ export default function ClientDepositsView() {
                             </div>
                           )}
                           {deposit.bank_details.iban && (
-                            <div>
-                              <span className="font-medium text-blue-800">
+                            <div className="break-words">
+                              <span className="font-medium text-blue-800 block">
                                 IBAN:
                               </span>
-                              <p className="text-blue-700 font-mono">
+                              <p className="text-blue-700 font-mono break-all">
                                 {deposit.bank_details.iban}
                               </p>
                             </div>
                           )}
                           {deposit.bank_details.bank_address && (
-                            <div className="md:col-span-2">
-                              <span className="font-medium text-blue-800">
+                            <div className="sm:col-span-2 break-words">
+                              <span className="font-medium text-blue-800 block">
                                 Bank Address:
                               </span>
                               <p className="text-blue-700">
@@ -338,11 +342,11 @@ export default function ClientDepositsView() {
                             </div>
                           )}
                           {deposit.bank_details.wire_reference && (
-                            <div className="md:col-span-2">
-                              <span className="font-medium text-blue-800">
+                            <div className="sm:col-span-2 break-words">
+                              <span className="font-medium text-blue-800 block">
                                 Wire Reference:
                               </span>
-                              <p className="text-blue-700 font-mono">
+                              <p className="text-blue-700 font-mono break-all">
                                 {deposit.bank_details.wire_reference}
                               </p>
                             </div>
@@ -353,15 +357,15 @@ export default function ClientDepositsView() {
 
                     {/* Crypto Deposit Details */}
                     {deposit.crypto_details && (
-                      <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                        <h4 className="font-semibold text-purple-900 mb-3 flex items-center">
-                          <Wallet className="w-4 h-4 mr-2" />
+                      <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 sm:p-4">
+                        <h4 className="font-semibold text-purple-900 mb-3 flex items-center text-sm sm:text-base">
+                          <Wallet className="w-4 h-4 mr-2 flex-shrink-0" />
                           Cryptocurrency Transfer Details
                         </h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 text-xs sm:text-sm">
                           {deposit.crypto_details.cryptocurrency && (
-                            <div>
-                              <span className="font-medium text-purple-800">
+                            <div className="break-words">
+                              <span className="font-medium text-purple-800 block">
                                 Cryptocurrency:
                               </span>
                               <p className="text-purple-700 font-mono">
@@ -370,8 +374,8 @@ export default function ClientDepositsView() {
                             </div>
                           )}
                           {deposit.crypto_details.network && (
-                            <div>
-                              <span className="font-medium text-purple-800">
+                            <div className="break-words">
+                              <span className="font-medium text-purple-800 block">
                                 Network:
                               </span>
                               <p className="text-purple-700">
@@ -380,8 +384,8 @@ export default function ClientDepositsView() {
                             </div>
                           )}
                           {deposit.crypto_details.from_wallet && (
-                            <div className="md:col-span-2">
-                              <span className="font-medium text-purple-800">
+                            <div className="sm:col-span-2 break-words">
+                              <span className="font-medium text-purple-800 block">
                                 From Wallet:
                               </span>
                               <p className="text-purple-700 font-mono text-xs break-all">
@@ -390,8 +394,8 @@ export default function ClientDepositsView() {
                             </div>
                           )}
                           {deposit.crypto_details.to_wallet && (
-                            <div className="md:col-span-2">
-                              <span className="font-medium text-purple-800">
+                            <div className="sm:col-span-2 break-words">
+                              <span className="font-medium text-purple-800 block">
                                 To Wallet:
                               </span>
                               <p className="text-purple-700 font-mono text-xs break-all">
@@ -400,8 +404,8 @@ export default function ClientDepositsView() {
                             </div>
                           )}
                           {deposit.crypto_details.transaction_hash && (
-                            <div className="md:col-span-2">
-                              <span className="font-medium text-purple-800">
+                            <div className="sm:col-span-2 break-words">
+                              <span className="font-medium text-purple-800 block">
                                 Transaction Hash:
                               </span>
                               <p className="text-purple-700 font-mono text-xs break-all">
@@ -410,8 +414,8 @@ export default function ClientDepositsView() {
                             </div>
                           )}
                           {deposit.crypto_details.block_confirmations && (
-                            <div>
-                              <span className="font-medium text-purple-800">
+                            <div className="break-words">
+                              <span className="font-medium text-purple-800 block">
                                 Confirmations:
                               </span>
                               <p className="text-purple-700">
@@ -420,8 +424,8 @@ export default function ClientDepositsView() {
                             </div>
                           )}
                           {deposit.crypto_details.gas_fee && (
-                            <div>
-                              <span className="font-medium text-purple-800">
+                            <div className="break-words">
+                              <span className="font-medium text-purple-800 block">
                                 Gas Fee:
                               </span>
                               <p className="text-purple-700">
@@ -435,19 +439,19 @@ export default function ClientDepositsView() {
 
                     {/* Admin Notes */}
                     {deposit.admin_notes && (
-                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                        <h4 className="font-semibold text-gray-900 mb-2">
+                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 sm:p-4">
+                        <h4 className="font-semibold text-gray-900 mb-2 text-sm sm:text-base">
                           Admin Notes:
                         </h4>
-                        <p className="text-gray-700 text-sm">
+                        <p className="text-gray-700 text-xs sm:text-sm break-words">
                           {deposit.admin_notes}
                         </p>
                       </div>
                     )}
 
                     {/* Status Information */}
-                    <div className="flex items-center justify-between pt-2 border-t">
-                      <div className="text-xs text-gray-500">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-2 border-t">
+                      <div className="text-xs text-gray-500 break-words">
                         {deposit.status === "Approved" &&
                           "✅ Deposit approved and added to your balance"}
                         {deposit.status === "Pending Review" &&
@@ -462,7 +466,7 @@ export default function ClientDepositsView() {
                       {deposit.status === "Approved" && (
                         <Badge
                           variant="outline"
-                          className="text-green-600 border-green-300"
+                          className="text-green-600 border-green-300 text-xs w-fit"
                         >
                           Balance Updated
                         </Badge>

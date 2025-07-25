@@ -164,7 +164,7 @@ export default function PaymentsSection() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="p-6 space-y-6">
+      <div className="p-6 pt-4 pt-xs-16 space-y-6">
         <div className="flex justify-between items-center">
           <h2 className="text-2xl font-bold">Payments</h2>
           <Button

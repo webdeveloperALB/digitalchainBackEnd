@@ -76,3 +76,12 @@
 .brand-orange-hover {
   background-color: #e55a1f;
 }
+
+@media (max-width: 500px) {
+  .pt-xs-16 {
+    @apply pt-16;
+  }
+  .py-xs-16 {
+    @apply pt-16;
+  }
+}

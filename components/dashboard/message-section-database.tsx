@@ -144,7 +144,7 @@ export default function MessageSection() {
 
   return (
     <div className="h-full w-full overflow-auto">
-      <div className="p-6 space-y-6 max-w-4xl">
+      <div className="p-6 pt-4 pt-xs-16 space-y-6 max-w-4xl">
         <div className="flex justify-between items-center">
           <div>
             <h2 className="text-2xl font-bold">Messages</h2>
