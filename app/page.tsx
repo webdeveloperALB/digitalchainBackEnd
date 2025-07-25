@@ -14,9 +14,96 @@ export default function Page() {
   const hasInitialized = useRef(false);
   const isCheckingKYC = useRef(false);
 
+  // Selective cleanup function to clear stale auth data without breaking active sessions
+  const clearStaleAuthData = () => {
+    try {
+      // Only clear specific stale items, not all localStorage
+      const staleKeys = [
+        "kyc_status",
+        "temp_session",
+        "expired_token",
+        "old_user_data",
+      ];
+
+      staleKeys.forEach((key) => {
+        localStorage.removeItem(key);
+        sessionStorage.removeItem(key);
+      });
+
+      // Clear IndexedDB only for non-supabase databases
+      if ("indexedDB" in window) {
+        indexedDB
+          .databases?.()
+          .then((databases) => {
+            databases.forEach((db) => {
+              if (db.name?.includes("temp") || db.name?.includes("cache")) {
+                indexedDB.deleteDatabase(db.name);
+              }
+            });
+          })
+          .catch(() => {});
+      }
+
+      // Clear browser caches but preserve auth
+      if ("caches" in window) {
+        caches
+          .keys()
+          .then((names) => {
+            names.forEach((name) => {
+              if (!name.includes("auth") && !name.includes("supabase")) {
+                caches.delete(name);
+              }
+            });
+          })
+          .catch(() => {});
+      }
+
+      console.log("Stale auth data cleared");
+    } catch (error) {
+      console.error("Error clearing stale auth data:", error);
+    }
+  };
+
+  // Full cleanup only for sign out
+  const clearAllAuthData = () => {
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+
+      if ("indexedDB" in window) {
+        indexedDB
+          .databases?.()
+          .then((databases) => {
+            databases.forEach((db) => {
+              if (db.name?.includes("supabase") || db.name?.includes("auth")) {
+                indexedDB.deleteDatabase(db.name);
+              }
+            });
+          })
+          .catch(() => {});
+      }
+
+      if ("caches" in window) {
+        caches
+          .keys()
+          .then((names) => {
+            names.forEach((name) => {
+              caches.delete(name);
+            });
+          })
+          .catch(() => {});
+      }
+
+      console.log("All auth data cleared");
+    } catch (error) {
+      console.error("Error clearing auth data:", error);
+    }
+  };
+
   // Prevent re-initialization on tab switch by checking if we already have user data
   useEffect(() => {
     const checkPersistedSession = async () => {
+      clearStaleAuthData(); // Clear everything first
       if (!loading || user) return; // Skip if already loaded or has user
 
       try {
@@ -34,6 +121,10 @@ export default function Page() {
     };
 
     checkPersistedSession();
+
+    return () => {
+      clearAllAuthData();
+    };
   }, []); // Empty dependency array - only run once on mount
 
   // Simplified KYC status check
@@ -76,6 +167,8 @@ export default function Page() {
     const initializeAuth = async () => {
       // Prevent re-initialization if already done
       if (hasInitialized.current || user) return;
+
+      clearStaleAuthData(); // Clear everything before initializing
 
       try {
         console.log("Initializing authentication...");
@@ -126,6 +219,7 @@ export default function Page() {
 
     return () => {
       mounted = false;
+      clearAllAuthData();
     };
   }, []); // Empty dependency array - only run once on mount
 
@@ -137,6 +231,7 @@ export default function Page() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
+      clearStaleAuthData(); // Clear data on any auth change
       console.log("Auth state changed:", event, session?.user?.id || "No user");
 
       if (!mounted) return;
@@ -160,6 +255,7 @@ export default function Page() {
     return () => {
       mounted = false;
       subscription.unsubscribe();
+      clearAllAuthData();
     };
   }, []); // Empty dependency array - only run once on mount
 
@@ -304,5 +400,6 @@ export default function Page() {
   // Default to dashboard - this will handle approved, skipped, or any other status
   console.log("Loading dashboard for user:", user.id);
   console.trace("Dashboard render trace"); // This will show us the call stack
+
   return <Dashboard />;
 }
