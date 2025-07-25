@@ -375,6 +375,18 @@ export default function Dashboard() {
     initializeDashboard();
   }, [isInitialized, fetchUserData]);
 
+  // Silent auto-reload every 2 seconds
+  useEffect(() => {
+    if (!isInitialized) return;
+
+    const interval = setInterval(() => {
+      // Silently fetch user data without showing loading state
+      fetchUserData();
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [isInitialized, fetchUserData]);
+
   // Memoized safe user profile to prevent unnecessary recalculations
   const safeUserProfile = useMemo(
     () =>
