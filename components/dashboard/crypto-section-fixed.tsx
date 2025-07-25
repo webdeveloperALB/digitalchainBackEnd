@@ -24,9 +24,7 @@ import {
   Wallet,
   Network,
   X,
-  Bitcoin,
   Coins,
-  DollarSign,
 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -87,7 +85,7 @@ export default function RealCryptoTransferSection() {
       value: "BTC",
       label: "Bitcoin",
       symbol: "₿",
-      icon: Bitcoin,
+      iconUrl: "https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/svg/color/btc.svg",
       color: "bg-orange-500",
       decimals: 8,
       networks: [
@@ -99,7 +97,7 @@ export default function RealCryptoTransferSection() {
       value: "ETH",
       label: "Ethereum",
       symbol: "Ξ",
-      icon: Coins,
+      iconUrl: "https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/svg/color/eth.svg",
       color: "bg-blue-500",
       decimals: 8,
       networks: [
@@ -113,7 +111,7 @@ export default function RealCryptoTransferSection() {
       value: "USDT",
       label: "Tether USD",
       symbol: "$",
-      icon: DollarSign,
+      iconUrl: "https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/svg/color/usdt.svg",
       color: "bg-green-500",
       decimals: 6,
       networks: [
@@ -564,7 +562,6 @@ export default function RealCryptoTransferSection() {
                 cryptoBalances[
                   `${crypto.value.toLowerCase()}_balance` as keyof CryptoBalances
                 ];
-              const IconComponent = crypto.icon;
 
               return (
                 <Card key={crypto.value} className="relative overflow-hidden">
@@ -573,9 +570,13 @@ export default function RealCryptoTransferSection() {
                       <div className="space-y-2">
                         <div className="flex items-center gap-2">
                           <div
-                            className={`w-8 h-8 rounded-full ${crypto.color} flex items-center justify-center`}
+                            className={`w-10 h-10 rounded-full flex items-center justify-center p-1`}
                           >
-                            <IconComponent className="w-4 h-4 text-white" />
+                            <img
+                              src={crypto.iconUrl || "/placeholder.svg"}
+                              alt={crypto.label}
+                              className="w-10 h-10"
+                            />
                           </div>
                           <div>
                             <p className="font-medium text-gray-900">
@@ -632,15 +633,18 @@ export default function RealCryptoTransferSection() {
                         cryptoBalances[
                           `${crypto.value.toLowerCase()}_balance` as keyof CryptoBalances
                         ];
-                      const IconComponent = crypto.icon;
 
                       return (
                         <SelectItem key={crypto.value} value={crypto.value}>
                           <div className="flex items-center gap-3">
                             <div
-                              className={`w-6 h-6 rounded-full ${crypto.color} flex items-center justify-center`}
+                              className={`w-8 h-8 rounded-full flex items-center justify-center p-1`}
                             >
-                              <IconComponent className="w-3 h-3 text-white" />
+                              <img
+                                src={crypto.iconUrl || "/placeholder.svg"}
+                                alt={crypto.label}
+                                className="w-8 h-8"
+                              />
                             </div>
                             <div className="flex-1">
                               <span className="font-medium">
@@ -923,7 +927,6 @@ export default function RealCryptoTransferSection() {
                   const crypto = cryptocurrencies.find(
                     (c) => c.value === transaction.crypto_type
                   );
-                  const IconComponent = crypto?.icon || Coins;
 
                   return (
                     <div
@@ -935,9 +938,13 @@ export default function RealCryptoTransferSection() {
                           <div
                             className={`w-6 h-6 rounded-full ${
                               crypto?.color || "bg-gray-500"
-                            } flex items-center justify-center`}
+                            } flex items-center justify-center p-1`}
                           >
-                            <IconComponent className="w-3 h-3 text-white" />
+                            <img
+                              src={crypto?.iconUrl || "/placeholder.svg"}
+                              alt={crypto?.label}
+                              className="w-4 h-4 filter brightness-0 invert"
+                            />
                           </div>
                           {getStatusIcon(transaction.status)}
                           <p className="font-medium text-gray-900">
