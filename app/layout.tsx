@@ -4,9 +4,9 @@ import PresenceTracker from "@/components/client-presence-tracker";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "v0 App",
-  description: "Created with v0",
-  generator: "v0.dev",
+  title: "Digital Chain Bank",
+  description: "Digital Chain Bank",
+  generator: "Digital Chain Bank",
 };
 
 export default function RootLayout({

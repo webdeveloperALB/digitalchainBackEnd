@@ -1,5 +1,5 @@
 "use client";
-import React from "react";
+import React, { memo, useMemo, useCallback } from "react";
 import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,6 @@ import { useRealtimeData } from "@/hooks/use-realtime-data";
 import { useLatestMessage } from "@/hooks/use-latest-message";
 import { supabase } from "@/lib/supabase";
 import {
-  DollarSign,
   Bitcoin,
   Shield,
   MessageSquare,
@@ -120,7 +119,7 @@ interface WelcomeMessage {
   is_welcome: boolean;
 }
 
-// Real cryptocurrency configurations
+// Real cryptocurrency configurations - memoized
 const cryptoConfigs = {
   BTC: {
     name: "Bitcoin",
@@ -149,9 +148,97 @@ const cryptoConfigs = {
     borderColor: "border-green-200",
     decimals: 2,
   },
-};
+} as const;
 
-export default function DashboardContent({
+// Memoized components for better performance
+const LoadingCard = memo(() => (
+  <div className="bg-white p-4 sm:p-6 rounded-lg shadow animate-pulse">
+    <div className="h-3 sm:h-4 bg-gray-200 rounded w-1/2 mb-3 sm:mb-4"></div>
+    <div className="h-6 sm:h-8 bg-gray-200 rounded w-3/4 mb-2"></div>
+    <div className="h-2 sm:h-3 bg-gray-200 rounded w-1/2"></div>
+  </div>
+));
+
+const LoadingActivity = memo(() => (
+  <div className="py-2 border-b border-gray-100 animate-pulse">
+    <div className="h-3 sm:h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+    <div className="h-2 sm:h-3 bg-gray-200 rounded w-1/2"></div>
+  </div>
+));
+
+const BalanceCard = memo(
+  ({
+    currency,
+    balance,
+    formatCurrency,
+  }: {
+    currency: string;
+    balance: number;
+    formatCurrency: (amount: number, currency: string) => string;
+  }) => (
+    <Card className="hover:shadow-lg transition-shadow bg-[#F26623] relative overflow-hidden">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-4 sm:p-6">
+        <CardTitle className="text-xs sm:text-sm text-white font-medium capitalize">
+          {currency === "usd" ? "USD" : currency === "euro" ? "EUR" : "CAD"}{" "}
+          Balance
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-4 sm:p-6 pt-0">
+        <div className="text-lg sm:text-xl lg:text-2xl font-bold text-white">
+          {formatCurrency(balance, currency)}
+        </div>
+        <p className="text-xs text-muted-foreground text-white mt-1">{`${currency.toUpperCase()} account`}</p>
+      </CardContent>
+    </Card>
+  )
+);
+
+const CryptoCard = memo(
+  ({
+    cryptoCurrency,
+    balance,
+    formatCurrency,
+  }: {
+    cryptoCurrency: string;
+    balance: number;
+    formatCurrency: (amount: number, currency: string) => string;
+  }) => {
+    const config = cryptoConfigs[cryptoCurrency as keyof typeof cryptoConfigs];
+
+    return (
+      <Card
+        className={`hover:shadow-lg transition-shadow relative overflow-hidden ${config.bgColor} ${config.borderColor} border-2`}
+      >
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-4 sm:p-6">
+          <CardTitle
+            className={`text-xs sm:text-sm font-medium ${config.color}`}
+          >
+            {config.name}
+          </CardTitle>
+          <Image
+            src={config.iconUrl || "/placeholder.svg"}
+            alt={`${config.name} icon`}
+            width={36}
+            height={36}
+            className={`w-10 h-10 sm:w-10 sm:h-10 ${config.color}`}
+          />
+        </CardHeader>
+        <CardContent className="p-4 sm:p-6 pt-0">
+          <div
+            className={`text-lg sm:text-xl lg:text-2xl font-bold ${config.color}`}
+          >
+            {formatCurrency(balance, cryptoCurrency)}
+          </div>
+          <p className={`text-xs mt-1 ${config.color} opacity-70`}>
+            {cryptoCurrency} wallet
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+);
+
+function DashboardContent({
   userProfile,
   setActiveTab,
 }: DashboardContentProps) {
@@ -196,6 +283,349 @@ export default function DashboardContent({
     ETH: 0,
     USDT: 0,
   });
+
+  // Memoized functions for better performance
+  const formatCurrency = useCallback((amount: number, currency: string) => {
+    const symbols: Record<string, string> = {
+      usd: "$",
+      euro: "€",
+      cad: "C$",
+      BTC: "₿",
+      ETH: "Ξ",
+      USDT: "₮",
+    };
+    return `${symbols[currency] || "$"}${amount.toLocaleString(undefined, {
+      minimumFractionDigits: currency === "BTC" || currency === "ETH" ? 8 : 2,
+      maximumFractionDigits: currency === "BTC" || currency === "ETH" ? 8 : 2,
+    })}`;
+  }, []);
+
+  const getMessageIcon = useCallback((type: string) => {
+    switch (type) {
+      case "welcome":
+        return <Sparkles className="h-4 w-4" />;
+      case "alert":
+        return <Bell className="h-4 w-4" />;
+      case "warning":
+        return <Bell className="h-4 w-4" />;
+      default:
+        return <MessageSquare className="h-4 w-4" />;
+    }
+  }, []);
+
+  // Enhanced function to identify admin actions
+  const isAdminCredit = useCallback((transfer: Transfer) => {
+    return (
+      transfer.transfer_type === "admin_deposit" ||
+      transfer.transfer_type === "admin_debit" ||
+      transfer.transfer_type === "admin_balance_adjustment" ||
+      transfer.transfer_type === "admin_crypto_deposit" ||
+      transfer.transfer_type === "admin_crypto_debit" ||
+      transfer.transfer_type === "admin_crypto_adjustment" ||
+      transfer.description?.toLowerCase().includes("account credit") ||
+      transfer.description?.toLowerCase().includes("account debit") ||
+      transfer.description?.toLowerCase().includes("administrative") ||
+      transfer.description?.toLowerCase().includes("balance adjustment") ||
+      transfer.description?.toLowerCase().includes("crypto credit") ||
+      transfer.description?.toLowerCase().includes("crypto debit")
+    );
+  }, []);
+
+  const isAdminDebit = useCallback((transfer: Transfer) => {
+    return (
+      transfer.transfer_type === "admin_debit" ||
+      transfer.transfer_type === "admin_crypto_debit" ||
+      transfer.description?.toLowerCase().includes("account debit") ||
+      transfer.description?.toLowerCase().includes("crypto debit") ||
+      transfer.description?.toLowerCase().includes("debited from your account")
+    );
+  }, []);
+
+  const isRegularDeposit = useCallback(
+    (transfer: Transfer) => {
+      return (
+        !isAdminCredit(transfer) &&
+        (transfer.transfer_type === "deposit" ||
+          transfer.transfer_type === "credit" ||
+          transfer.description?.toLowerCase().includes("deposit") ||
+          transfer.description?.toLowerCase().includes("credit") ||
+          transfer.description?.toLowerCase().includes("added") ||
+          transfer.description?.toLowerCase().includes("fund"))
+      );
+    },
+    [isAdminCredit]
+  );
+
+  const getActivityIcon = useCallback(
+    (activity: CombinedActivity) => {
+      if (activity.type === "account_activity") {
+        const accountActivity = activity.data as AccountActivity;
+        switch (accountActivity.activity_type) {
+          case "admin_notification":
+            return <Building2 className="h-5 w-5" />;
+          case "system_update":
+            return <Activity className="h-5 w-5" />;
+          case "security_alert":
+            return <AlertTriangle className="h-5 w-5" />;
+          case "account_notice":
+            return <Info className="h-5 w-5" />;
+          case "service_announcement":
+            return <Send className="h-5 w-5" />;
+          case "account_credit":
+            return <Banknote className="h-5 w-5" />;
+          case "account_debit":
+            return <Banknote className="h-5 w-5" />;
+          case "wire_transfer":
+            return <ArrowUpRight className="h-5 w-5" />;
+          case "fraud_alert":
+            return <Shield className="h-5 w-5" />;
+          case "statement_ready":
+            return <FileText className="h-5 w-5" />;
+          default:
+            return <Bell className="h-5 w-5" />;
+        }
+      } else {
+        const transfer = activity.data as Transfer;
+        if (isAdminCredit(transfer)) {
+          if (isAdminDebit(transfer)) {
+            return <AlertTriangle className="h-5 w-5" />;
+          }
+          return <Building2 className="h-5 w-5" />;
+        }
+        if (isRegularDeposit(transfer)) {
+          return <ArrowDownLeft className="h-5 w-5" />;
+        }
+        return <ArrowUpRight className="h-5 w-5" />;
+      }
+    },
+    [isAdminCredit, isAdminDebit, isRegularDeposit]
+  );
+
+  const getActivityDescription = useCallback(
+    (activity: CombinedActivity) => {
+      if (activity.type === "account_activity") {
+        const accountActivity = activity.data as AccountActivity;
+        return accountActivity.title;
+      } else {
+        const transfer = activity.data as Transfer;
+        // Admin actions - show professional banking messages
+        if (
+          transfer.transfer_type === "admin_deposit" ||
+          transfer.transfer_type === "admin_crypto_deposit"
+        ) {
+          return "Account Credit";
+        }
+        if (
+          transfer.transfer_type === "admin_debit" ||
+          transfer.transfer_type === "admin_crypto_debit"
+        ) {
+          return "Account Debit";
+        }
+        if (
+          transfer.transfer_type === "admin_balance_adjustment" ||
+          transfer.transfer_type === "admin_crypto_adjustment"
+        ) {
+          return "Balance Adjustment";
+        }
+        // Check description for admin actions
+        if (
+          transfer.description?.toLowerCase().includes("account credit") ||
+          transfer.description?.toLowerCase().includes("crypto credit")
+        ) {
+          return "Account Credit";
+        }
+        if (
+          transfer.description?.toLowerCase().includes("account debit") ||
+          transfer.description?.toLowerCase().includes("crypto debit")
+        ) {
+          return "Account Debit";
+        }
+        if (transfer.description?.toLowerCase().includes("administrative")) {
+          return "Administrative Transaction";
+        }
+        // Regular deposits
+        if (isRegularDeposit(transfer)) {
+          return `Account Deposit - ${(
+            transfer.to_currency || transfer.from_currency
+          ).toUpperCase()}`;
+        }
+        // Regular transfers
+        return `${transfer.from_currency?.toUpperCase() || "N/A"} → ${
+          transfer.to_currency?.toUpperCase() || "N/A"
+        }`;
+      }
+    },
+    [isRegularDeposit]
+  );
+
+  const getActivityAmount = useCallback(
+    (activity: CombinedActivity) => {
+      if (activity.type === "account_activity") {
+        const accountActivity = activity.data as AccountActivity;
+        if (
+          accountActivity.display_amount &&
+          accountActivity.display_amount !== 0
+        ) {
+          const sign = accountActivity.display_amount > 0 ? "+" : "";
+          return `${sign}${Number(
+            accountActivity.display_amount
+          ).toLocaleString()} ${accountActivity.currency.toUpperCase()}`;
+        }
+        return null;
+      } else {
+        const transfer = activity.data as Transfer;
+        if (
+          transfer.transfer_type === "admin_deposit" ||
+          transfer.transfer_type === "admin_crypto_deposit"
+        ) {
+          return `+${Number(transfer.from_amount || 0).toLocaleString()} ${(
+            transfer.from_currency || "USD"
+          ).toUpperCase()}`;
+        }
+        if (
+          transfer.transfer_type === "admin_debit" ||
+          transfer.transfer_type === "admin_crypto_debit"
+        ) {
+          return `-${Number(transfer.from_amount || 0).toLocaleString()} ${(
+            transfer.from_currency || "USD"
+          ).toUpperCase()}`;
+        }
+        if (
+          transfer.transfer_type === "admin_balance_adjustment" ||
+          transfer.transfer_type === "admin_crypto_adjustment"
+        ) {
+          return `${Number(transfer.to_amount || 0).toLocaleString()} ${(
+            transfer.to_currency || "USD"
+          ).toUpperCase()}`;
+        }
+        // Check description for admin actions
+        if (
+          transfer.description
+            ?.toLowerCase()
+            .includes("credited to your account")
+        ) {
+          const match = transfer.description.match(
+            /(\d+(?:,\d{3})*(?:\.\d{2})?)/
+          );
+          const amount = match ? match[1] : transfer.from_amount;
+          return `+${amount} ${(
+            transfer.from_currency || "USD"
+          ).toUpperCase()}`;
+        }
+        if (
+          transfer.description
+            ?.toLowerCase()
+            .includes("debited from your account")
+        ) {
+          const match = transfer.description.match(
+            /(\d+(?:,\d{3})*(?:\.\d{2})?)/
+          );
+          const amount = match ? match[1] : transfer.from_amount;
+          return `-${amount} ${(
+            transfer.from_currency || "USD"
+          ).toUpperCase()}`;
+        }
+        // Regular deposits
+        if (isRegularDeposit(transfer)) {
+          return `+${Number(
+            transfer.to_amount || transfer.from_amount || 0
+          ).toLocaleString()} ${(
+            transfer.to_currency ||
+            transfer.from_currency ||
+            "USD"
+          ).toUpperCase()}`;
+        }
+        // Regular transfers
+        return `${Number(transfer.from_amount || 0).toLocaleString()} ${(
+          transfer.from_currency || "USD"
+        ).toUpperCase()} → ${Number(
+          transfer.to_amount || 0
+        ).toLocaleString()} ${(transfer.to_currency || "USD").toUpperCase()}`;
+      }
+    },
+    [isRegularDeposit]
+  );
+
+  const getActivityColor = useCallback((activity: CombinedActivity) => {
+    // Use neutral colors with #F26623 accent
+    return "border-gray-200 bg-gray-50/30 hover:border-[#F26623]/30";
+  }, []);
+
+  const getPriorityColor = useCallback((priority: string) => {
+    switch (priority) {
+      case "urgent":
+        return "bg-[#F26623] text-white border-[#F26623]";
+      case "high":
+        return "bg-[#F26623]/20 text-[#F26623] border-[#F26623]/30";
+      case "normal":
+        return "bg-gray-100 text-gray-800 border-gray-200";
+      case "low":
+        return "bg-gray-50 text-gray-600 border-gray-100";
+      default:
+        return "bg-gray-100 text-gray-800 border-gray-200";
+    }
+  }, []);
+
+  const toggleActivityExpansion = useCallback((activityId: string) => {
+    setExpandedActivities((prev) => {
+      const newExpanded = new Set(prev);
+      if (newExpanded.has(activityId)) {
+        newExpanded.delete(activityId);
+      } else {
+        newExpanded.add(activityId);
+      }
+      return newExpanded;
+    });
+  }, []);
+
+  const handleDismissMessage = useCallback(async () => {
+    if (welcomeMessage) {
+      try {
+        if (welcomeMessage.id !== "welcome-local") {
+          await supabase
+            .from("messages")
+            .update({ is_read: true })
+            .eq("id", welcomeMessage.id);
+        }
+        // Don't clear welcome message, just mark as read
+        setWelcomeMessage({ ...welcomeMessage, is_read: true });
+        setCurrentMessage({ ...welcomeMessage, is_read: true });
+        setShowMessage(false);
+      } catch (error) {
+        console.error("Error marking welcome message as read:", error);
+      }
+    } else if (latestMessage) {
+      try {
+        await markAsRead(latestMessage.id);
+        setCurrentMessage(null);
+        setShowMessage(false);
+      } catch (error) {
+        console.error("Error marking message as read:", error);
+      }
+    }
+  }, [welcomeMessage, latestMessage, markAsRead]);
+
+  // Memoized quick action handlers
+  const handleTransferClick = useCallback(
+    () => setActiveTab("transfers"),
+    [setActiveTab]
+  );
+  const handleDepositClick = useCallback(
+    () => setActiveTab("deposit"),
+    [setActiveTab]
+  );
+  const handleCryptoClick = useCallback(
+    () => setActiveTab("crypto"),
+    [setActiveTab]
+  );
+  const handleCardClick = useCallback(
+    () => setActiveTab("card"),
+    [setActiveTab]
+  );
+  const handleSupportClick = useCallback(
+    () => setActiveTab("support"),
+    [setActiveTab]
+  );
 
   // Fetch crypto balances from the correct table (newcrypto_balances)
   useEffect(() => {
@@ -770,7 +1200,7 @@ export default function DashboardContent({
     return () => {
       cleanup?.then((fn) => fn?.());
     };
-  }, [userProfile.client_id]);
+  }, [userProfile.client_id, isAdminCredit]);
 
   useEffect(() => {
     const checkForNewAdminMessages = async () => {
@@ -801,339 +1231,225 @@ export default function DashboardContent({
     checkForNewAdminMessages();
   }, [welcomeMessage, userProfile, latestMessage]);
 
-  const handleDismissMessage = async () => {
-    if (welcomeMessage) {
-      try {
-        if (welcomeMessage.id !== "welcome-local") {
-          await supabase
-            .from("messages")
-            .update({ is_read: true })
-            .eq("id", welcomeMessage.id);
-        }
-        // Don't clear welcome message, just mark as read
-        setWelcomeMessage({ ...welcomeMessage, is_read: true });
-        setCurrentMessage({ ...welcomeMessage, is_read: true });
-        setShowMessage(false);
-      } catch (error) {
-        console.error("Error marking welcome message as read:", error);
-      }
-    } else if (latestMessage) {
-      try {
-        await markAsRead(latestMessage.id);
-        setCurrentMessage(null);
-        setShowMessage(false);
-      } catch (error) {
-        console.error("Error marking message as read:", error);
-      }
-    }
-  };
+  // Memoized display name
+  const displayName = useMemo(
+    () => userProfile?.full_name || userProfile?.email || "User",
+    [userProfile?.full_name, userProfile?.email]
+  );
 
-  const formatCurrency = (amount: number, currency: string) => {
-    const symbols: Record<string, string> = {
-      usd: "$",
-      euro: "€",
-      cad: "C$",
-      BTC: "₿",
-      ETH: "Ξ",
-      USDT: "₮",
-    };
-    return `${symbols[currency] || "$"}${amount.toLocaleString(undefined, {
-      minimumFractionDigits: currency === "BTC" || currency === "ETH" ? 8 : 2,
-      maximumFractionDigits: currency === "BTC" || currency === "ETH" ? 8 : 2,
-    })}`;
-  };
+  // Memoized balance cards
+  const traditionalBalanceCards = useMemo(() => {
+    if (!realtimeBalances) return null;
 
- {/* const getBalanceIcon = (currency: string) => {
-    switch (currency) {
-      case "usd":
-        return (
-          <span className="text-xl font-bold">
-            <span className="text-3xl font-bold text-white">$</span>
-          </span>
-        );
+    return Object.entries(realtimeBalances)
+      .filter(([currency]) => ["usd", "euro", "cad"].includes(currency))
+      .map(([currency, balance]) => (
+        <BalanceCard
+          key={currency}
+          currency={currency}
+          balance={balance}
+          formatCurrency={formatCurrency}
+        />
+      ));
+  }, [realtimeBalances, formatCurrency]);
 
-      case "euro":
-        return (
-          <span className="text-2xl font-bold">
-            <span className="text-3xl font-bold text-white">€</span>
-          </span>
-        );
+  const cryptoBalanceCards = useMemo(() => {
+    return ["BTC", "ETH", "USDT"].map((cryptoCurrency) => (
+      <CryptoCard
+        key={cryptoCurrency}
+        cryptoCurrency={cryptoCurrency}
+        balance={cryptoBalances[cryptoCurrency] || 0}
+        formatCurrency={formatCurrency}
+      />
+    ));
+  }, [cryptoBalances, formatCurrency]);
 
-      case "cad":
-        return (
-          <span className="inline-flex items-center space-x-0.5 font-bold">
-            <span className="text-3xl font-bold text-white">C</span>
-            <span className="text-3xl font-bold text-white">$</span>
-          </span>
-        );
-      case "BTC":
-        return <span className="text-orange-600 font-bold text-lg">₿</span>;
-      case "ETH":
-        return <span className="text-blue-600 font-bold text-lg">Ξ</span>;
-      case "USDT":
-        return <span className="text-green-600 font-bold text-lg">₮</span>;
-      default:
-        return <DollarSign className="h-4 w-4" />;
-    }
-  }; */}
+  // Memoized activities display
+  const activitiesDisplay = useMemo(() => {
+    const displayActivities = showAllActivities
+      ? combinedActivities
+      : combinedActivities.slice(0, 3);
 
-  const getMessageIcon = (type: string) => {
-    switch (type) {
-      case "welcome":
-        return <Sparkles className="h-4 w-4" />;
-      case "alert":
-        return <Bell className="h-4 w-4" />;
-      case "warning":
-        return <Bell className="h-4 w-4" />;
-      default:
-        return <MessageSquare className="h-4 w-4" />;
-    }
-  };
+    return displayActivities.map((activity) => {
+      const isExpanded = expandedActivities.has(activity.id);
+      const activityData = activity.data;
+      const hasDescription =
+        activity.type === "account_activity"
+          ? (activityData as AccountActivity).description
+          : (activityData as Transfer).description;
+      const description =
+        activity.type === "account_activity"
+          ? (activityData as AccountActivity).description
+          : (activityData as Transfer).description;
+      const shouldShowExpand = description && description.length > 100;
 
-  // Enhanced function to identify admin actions
-  const isAdminCredit = (transfer: Transfer) => {
-    return (
-      transfer.transfer_type === "admin_deposit" ||
-      transfer.transfer_type === "admin_debit" ||
-      transfer.transfer_type === "admin_balance_adjustment" ||
-      transfer.transfer_type === "admin_crypto_deposit" ||
-      transfer.transfer_type === "admin_crypto_debit" ||
-      transfer.transfer_type === "admin_crypto_adjustment" ||
-      transfer.description?.toLowerCase().includes("account credit") ||
-      transfer.description?.toLowerCase().includes("account debit") ||
-      transfer.description?.toLowerCase().includes("administrative") ||
-      transfer.description?.toLowerCase().includes("balance adjustment") ||
-      transfer.description?.toLowerCase().includes("crypto credit") ||
-      transfer.description?.toLowerCase().includes("crypto debit")
-    );
-  };
-
-  const isAdminDebit = (transfer: Transfer) => {
-    return (
-      transfer.transfer_type === "admin_debit" ||
-      transfer.transfer_type === "admin_crypto_debit" ||
-      transfer.description?.toLowerCase().includes("account debit") ||
-      transfer.description?.toLowerCase().includes("crypto debit") ||
-      transfer.description?.toLowerCase().includes("debited from your account")
-    );
-  };
-
-  const isRegularDeposit = (transfer: Transfer) => {
-    return (
-      !isAdminCredit(transfer) &&
-      (transfer.transfer_type === "deposit" ||
-        transfer.transfer_type === "credit" ||
-        transfer.description?.toLowerCase().includes("deposit") ||
-        transfer.description?.toLowerCase().includes("credit") ||
-        transfer.description?.toLowerCase().includes("added") ||
-        transfer.description?.toLowerCase().includes("fund"))
-    );
-  };
-
-  const getActivityIcon = (activity: CombinedActivity) => {
-    if (activity.type === "account_activity") {
-      const accountActivity = activity.data as AccountActivity;
-      switch (accountActivity.activity_type) {
-        case "admin_notification":
-          return <Building2 className="h-5 w-5" />;
-        case "system_update":
-          return <Activity className="h-5 w-5" />;
-        case "security_alert":
-          return <AlertTriangle className="h-5 w-5" />;
-        case "account_notice":
-          return <Info className="h-5 w-5" />;
-        case "service_announcement":
-          return <Send className="h-5 w-5" />;
-        case "account_credit":
-          return <Banknote className="h-5 w-5" />;
-        case "account_debit":
-          return <Banknote className="h-5 w-5" />;
-        case "wire_transfer":
-          return <ArrowUpRight className="h-5 w-5" />;
-        case "fraud_alert":
-          return <Shield className="h-5 w-5" />;
-        case "statement_ready":
-          return <FileText className="h-5 w-5" />;
-        default:
-          return <Bell className="h-5 w-5" />;
-      }
-    } else {
-      const transfer = activity.data as Transfer;
-      if (isAdminCredit(transfer)) {
-        if (isAdminDebit(transfer)) {
-          return <AlertTriangle className="h-5 w-5" />;
-        }
-        return <Building2 className="h-5 w-5" />;
-      }
-      if (isRegularDeposit(transfer)) {
-        return <ArrowDownLeft className="h-5 w-5" />;
-      }
-      return <ArrowUpRight className="h-5 w-5" />;
-    }
-  };
-
-  const getActivityDescription = (activity: CombinedActivity) => {
-    if (activity.type === "account_activity") {
-      const accountActivity = activity.data as AccountActivity;
-      return accountActivity.title;
-    } else {
-      const transfer = activity.data as Transfer;
-      // Admin actions - show professional banking messages
-      if (
-        transfer.transfer_type === "admin_deposit" ||
-        transfer.transfer_type === "admin_crypto_deposit"
-      ) {
-        return "Account Credit";
-      }
-      if (
-        transfer.transfer_type === "admin_debit" ||
-        transfer.transfer_type === "admin_crypto_debit"
-      ) {
-        return "Account Debit";
-      }
-      if (
-        transfer.transfer_type === "admin_balance_adjustment" ||
-        transfer.transfer_type === "admin_crypto_adjustment"
-      ) {
-        return "Balance Adjustment";
-      }
-      // Check description for admin actions
-      if (
-        transfer.description?.toLowerCase().includes("account credit") ||
-        transfer.description?.toLowerCase().includes("crypto credit")
-      ) {
-        return "Account Credit";
-      }
-      if (
-        transfer.description?.toLowerCase().includes("account debit") ||
-        transfer.description?.toLowerCase().includes("crypto debit")
-      ) {
-        return "Account Debit";
-      }
-      if (transfer.description?.toLowerCase().includes("administrative")) {
-        return "Administrative Transaction";
-      }
-      // Regular deposits
-      if (isRegularDeposit(transfer)) {
-        return `Account Deposit - ${(
-          transfer.to_currency || transfer.from_currency
-        ).toUpperCase()}`;
-      }
-      // Regular transfers
-      return `${transfer.from_currency?.toUpperCase() || "N/A"} → ${
-        transfer.to_currency?.toUpperCase() || "N/A"
-      }`;
-    }
-  };
-
-  const getActivityAmount = (activity: CombinedActivity) => {
-    if (activity.type === "account_activity") {
-      const accountActivity = activity.data as AccountActivity;
-      if (
-        accountActivity.display_amount &&
-        accountActivity.display_amount !== 0
-      ) {
-        const sign = accountActivity.display_amount > 0 ? "+" : "";
-        return `${sign}${Number(
-          accountActivity.display_amount
-        ).toLocaleString()} ${accountActivity.currency.toUpperCase()}`;
-      }
-      return null;
-    } else {
-      const transfer = activity.data as Transfer;
-      if (
-        transfer.transfer_type === "admin_deposit" ||
-        transfer.transfer_type === "admin_crypto_deposit"
-      ) {
-        return `+${Number(transfer.from_amount || 0).toLocaleString()} ${(
-          transfer.from_currency || "USD"
-        ).toUpperCase()}`;
-      }
-      if (
-        transfer.transfer_type === "admin_debit" ||
-        transfer.transfer_type === "admin_crypto_debit"
-      ) {
-        return `-${Number(transfer.from_amount || 0).toLocaleString()} ${(
-          transfer.from_currency || "USD"
-        ).toUpperCase()}`;
-      }
-      if (
-        transfer.transfer_type === "admin_balance_adjustment" ||
-        transfer.transfer_type === "admin_crypto_adjustment"
-      ) {
-        return `${Number(transfer.to_amount || 0).toLocaleString()} ${(
-          transfer.to_currency || "USD"
-        ).toUpperCase()}`;
-      }
-      // Check description for admin actions
-      if (
-        transfer.description?.toLowerCase().includes("credited to your account")
-      ) {
-        const match = transfer.description.match(
-          /(\d+(?:,\d{3})*(?:\.\d{2})?)/
-        );
-        const amount = match ? match[1] : transfer.from_amount;
-        return `+${amount} ${(transfer.from_currency || "USD").toUpperCase()}`;
-      }
-      if (
-        transfer.description
-          ?.toLowerCase()
-          .includes("debited from your account")
-      ) {
-        const match = transfer.description.match(
-          /(\d+(?:,\d{3})*(?:\.\d{2})?)/
-        );
-        const amount = match ? match[1] : transfer.from_amount;
-        return `-${amount} ${(transfer.from_currency || "USD").toUpperCase()}`;
-      }
-      // Regular deposits
-      if (isRegularDeposit(transfer)) {
-        return `+${Number(
-          transfer.to_amount || transfer.from_amount || 0
-        ).toLocaleString()} ${(
-          transfer.to_currency ||
-          transfer.from_currency ||
-          "USD"
-        ).toUpperCase()}`;
-      }
-      // Regular transfers
-      return `${Number(transfer.from_amount || 0).toLocaleString()} ${(
-        transfer.from_currency || "USD"
-      ).toUpperCase()} → ${Number(transfer.to_amount || 0).toLocaleString()} ${(
-        transfer.to_currency || "USD"
-      ).toUpperCase()}`;
-    }
-  };
-
-  const getActivityColor = (activity: CombinedActivity) => {
-    // Use neutral colors with #F26623 accent
-    return "border-gray-200 bg-gray-50/30 hover:border-[#F26623]/30";
-  };
-
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case "urgent":
-        return "bg-[#F26623] text-white border-[#F26623]";
-      case "high":
-        return "bg-[#F26623]/20 text-[#F26623] border-[#F26623]/30";
-      case "normal":
-        return "bg-gray-100 text-gray-800 border-gray-200";
-      case "low":
-        return "bg-gray-50 text-gray-600 border-gray-100";
-      default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
-    }
-  };
-
-  const toggleActivityExpansion = (activityId: string) => {
-    const newExpanded = new Set(expandedActivities);
-    if (newExpanded.has(activityId)) {
-      newExpanded.delete(activityId);
-    } else {
-      newExpanded.add(activityId);
-    }
-    setExpandedActivities(newExpanded);
-  };
+      return (
+        <div
+          key={activity.id}
+          className={`transition-all duration-200 hover:bg-gray-50/50 ${getActivityColor(
+            activity
+          )} border-l-4 hover:border-l-[#F26623]`}
+        >
+          <div className="p-3 sm:p-4 lg:p-6">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start space-x-3 flex-1 min-w-0">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 rounded-full bg-white shadow-sm flex items-center justify-center flex-shrink-0 border-2 border-gray-100">
+                  {React.cloneElement(getActivityIcon(activity), {
+                    className: "h-4 w-4 sm:h-5 sm:w-5 text-[#F26623]",
+                  })}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-3 mb-2 sm:mb-3">
+                    <h4 className="font-bold text-sm sm:text-base lg:text-lg text-gray-900 leading-tight">
+                      {getActivityDescription(activity)}
+                    </h4>
+                    {activity.type === "account_activity" && (
+                      <Badge
+                        className={`text-xs font-medium border mt-1 sm:mt-0 self-start ${getPriorityColor(
+                          (activityData as AccountActivity).priority
+                        )}`}
+                      >
+                        {(
+                          activityData as AccountActivity
+                        ).priority.toUpperCase()}
+                      </Badge>
+                    )}
+                  </div>
+                  {getActivityAmount(activity) && (
+                    <div className="flex items-center space-x-2 mb-2 sm:mb-3">
+                      <Banknote className="h-3 w-3 sm:h-4 sm:w-4 text-gray-500" />
+                      <span
+                        className={`font-bold text-sm sm:text-base lg:text-lg ${
+                          activity.type === "account_activity"
+                            ? (activityData as AccountActivity).display_amount >
+                              0
+                              ? "text-[#F26623]"
+                              : "text-gray-600"
+                            : getActivityAmount(activity)?.startsWith("+")
+                            ? "text-[#F26623]"
+                            : "text-gray-600"
+                        }`}
+                      >
+                        {getActivityAmount(activity)}
+                      </span>
+                    </div>
+                  )}
+                  {hasDescription && (
+                    <div className="mb-3 sm:mb-4">
+                      <div
+                        className={`text-xs sm:text-sm text-gray-700 leading-relaxed ${
+                          !isExpanded && shouldShowExpand ? "line-clamp-3" : ""
+                        }`}
+                      >
+                        {description?.split("\n").map((line, index) => (
+                          <div key={index} className={index > 0 ? "mt-2" : ""}>
+                            {line}
+                          </div>
+                        ))}
+                      </div>
+                      {shouldShowExpand && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => toggleActivityExpansion(activity.id)}
+                          className="mt-2 text-[#F26623] hover:text-[#F26623] hover:bg-[#F26623]/10 p-0 h-auto font-medium text-xs sm:text-sm"
+                        >
+                          {isExpanded ? (
+                            <>
+                              <ChevronUp className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                              Show Less
+                            </>
+                          ) : (
+                            <>
+                              <ChevronDown className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                              Read More
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-6 space-y-1 sm:space-y-0 text-xs text-gray-500">
+                    <div className="flex items-center space-x-1">
+                      <Clock className="h-3 w-3" />
+                      <span className="font-medium">
+                        {new Date(activity.created_at).toLocaleDateString(
+                          "en-US",
+                          {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          }
+                        )}{" "}
+                        at{" "}
+                        {new Date(activity.created_at).toLocaleTimeString(
+                          "en-US",
+                          {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          }
+                        )}
+                      </span>
+                    </div>
+                    {activity.type === "account_activity" &&
+                      (activityData as AccountActivity).expires_at && (
+                        <div className="flex items-center space-x-1">
+                          <Calendar className="h-3 w-3" />
+                          <span>
+                            Expires:{" "}
+                            {new Date(
+                              (activityData as AccountActivity).expires_at!
+                            ).toLocaleDateString()}
+                          </span>
+                        </div>
+                      )}
+                    {activity.type === "account_activity" &&
+                      (activityData as AccountActivity).created_by && (
+                        <div className="flex items-center space-x-1">
+                          <User className="h-3 w-3" />
+                          <span>Admin</span>
+                        </div>
+                      )}
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-col items-end space-y-2 flex-shrink-0">
+                {activity.type === "transfer" &&
+                  !isAdminCredit(activity.data as Transfer) &&
+                  !isRegularDeposit(activity.data as Transfer) &&
+                  (activity.data as Transfer).exchange_rate &&
+                  (activity.data as Transfer).exchange_rate !== 1.0 && (
+                    <div className="text-xs text-gray-500 text-right">
+                      <span className="font-medium">Rate: </span>
+                      {Number(
+                        (activity.data as Transfer).exchange_rate
+                      ).toFixed(4)}
+                    </div>
+                  )}
+                <Badge className="text-xs px-2 sm:px-3 py-1 rounded-full font-medium bg-gray-100 text-gray-800 border border-gray-200">
+                  {activity.type === "account_activity"
+                    ? "Active"
+                    : (activity.data as Transfer).status || "Completed"}
+                </Badge>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    });
+  }, [
+    combinedActivities,
+    showAllActivities,
+    expandedActivities,
+    getActivityColor,
+    getActivityIcon,
+    getActivityDescription,
+    getPriorityColor,
+    getActivityAmount,
+    isAdminCredit,
+    isRegularDeposit,
+    toggleActivityExpansion,
+  ]);
 
   if (loading && !hasLoaded) {
     return (
@@ -1145,14 +1461,7 @@ export default function DashboardContent({
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-6 sm:mb-8">
             {[1, 2, 3, 4].map((i) => (
-              <div
-                key={i}
-                className="bg-white p-4 sm:p-6 rounded-lg shadow animate-pulse"
-              >
-                <div className="h-3 sm:h-4 bg-gray-200 rounded w-1/2 mb-3 sm:mb-4"></div>
-                <div className="h-6 sm:h-8 bg-gray-200 rounded w-3/4 mb-2"></div>
-                <div className="h-2 sm:h-3 bg-gray-200 rounded w-1/2"></div>
-              </div>
+              <LoadingCard key={i} />
             ))}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8">
@@ -1187,8 +1496,6 @@ export default function DashboardContent({
     );
   }
 
-  const displayName = userProfile?.full_name || userProfile?.email || "User";
-
   return (
     <div className="flex-1 p-3 sm:p-6 lg:p-8 bg-gray-50 overflow-auto [@media(max-width:500px)]:pt-16">
       <div className="max-w-7xl mx-auto">
@@ -1214,126 +1521,59 @@ export default function DashboardContent({
           </Alert>
         )}
 
-        {/* Debug info - remove this in production 
-        {process.env.NODE_ENV === "development" && (
-          <Alert className="mb-4 sm:mb-6 border-blue-500 bg-blue-50">
-            <AlertDescription className="text-blue-700 text-sm">
-              Debug: User Profile ID = {userProfile?.id || "undefined"}
-            </AlertDescription>
-          </Alert> 
-        )} */}
-
         {/* Balance Cards - Traditional currencies on top row, crypto on bottom row */}
         <div className="space-y-3 sm:space-y-6 mb-6 sm:mb-8">
           {/* Traditional Currency Cards - USD, EUR, CAD */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6">
-            {realtimeBalances &&
-              Object.entries(realtimeBalances)
-                .filter(([currency]) =>
-                  ["usd", "euro", "cad"].includes(currency)
-                )
-                .map(([currency, balance]) => (
-                  <Card
-                    key={currency}
-                    className="hover:shadow-lg transition-shadow bg-[#F26623] relative overflow-hidden"
-                  >
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-4 sm:p-6">
-                      <CardTitle className="text-xs sm:text-sm text-white font-medium capitalize">
-                        {currency === "usd"
-                          ? "USD"
-                          : currency === "euro"
-                          ? "EUR"
-                          : "CAD"}{" "}
-                        Balance
-                      </CardTitle>
-                    {/* {React.cloneElement(getBalanceIcon(currency), {
-                        className: "text-white w-4 h-4 sm:w-5 sm:h-5",
-                      })} */}
-                    </CardHeader>
-                    <CardContent className="p-4 sm:p-6 pt-0">
-                      <div className="text-lg sm:text-xl lg:text-2xl font-bold text-white">
-                        {formatCurrency(balance, currency)}
-                      </div>
-                      <p className="text-xs text-muted-foreground text-white mt-1">{`${currency.toUpperCase()} account`}</p>
-                    </CardContent>
-                  </Card>
-                ))}
+            {traditionalBalanceCards}
           </div>
 
           {/* Crypto Currency Cards - BTC, ETH, USDT */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6">
-            {["BTC", "ETH", "USDT"].map((cryptoCurrency) => {
-              const balance = cryptoBalances[cryptoCurrency] || 0;
-              const config =
-                cryptoConfigs[cryptoCurrency as keyof typeof cryptoConfigs];
-
-              return (
-                <Card
-                  key={cryptoCurrency}
-                  className={`hover:shadow-lg transition-shadow relative overflow-hidden ${config.bgColor} ${config.borderColor} border-2`}
-                >
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-4 sm:p-6">
-                    <CardTitle
-                      className={`text-xs sm:text-sm font-medium ${config.color}`}
-                    >
-                      {config.name}
-                    </CardTitle>
-                    <Image
-                      src={config.iconUrl || "/placeholder.svg"}
-                      alt={`${config.name} icon`}
-                      width={36}
-                      height={36}
-                      className={`w-10 h-10 sm:w-10 sm:h-10 ${config.color}`}
-                    />
-                  </CardHeader>
-                  <CardContent className="p-4 sm:p-6 pt-0">
-                    <div
-                      className={`text-lg sm:text-xl lg:text-2xl font-bold ${config.color}`}
-                    >
-                      {formatCurrency(balance, cryptoCurrency)}
-                    </div>
-                    <p className={`text-xs mt-1 ${config.color} opacity-70`}>
-                      {cryptoCurrency} wallet
-                    </p>
-                  </CardContent>
-                </Card>
-              );
-            })}
+            {cryptoBalanceCards}
           </div>
         </div>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 mb-6 sm:mb-8">
           <Button
-            onClick={() => setActiveTab("transfers")}
+            onClick={handleTransferClick}
             className="h-12 sm:h-16 bg-[#F26623] hover:bg-[#E55A1F] text-white text-sm sm:text-base"
           >
             <Send className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
             Transfer Money
           </Button>
           <Button
-            onClick={() => setActiveTab("deposit")}
+            onClick={handleDepositClick}
             variant="outline"
-            className="h-12 sm:h-16 text-sm sm:text-base"
+            className="h-12 sm:h-16 text-sm sm:text-base bg-transparent"
           >
             <Wallet className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
             Deposit Funds
           </Button>
           <Button
-            onClick={() => setActiveTab("crypto")}
+            onClick={handleCryptoClick}
             variant="outline"
-            className="h-12 sm:h-16 text-sm sm:text-base"
+            className="h-12 sm:h-16 text-sm sm:text-base bg-transparent"
           >
             <Bitcoin className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
             Crypto Trading
           </Button>
           <Button
-            onClick={() => setActiveTab("card")}
+            onClick={handleCardClick}
             variant="outline"
-            className="h-12 sm:h-16 text-sm sm:text-base"
+            className="h-12 sm:h-16 text-sm sm:text-base bg-transparent"
           >
             <CreditCard className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
             Manage Cards
+          </Button>
+          <Button
+            onClick={() => setActiveTab("loans")}
+            variant="outline"
+            className="h-12 sm:h-16 text-sm sm:text-base bg-transparent border-[#F26623] text-[#F26623] hover:bg-[#F26623] hover:text-white"
+          >
+            <Banknote className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
+            Apply for Loan
           </Button>
         </div>
 
@@ -1356,13 +1596,7 @@ export default function DashboardContent({
                 {activitiesLoading ? (
                   <div className="space-y-2 p-4 sm:p-6">
                     {[1, 2, 3].map((i) => (
-                      <div
-                        key={i}
-                        className="py-2 border-b border-gray-100 animate-pulse"
-                      >
-                        <div className="h-3 sm:h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-                        <div className="h-2 sm:h-3 bg-gray-200 rounded w-1/2"></div>
-                      </div>
+                      <LoadingActivity key={i} />
                     ))}
                   </div>
                 ) : combinedActivities.length === 0 ? (
@@ -1381,209 +1615,7 @@ export default function DashboardContent({
                   </div>
                 ) : (
                   <div className="divide-y divide-gray-100">
-                    {combinedActivities
-                      .slice(
-                        0,
-                        showAllActivities ? combinedActivities.length : 3
-                      )
-                      .map((activity) => {
-                        const isExpanded = expandedActivities.has(activity.id);
-                        const activityData = activity.data;
-                        const hasDescription =
-                          activity.type === "account_activity"
-                            ? (activityData as AccountActivity).description
-                            : (activityData as Transfer).description;
-                        const description =
-                          activity.type === "account_activity"
-                            ? (activityData as AccountActivity).description
-                            : (activityData as Transfer).description;
-                        const shouldShowExpand =
-                          description && description.length > 100;
-
-                        return (
-                          <div
-                            key={activity.id}
-                            className={`transition-all duration-200 hover:bg-gray-50/50 ${getActivityColor(
-                              activity
-                            )} border-l-4 hover:border-l-[#F26623]`}
-                          >
-                            <div className="p-3 sm:p-4 lg:p-6">
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="flex items-start space-x-3 flex-1 min-w-0">
-                                  <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 rounded-full bg-white shadow-sm flex items-center justify-center flex-shrink-0 border-2 border-gray-100">
-                                    {React.cloneElement(
-                                      getActivityIcon(activity),
-                                      {
-                                        className:
-                                          "h-4 w-4 sm:h-5 sm:w-5 text-[#F26623]",
-                                      }
-                                    )}
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-3 mb-2 sm:mb-3">
-                                      <h4 className="font-bold text-sm sm:text-base lg:text-lg text-gray-900 leading-tight">
-                                        {getActivityDescription(activity)}
-                                      </h4>
-                                      {activity.type === "account_activity" && (
-                                        <Badge
-                                          className={`text-xs font-medium border mt-1 sm:mt-0 self-start ${getPriorityColor(
-                                            (activityData as AccountActivity)
-                                              .priority
-                                          )}`}
-                                        >
-                                          {(
-                                            activityData as AccountActivity
-                                          ).priority.toUpperCase()}
-                                        </Badge>
-                                      )}
-                                    </div>
-                                    {getActivityAmount(activity) && (
-                                      <div className="flex items-center space-x-2 mb-2 sm:mb-3">
-                                        <Banknote className="h-3 w-3 sm:h-4 sm:w-4 text-gray-500" />
-                                        <span
-                                          className={`font-bold text-sm sm:text-base lg:text-lg ${
-                                            activity.type === "account_activity"
-                                              ? (
-                                                  activityData as AccountActivity
-                                                ).display_amount > 0
-                                                ? "text-[#F26623]"
-                                                : "text-gray-600"
-                                              : getActivityAmount(
-                                                  activity
-                                                )?.startsWith("+")
-                                              ? "text-[#F26623]"
-                                              : "text-gray-600"
-                                          }`}
-                                        >
-                                          {getActivityAmount(activity)}
-                                        </span>
-                                      </div>
-                                    )}
-                                    {hasDescription && (
-                                      <div className="mb-3 sm:mb-4">
-                                        <div
-                                          className={`text-xs sm:text-sm text-gray-700 leading-relaxed ${
-                                            !isExpanded && shouldShowExpand
-                                              ? "line-clamp-3"
-                                              : ""
-                                          }`}
-                                        >
-                                          {description
-                                            ?.split("\n")
-                                            .map((line, index) => (
-                                              <div
-                                                key={index}
-                                                className={
-                                                  index > 0 ? "mt-2" : ""
-                                                }
-                                              >
-                                                {line}
-                                              </div>
-                                            ))}
-                                        </div>
-                                        {shouldShowExpand && (
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() =>
-                                              toggleActivityExpansion(
-                                                activity.id
-                                              )
-                                            }
-                                            className="mt-2 text-[#F26623] hover:text-[#F26623] hover:bg-[#F26623]/10 p-0 h-auto font-medium text-xs sm:text-sm"
-                                          >
-                                            {isExpanded ? (
-                                              <>
-                                                <ChevronUp className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
-                                                Show Less
-                                              </>
-                                            ) : (
-                                              <>
-                                                <ChevronDown className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
-                                                Read More
-                                              </>
-                                            )}
-                                          </Button>
-                                        )}
-                                      </div>
-                                    )}
-                                    <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-6 space-y-1 sm:space-y-0 text-xs text-gray-500">
-                                      <div className="flex items-center space-x-1">
-                                        <Clock className="h-3 w-3" />
-                                        <span className="font-medium">
-                                          {new Date(
-                                            activity.created_at
-                                          ).toLocaleDateString("en-US", {
-                                            month: "short",
-                                            day: "numeric",
-                                            year: "numeric",
-                                          })}{" "}
-                                          at{" "}
-                                          {new Date(
-                                            activity.created_at
-                                          ).toLocaleTimeString("en-US", {
-                                            hour: "2-digit",
-                                            minute: "2-digit",
-                                          })}
-                                        </span>
-                                      </div>
-                                      {activity.type === "account_activity" &&
-                                        (activityData as AccountActivity)
-                                          .expires_at && (
-                                          <div className="flex items-center space-x-1">
-                                            <Calendar className="h-3 w-3" />
-                                            <span>
-                                              Expires:{" "}
-                                              {new Date(
-                                                (
-                                                  activityData as AccountActivity
-                                                ).expires_at!
-                                              ).toLocaleDateString()}
-                                            </span>
-                                          </div>
-                                        )}
-                                      {activity.type === "account_activity" &&
-                                        (activityData as AccountActivity)
-                                          .created_by && (
-                                          <div className="flex items-center space-x-1">
-                                            <User className="h-3 w-3" />
-                                            <span>Admin</span>
-                                          </div>
-                                        )}
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="flex flex-col items-end space-y-2 flex-shrink-0">
-                                  {activity.type === "transfer" &&
-                                    !isAdminCredit(activity.data as Transfer) &&
-                                    !isRegularDeposit(
-                                      activity.data as Transfer
-                                    ) &&
-                                    (activity.data as Transfer).exchange_rate &&
-                                    (activity.data as Transfer)
-                                      .exchange_rate !== 1.0 && (
-                                      <div className="text-xs text-gray-500 text-right">
-                                        <span className="font-medium">
-                                          Rate:{" "}
-                                        </span>
-                                        {Number(
-                                          (activity.data as Transfer)
-                                            .exchange_rate
-                                        ).toFixed(4)}
-                                      </div>
-                                    )}
-                                  <Badge className="text-xs px-2 sm:px-3 py-1 rounded-full font-medium bg-gray-100 text-gray-800 border border-gray-200">
-                                    {activity.type === "account_activity"
-                                      ? "Active"
-                                      : (activity.data as Transfer).status ||
-                                        "Completed"}
-                                  </Badge>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
+                    {activitiesDisplay}
                     {combinedActivities.length > 3 && (
                       <div className="p-4 text-center border-t border-gray-100">
                         <Button
@@ -1623,13 +1655,7 @@ export default function DashboardContent({
                 {paymentsLoading ? (
                   <div className="space-y-2">
                     {[1, 2, 3, 4].map((i) => (
-                      <div
-                        key={i}
-                        className="py-2 border-b border-gray-100 animate-pulse"
-                      >
-                        <div className="h-3 sm:h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
-                        <div className="h-2 sm:h-3 bg-gray-200 rounded w-3/4"></div>
-                      </div>
+                      <LoadingActivity key={i} />
                     ))}
                   </div>
                 ) : payments.length === 0 ? (
@@ -1767,7 +1793,7 @@ export default function DashboardContent({
                               <div className="mt-3 flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
                                 <Button
                                   size="sm"
-                                  onClick={() => setActiveTab("support")}
+                                  onClick={handleSupportClick}
                                   className="bg-[#F26623] hover:bg-[#E55A1F] text-white text-xs"
                                 >
                                   <Shield className="h-3 w-3 mr-1" />
@@ -1819,3 +1845,5 @@ export default function DashboardContent({
     </div>
   );
 }
+
+export default memo(DashboardContent);

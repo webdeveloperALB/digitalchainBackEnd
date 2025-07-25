@@ -14,6 +14,7 @@ import {
   LogOut,
   Menu,
   X,
+  Banknote,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -91,6 +92,7 @@ export default function Sidebar({
     { id: "transfers", label: "Transfers", icon: ArrowLeftRight },
     { id: "deposit", label: "Deposit", icon: Download },
     { id: "payments", label: "Payments", icon: CreditCard },
+    { id: "loans", label: "Loans", icon: Banknote },
     { id: "card", label: "Card", icon: CreditCard },
     { id: "crypto", label: "Crypto", icon: Bitcoin },
     { id: "message", label: "Message", icon: MessageSquare },
@@ -124,15 +126,16 @@ export default function Sidebar({
       {/* Sidebar */}
       <div
         className={`
-      fixed md:relative
-      w-64 bg-[#F5F0F0] h-screen flex flex-col
-      transform transition-transform duration-300 ease-in-out z-50
-      ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}
-      md:translate-x-0
-    `}
+    fixed md:relative
+    w-64 bg-[#F5F0F0] h-screen flex flex-col
+    transform transition-transform duration-300 ease-in-out z-50
+    ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}
+    md:translate-x-0
+    overflow-hidden
+  `}
       >
         {/* Logo Section */}
-        <div className="px-6 pt-16 md:pt-0">
+        <div className="px-6 pt-2 flex-shrink-0 border-b border-gray-200/50">
           <div className="flex items-center">
             <Image
               src="/logo.svg"
@@ -146,8 +149,19 @@ export default function Sidebar({
         </div>
 
         {/* Navigation Menu */}
-        <nav className="flex-1 px-6">
-          <ul className="space-y-1">
+        <nav
+          className="flex-1 px-6 overflow-y-auto scrollbar-hide"
+          style={{
+            scrollbarWidth: "none",
+            msOverflowStyle: "none",
+          }}
+        >
+          <style jsx>{`
+            nav::-webkit-scrollbar {
+              display: none;
+            }
+          `}</style>
+          <ul className="space-y-1 py-4">
             {menuItems.map((item) => (
               <li key={item.id}>
                 <button
@@ -170,7 +184,7 @@ export default function Sidebar({
         </nav>
 
         {/* Client Profile Section */}
-        <div className="p-6">
+        <div className="p-6 flex-shrink-0 border-t border-gray-200/50">
           <div className="bg-[#F26623] rounded-2xl px-4 py-3 text-white relative">
             <div className="flex items-center justify-between">
               <div className="flex items-center">
