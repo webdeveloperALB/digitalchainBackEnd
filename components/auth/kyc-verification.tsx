@@ -1,38 +1,35 @@
-"use client";
-import type React from "react";
-import { useState } from "react";
-import { supabase } from "@/lib/supabase";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertCircle, Upload, CheckCircle, X } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+"use client"
+import type React from "react"
+import { useState } from "react"
+import { supabase } from "@/lib/supabase"
+import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { AlertCircle, Upload, CheckCircle, X } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 interface KYCVerificationProps {
-  userId: string;
-  onKYCComplete: () => void;
+  userId: string
+  onKYCComplete: () => void
 }
 
 interface UploadedFile {
-  file: File;
-  preview: string;
-  uploaded: boolean;
+  file: File
+  preview: string
+  uploaded: boolean
 }
 
-export default function KYCVerification({
-  userId,
-  onKYCComplete,
-}: KYCVerificationProps) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+export default function KYCVerification({ userId, onKYCComplete }: KYCVerificationProps) {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
 
   const [documents, setDocuments] = useState({
     idDocument: null as UploadedFile | null,
     driverLicense: null as UploadedFile | null,
     utilityBill: null as UploadedFile | null,
     selfie: null as UploadedFile | null,
-  });
+  })
 
   const [formData, setFormData] = useState({
     documentType: "passport", // passport, id_card
@@ -43,29 +40,22 @@ export default function KYCVerification({
     city: "",
     country: "",
     postalCode: "",
-  });
+  })
 
   const handleFileUpload = (type: keyof typeof documents, file: File) => {
     if (file.size > 10 * 1024 * 1024) {
       // 10MB limit
-      setError("File size must be less than 10MB");
-      return;
+      setError("File size must be less than 10MB")
+      return
     }
 
-    const allowedTypes = [
-      "image/jpeg",
-      "image/png",
-      "image/jpg",
-      "application/pdf",
-    ];
+    const allowedTypes = ["image/jpeg", "image/png", "image/jpg", "application/pdf"]
     if (!allowedTypes.includes(file.type)) {
-      setError("Only JPEG, PNG, and PDF files are allowed");
-      return;
+      setError("Only JPEG, PNG, and PDF files are allowed")
+      return
     }
 
-    const preview = file.type.startsWith("image/")
-      ? URL.createObjectURL(file)
-      : "/pdf-icon.png";
+    const preview = file.type.startsWith("image/") ? URL.createObjectURL(file) : "/pdf-icon.png"
 
     setDocuments((prev) => ({
       ...prev,
@@ -74,123 +64,104 @@ export default function KYCVerification({
         preview,
         uploaded: false,
       },
-    }));
-    setError(null);
-  };
+    }))
+    setError(null)
+  }
 
   const uploadFileToSupabase = async (file: File, path: string) => {
     try {
-      console.log(`Uploading file to path: ${path}`);
+      console.log(`Uploading file to path: ${path}`)
 
-      const fileExt = file.name.split(".").pop();
-      const fileName = `${Date.now()}-${Math.random()
-        .toString(36)
-        .substring(2)}.${fileExt}`;
-      const filePath = `${path}/${fileName}`;
+      const fileExt = file.name.split(".").pop()
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
+      const filePath = `${path}/${fileName}`
 
-      console.log(`Full file path: ${filePath}`);
+      console.log(`Full file path: ${filePath}`)
 
-      const { data, error } = await supabase.storage
-        .from("kyc-documents")
-        .upload(filePath, file, {
-          cacheControl: "3600",
-          upsert: false,
-        });
+      const { data, error } = await supabase.storage.from("kyc-documents").upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: false,
+      })
 
       if (error) {
-        console.error("Storage upload error:", error);
-        throw new Error(`File upload failed: ${error.message}`);
+        console.error("Storage upload error:", error)
+        throw new Error(`File upload failed: ${error.message}`)
       }
 
-      console.log("File uploaded successfully:", data);
-      return filePath;
+      console.log("File uploaded successfully:", data)
+      return filePath
     } catch (error) {
-      console.error("Error in uploadFileToSupabase:", error);
-      throw error;
+      console.error("Error in uploadFileToSupabase:", error)
+      throw error
     }
-  };
+  }
 
   const handleSubmitKYC = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    setSuccess(null);
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+    setSuccess(null)
 
     try {
-      console.log("Starting KYC submission...");
+      console.log("Starting KYC submission...")
 
       // Validate required documents
-      if (
-        !documents.idDocument ||
-        !documents.utilityBill ||
-        !documents.selfie
-      ) {
-        throw new Error("Please upload all required documents");
+      if (!documents.idDocument || !documents.utilityBill || !documents.selfie) {
+        throw new Error("Please upload all required documents")
       }
 
-      console.log("Required documents validated");
+      console.log("Required documents validated")
 
       // Upload files to Supabase Storage directly (skip bucket check)
-      console.log("Starting file uploads...");
-      const uploadPromises = [];
-      const documentPaths: any = {};
+      console.log("Starting file uploads...")
+      const uploadPromises = []
+      const documentPaths: any = {}
 
       if (documents.idDocument) {
-        console.log("Uploading ID document...");
+        console.log("Uploading ID document...")
         uploadPromises.push(
-          uploadFileToSupabase(
-            documents.idDocument.file,
-            `${userId}/id-documents`
-          ).then((path) => {
-            documentPaths.id_document_path = path;
-            console.log("ID document uploaded:", path);
-          })
-        );
+          uploadFileToSupabase(documents.idDocument.file, `${userId}/id-documents`).then((path) => {
+            documentPaths.id_document_path = path
+            console.log("ID document uploaded:", path)
+          }),
+        )
       }
 
       if (documents.driverLicense) {
-        console.log("Uploading driver license...");
+        console.log("Uploading driver license...")
         uploadPromises.push(
-          uploadFileToSupabase(
-            documents.driverLicense.file,
-            `${userId}/driver-license`
-          ).then((path) => {
-            documentPaths.driver_license_path = path;
-            console.log("Driver license uploaded:", path);
-          })
-        );
+          uploadFileToSupabase(documents.driverLicense.file, `${userId}/driver-license`).then((path) => {
+            documentPaths.driver_license_path = path
+            console.log("Driver license uploaded:", path)
+          }),
+        )
       }
 
       if (documents.utilityBill) {
-        console.log("Uploading utility bill...");
+        console.log("Uploading utility bill...")
         uploadPromises.push(
-          uploadFileToSupabase(
-            documents.utilityBill.file,
-            `${userId}/utility-bills`
-          ).then((path) => {
-            documentPaths.utility_bill_path = path;
-            console.log("Utility bill uploaded:", path);
-          })
-        );
+          uploadFileToSupabase(documents.utilityBill.file, `${userId}/utility-bills`).then((path) => {
+            documentPaths.utility_bill_path = path
+            console.log("Utility bill uploaded:", path)
+          }),
+        )
       }
 
       if (documents.selfie) {
-        console.log("Uploading selfie...");
+        console.log("Uploading selfie...")
         uploadPromises.push(
-          uploadFileToSupabase(documents.selfie.file, `${userId}/selfies`).then(
-            (path) => {
-              documentPaths.selfie_path = path;
-              console.log("Selfie uploaded:", path);
-            }
-          )
-        );
+          uploadFileToSupabase(documents.selfie.file, `${userId}/selfies`).then((path) => {
+            documentPaths.selfie_path = path
+            console.log("Selfie uploaded:", path)
+          }),
+        )
       }
 
-      await Promise.all(uploadPromises);
-      console.log("All files uploaded successfully:", documentPaths);
+      await Promise.all(uploadPromises)
+      console.log("All files uploaded successfully:", documentPaths)
 
       // Insert KYC data into database
-      console.log("Inserting KYC data into database...");
+      console.log("Inserting KYC data into database...")
       const kycData = {
         user_id: userId,
         document_type: formData.documentType,
@@ -204,76 +175,98 @@ export default function KYCVerification({
         ...documentPaths,
         status: "pending",
         submitted_at: new Date().toISOString(),
-      };
+      }
 
-      console.log("KYC data to insert:", kycData);
+      console.log("KYC data to insert:", kycData)
 
-      const { data: insertData, error: dbError } = await supabase
-        .from("kyc_verifications")
-        .insert(kycData)
-        .select();
+      const { data: insertData, error: dbError } = await supabase.from("kyc_verifications").insert(kycData).select()
 
       if (dbError) {
-        console.error("Database insert error:", dbError);
-        throw new Error(`Database error: ${dbError.message}`);
+        console.error("Database insert error:", dbError)
+        throw new Error(`Database error: ${dbError.message}`)
       }
 
-      console.log("KYC data inserted successfully:", insertData);
+      console.log("KYC data inserted successfully:", insertData)
 
       // Update user's KYC status
-      console.log("Updating user KYC status...");
-      const { error: userUpdateError } = await supabase
-        .from("users")
-        .update({ kyc_status: "pending" })
-        .eq("id", userId);
+      console.log("Updating user KYC status...")
+      const { error: userUpdateError } = await supabase.from("users").update({ kyc_status: "pending" }).eq("id", userId)
 
       if (userUpdateError) {
-        console.error("User update error:", userUpdateError);
+        console.error("User update error:", userUpdateError)
         // Don't throw here - the KYC was submitted successfully
-        console.log(
-          "KYC submitted but user status update failed - this is okay"
-        );
+        console.log("KYC submitted but user status update failed - this is okay")
       } else {
-        console.log("User KYC status updated successfully");
+        console.log("User KYC status updated successfully")
       }
 
-      setSuccess(
-        "KYC verification submitted successfully! Your documents are being reviewed."
-      );
+      setSuccess("KYC verification submitted successfully! Your documents are being reviewed.")
 
-      // Call the completion callback after a short delay
-      setTimeout(() => {
-        onKYCComplete();
-      }, 2000);
+      // Poll for KYC status update before calling completion callback
+      const pollForKYCUpdate = async (attempts = 0, maxAttempts = 10) => {
+        if (attempts >= maxAttempts) {
+          console.log("Max polling attempts reached, proceeding with callback")
+          onKYCComplete()
+          return
+        }
+
+        try {
+          // Check if KYC status has been updated
+          const { data: userData, error: checkError } = await supabase
+            .from("users")
+            .select("kyc_status")
+            .eq("id", userId)
+            .single()
+
+          if (checkError) {
+            console.error("Error checking KYC status:", checkError)
+            // Proceed anyway after delay
+            setTimeout(() => onKYCComplete(), 2000)
+            return
+          }
+
+          if (userData?.kyc_status === "pending") {
+            console.log("KYC status confirmed as pending, calling completion callback")
+            onKYCComplete()
+          } else {
+            console.log(`KYC status not yet updated (${userData?.kyc_status}), retrying in 500ms...`)
+            setTimeout(() => pollForKYCUpdate(attempts + 1, maxAttempts), 500)
+          }
+        } catch (error) {
+          console.error("Error in KYC status polling:", error)
+          // Fallback to original behavior
+          setTimeout(() => onKYCComplete(), 2000)
+        }
+      }
+
+      // Start polling after a short delay
+      setTimeout(() => pollForKYCUpdate(), 1000)
     } catch (error: any) {
-      console.error("KYC submission error:", error);
-      setError(`KYC submission failed: ${error.message}`);
+      console.error("KYC submission error:", error)
+      setError(`KYC submission failed: ${error.message}`)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   const removeFile = (type: keyof typeof documents) => {
     if (documents[type]?.preview.startsWith("blob:")) {
-      URL.revokeObjectURL(documents[type]!.preview);
+      URL.revokeObjectURL(documents[type]!.preview)
     }
     setDocuments((prev) => ({
       ...prev,
       [type]: null,
-    }));
-  };
+    }))
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="max-w-4xl w-full">
         <Card className="shadow-lg">
           <CardHeader className="text-center">
-            <CardTitle className="text-2xl font-bold text-gray-900">
-              KYC Verification Required
-            </CardTitle>
+            <CardTitle className="text-2xl font-bold text-gray-900">KYC Verification Required</CardTitle>
             <p className="text-gray-600 mt-2">
-              To comply with banking regulations, please complete your identity
-              verification
+              To comply with banking regulations, please complete your identity verification
             </p>
           </CardHeader>
 
@@ -288,9 +281,7 @@ export default function KYCVerification({
             {success && (
               <Alert className="border-green-200 bg-green-50">
                 <CheckCircle className="h-4 w-4 text-green-600" />
-                <AlertDescription className="text-green-800">
-                  {success}
-                </AlertDescription>
+                <AlertDescription className="text-green-800">{success}</AlertDescription>
               </Alert>
             )}
 
@@ -303,9 +294,7 @@ export default function KYCVerification({
                     id="fullName"
                     type="text"
                     value={formData.fullName}
-                    onChange={(e) =>
-                      setFormData({ ...formData, fullName: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
                     className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#F26623] focus:border-transparent"
                     required
                     title="Enter your full legal name"
@@ -320,9 +309,7 @@ export default function KYCVerification({
                     id="dateOfBirth"
                     type="date"
                     value={formData.dateOfBirth}
-                    onChange={(e) =>
-                      setFormData({ ...formData, dateOfBirth: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, dateOfBirth: e.target.value })}
                     className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#F26623] focus:border-transparent"
                     required
                     title="Select your date of birth"
@@ -335,9 +322,7 @@ export default function KYCVerification({
                   <select
                     id="documentType"
                     value={formData.documentType}
-                    onChange={(e) =>
-                      setFormData({ ...formData, documentType: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, documentType: e.target.value })}
                     className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#F26623] focus:border-transparent"
                     required
                     title="Select your document type"
@@ -374,9 +359,7 @@ export default function KYCVerification({
                     id="address"
                     type="text"
                     value={formData.address}
-                    onChange={(e) =>
-                      setFormData({ ...formData, address: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                     className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#F26623] focus:border-transparent"
                     required
                     title="Enter your full address"
@@ -391,9 +374,7 @@ export default function KYCVerification({
                     id="city"
                     type="text"
                     value={formData.city}
-                    onChange={(e) =>
-                      setFormData({ ...formData, city: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, city: e.target.value })}
                     className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#F26623] focus:border-transparent"
                     required
                     title="Enter your city"
@@ -408,9 +389,7 @@ export default function KYCVerification({
                     id="country"
                     type="text"
                     value={formData.country}
-                    onChange={(e) =>
-                      setFormData({ ...formData, country: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, country: e.target.value })}
                     className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#F26623] focus:border-transparent"
                     required
                     title="Enter your country"
@@ -425,9 +404,7 @@ export default function KYCVerification({
                     id="postalCode"
                     type="text"
                     value={formData.postalCode}
-                    onChange={(e) =>
-                      setFormData({ ...formData, postalCode: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })}
                     className="w-full mt-1 p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#F26623] focus:border-transparent"
                     title="Enter your postal code"
                     placeholder="Enter postal code"
@@ -463,9 +440,7 @@ export default function KYCVerification({
                   title="Driver License (Optional)"
                   description="Upload your driver license if available"
                   file={documents.driverLicense}
-                  onFileSelect={(file) =>
-                    handleFileUpload("driverLicense", file)
-                  }
+                  onFileSelect={(file) => handleFileUpload("driverLicense", file)}
                   onRemove={() => removeFile("driverLicense")}
                 />
 
@@ -493,31 +468,25 @@ export default function KYCVerification({
         </Card>
       </div>
     </div>
-  );
+  )
 }
 
 // Document Upload Component
 interface DocumentUploadProps {
-  title: string;
-  description: string;
-  file: UploadedFile | null;
-  onFileSelect: (file: File) => void;
-  onRemove: () => void;
+  title: string
+  description: string
+  file: UploadedFile | null
+  onFileSelect: (file: File) => void
+  onRemove: () => void
 }
 
-function DocumentUpload({
-  title,
-  description,
-  file,
-  onFileSelect,
-  onRemove,
-}: DocumentUploadProps) {
+function DocumentUpload({ title, description, file, onFileSelect, onRemove }: DocumentUploadProps) {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
+    const selectedFile = e.target.files?.[0]
     if (selectedFile) {
-      onFileSelect(selectedFile);
+      onFileSelect(selectedFile)
     }
-  };
+  }
 
   return (
     <div className="border border-gray-200 rounded-lg p-4">
@@ -542,14 +511,9 @@ function DocumentUpload({
       {!file ? (
         <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-[#F26623] transition-colors relative">
           <Upload className="mx-auto h-8 w-8 text-gray-400 mb-2" />
-          <div className="text-sm text-gray-600 mb-2">
-            Click to upload or drag and drop
-          </div>
+          <div className="text-sm text-gray-600 mb-2">Click to upload or drag and drop</div>
           <div className="text-xs text-gray-500">PNG, JPG, PDF up to 10MB</div>
-          <label
-            htmlFor={`file-upload-${title.replace(/\s+/g, "-").toLowerCase()}`}
-            className="sr-only"
-          >
+          <label htmlFor={`file-upload-${title.replace(/\s+/g, "-").toLowerCase()}`} className="sr-only">
             {title}
           </label>
           <input
@@ -566,15 +530,11 @@ function DocumentUpload({
         <div className="flex items-center space-x-3 p-3 bg-green-50 border border-green-200 rounded-lg">
           <CheckCircle className="h-5 w-5 text-green-600" />
           <div className="flex-1">
-            <p className="text-sm font-medium text-green-800">
-              {file.file.name}
-            </p>
-            <p className="text-xs text-green-600">
-              {(file.file.size / 1024 / 1024).toFixed(2)} MB
-            </p>
+            <p className="text-sm font-medium text-green-800">{file.file.name}</p>
+            <p className="text-xs text-green-600">{(file.file.size / 1024 / 1024).toFixed(2)} MB</p>
           </div>
         </div>
       )}
     </div>
-  );
+  )
 }

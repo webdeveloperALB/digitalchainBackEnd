@@ -1,27 +1,27 @@
-"use client";
-import type React from "react";
-import { useState } from "react";
-import { supabase } from "@/lib/supabase";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Eye, EyeOff, AlertCircle } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Checkbox } from "@/components/ui/checkbox";
-import Image from "next/image";
+"use client"
+import type React from "react"
+import { useState, useEffect } from "react"
+import { supabase } from "@/lib/supabase"
+import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
+import { Eye, EyeOff, AlertCircle } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Checkbox } from "@/components/ui/checkbox"
+import Image from "next/image"
 
 // Extend Window interface to include presenceCleanup
 declare global {
   interface Window {
-    presenceCleanup?: () => void;
+    presenceCleanup?: () => void
   }
 }
 
 export default function AuthForm() {
-  const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [isSignUp, setIsSignUp] = useState(false);
+  const [loading, setLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+  const [isSignUp, setIsSignUp] = useState(false)
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -29,7 +29,14 @@ export default function AuthForm() {
     firstName: "",
     lastName: "",
     age: "",
-  });
+  })
+
+  // Reset showPassword when switching between sign in/up modes
+  useEffect(() => {
+    setShowPassword(false)
+    setError(null)
+    setSuccess(null)
+  }, [isSignUp])
 
   // Function to update user online status
   const updateUserOnlineStatus = async (userId: string, isOnline: boolean) => {
@@ -39,104 +46,122 @@ export default function AuthForm() {
         .from("user_presence")
         .select("*")
         .eq("user_id", userId)
-        .single();
+        .single()
 
       if (selectError && selectError.code !== "PGRST116") {
-        console.error("Error checking user presence:", selectError);
-        return;
+        console.error("Error checking user presence:", selectError)
+        return
+      }
+
+      const presenceData = {
+        is_online: isOnline,
+        last_seen: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       }
 
       if (existingRecord) {
         // Update existing record
-        const { error: updateError } = await supabase
-          .from("user_presence")
-          .update({
-            is_online: isOnline,
-            last_seen: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq("user_id", userId);
+        const { error: updateError } = await supabase.from("user_presence").update(presenceData).eq("user_id", userId)
 
         if (updateError) {
-          console.error("Error updating user presence:", updateError);
+          console.error("Error updating user presence:", updateError)
         } else {
-          console.log(
-            `User ${userId} status updated to ${
-              isOnline ? "online" : "offline"
-            }`
-          );
+          console.log(`User ${userId} status updated to ${isOnline ? "online" : "offline"}`)
         }
       } else {
         // Insert new record
-        const { error: insertError } = await supabase
-          .from("user_presence")
-          .insert({
-            user_id: userId,
-            is_online: isOnline,
-            last_seen: new Date().toISOString(),
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          });
+        const { error: insertError } = await supabase.from("user_presence").insert({
+          user_id: userId,
+          ...presenceData,
+          created_at: new Date().toISOString(),
+        })
 
         if (insertError) {
-          console.error("Error inserting user presence:", insertError);
+          console.error("Error inserting user presence:", insertError)
         } else {
-          console.log(
-            `User ${userId} presence record created as ${
-              isOnline ? "online" : "offline"
-            }`
-          );
+          console.log(`User ${userId} presence record created as ${isOnline ? "online" : "offline"}`)
         }
       }
     } catch (error) {
-      console.error("Error in updateUserOnlineStatus:", error);
+      console.error("Error in updateUserOnlineStatus:", error)
     }
-  };
+  }
 
   // Function to set up presence tracking when user signs in
   const setupPresenceTracking = (userId: string) => {
+    // Clean up any existing presence tracking first
+    if (window.presenceCleanup) {
+      window.presenceCleanup()
+    }
+
     // Update status to online immediately
-    updateUserOnlineStatus(userId, true);
+    updateUserOnlineStatus(userId, true)
 
     // Set up periodic heartbeat to maintain online status
     const heartbeatInterval = setInterval(() => {
-      updateUserOnlineStatus(userId, true);
-    }, 30000); // Update every 30 seconds
+      updateUserOnlineStatus(userId, true)
+    }, 30000) // Update every 30 seconds
 
     // Set up beforeunload event to mark user as offline when they leave
     const handleBeforeUnload = () => {
-      updateUserOnlineStatus(userId, false);
-    };
+      // Use sendBeacon for more reliable offline status update
+      const data = JSON.stringify({
+        user_id: userId,
+        is_online: false,
+        last_seen: new Date().toISOString(),
+      })
+
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon("/api/update-presence", data)
+      } else {
+        updateUserOnlineStatus(userId, false)
+      }
+    }
 
     // Set up visibility change to handle tab switching
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        updateUserOnlineStatus(userId, false);
+        updateUserOnlineStatus(userId, false)
       } else {
-        updateUserOnlineStatus(userId, true);
+        updateUserOnlineStatus(userId, true)
       }
-    };
+    }
 
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
+    // Set up page focus/blur handlers
+    const handleFocus = () => updateUserOnlineStatus(userId, true)
+    const handleBlur = () => updateUserOnlineStatus(userId, false)
+
+    // Add all event listeners
+    window.addEventListener("beforeunload", handleBeforeUnload)
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+    window.addEventListener("focus", handleFocus)
+    window.addEventListener("blur", handleBlur)
 
     // Store cleanup function
     window.presenceCleanup = () => {
-      clearInterval(heartbeatInterval);
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      updateUserOnlineStatus(userId, false);
-    };
-  };
+      console.log("Cleaning up presence tracking for user:", userId)
+      clearInterval(heartbeatInterval)
+      window.removeEventListener("beforeunload", handleBeforeUnload)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
+      window.removeEventListener("focus", handleFocus)
+      window.removeEventListener("blur", handleBlur)
+      updateUserOnlineStatus(userId, false)
+
+      // Clear the cleanup function
+      window.presenceCleanup = undefined
+    }
+
+    console.log("Presence tracking set up for user:", userId)
+  }
 
   const handleSignUp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    setSuccess(null);
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+    setSuccess(null)
 
     try {
-      console.log("Starting signup process...");
+      console.log("Starting signup process...")
 
       // First, create the auth user
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -144,25 +169,24 @@ export default function AuthForm() {
         password: formData.password,
         options: {
           data: {
-            full_name:
-              formData.fullName || `${formData.firstName} ${formData.lastName}`,
+            full_name: formData.fullName || `${formData.firstName} ${formData.lastName}`,
             first_name: formData.firstName,
             last_name: formData.lastName,
             age: formData.age,
           },
         },
-      });
+      })
 
       if (authError) {
-        console.error("Auth signup error:", authError);
-        throw authError;
+        console.error("Auth signup error:", authError)
+        throw authError
       }
 
-      console.log("Auth user created:", authData.user?.id);
+      console.log("Auth user created:", authData.user?.id)
 
       // Then, manually insert the user data into your users table
       if (authData.user) {
-        console.log("Inserting user into users table...");
+        console.log("Inserting user into users table...")
 
         const { error: dbError } = await supabase.from("users").insert({
           id: authData.user.id,
@@ -170,78 +194,73 @@ export default function AuthForm() {
           password: formData.password, // Note: Consider hashing this
           first_name: formData.firstName,
           last_name: formData.lastName,
-          full_name:
-            formData.fullName || `${formData.firstName} ${formData.lastName}`,
+          full_name: formData.fullName || `${formData.firstName} ${formData.lastName}`,
           age: Number.parseInt(formData.age),
           kyc_status: "not_started", // Set initial KYC status
           created_at: new Date().toISOString(),
-        });
+        })
 
         if (dbError) {
-          console.error("Database insert error:", dbError);
+          console.error("Database insert error:", dbError)
           // Don't throw here - the auth user was created successfully
           // The KYC check will handle the missing user record
-          console.log(
-            "User will be prompted for KYC since they're not in users table"
-          );
+          console.log("User will be prompted for KYC since they're not in users table")
         } else {
-          console.log("User successfully inserted into users table");
+          console.log("User successfully inserted into users table")
         }
 
         // Set up presence tracking for new user
-        setupPresenceTracking(authData.user.id);
+        setupPresenceTracking(authData.user.id)
       }
 
-      console.log("Signup response:", authData);
-      setSuccess(
-        "Account created successfully! Check your email for confirmation."
-      );
+      console.log("Signup response:", authData)
+      setSuccess("Account created successfully! Check your email for confirmation.")
 
       // The auth state change will trigger the KYC check automatically
     } catch (error: any) {
-      console.error("Signup error details:", error);
-      setError(`Signup failed: ${error.message || "Unknown error occurred"}`);
+      console.error("Signup error details:", error)
+      setError(`Signup failed: ${error.message || "Unknown error occurred"}`)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   const handleSignIn = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    setSuccess(null);
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+    setSuccess(null)
 
     try {
-      console.log("Starting signin process...");
+      console.log("Starting signin process...")
 
       const { data, error } = await supabase.auth.signInWithPassword({
         email: formData.email,
         password: formData.password,
-      });
+      })
 
       if (error) {
-        console.error("Signin error:", error);
-        throw error;
+        console.error("Signin error:", error)
+        throw error
       }
 
-      console.log("Signin successful:", data.user?.id);
+      console.log("Signin successful:", data.user?.id)
 
       // Set up presence tracking for signed in user
       if (data.user) {
-        setupPresenceTracking(data.user.id);
+        setupPresenceTracking(data.user.id)
       }
 
-      setSuccess("Successfully signed in!");
+      setSuccess("Successfully signed in!")
 
       // The auth state change will handle the redirect based on KYC status
     } catch (error: any) {
-      console.error("Signin error details:", error);
-      setError(`Sign in failed: ${error.message || "Unknown error occurred"}`);
+      console.error("Signin error details:", error)
+      setError(`Sign in failed: ${error.message || "Unknown error occurred"}`)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   return (
     <div className="h-screen bg-[#F26623] flex items-center justify-center p-2 sm:p-4 overflow-hidden">
@@ -252,8 +271,7 @@ export default function AuthForm() {
           <div
             className="absolute inset-y-0 right-0 w-4 pointer-events-none hidden lg:block"
             style={{
-              background:
-                "linear-gradient(to left, rgba(0,0,0,0.3), transparent)",
+              background: "linear-gradient(to left, rgba(0,0,0,0.3), transparent)",
             }}
           />
           <div className="h-full flex items-center justify-center p-2 sm:p-4 pb-0 overflow-visible">
@@ -299,21 +317,15 @@ export default function AuthForm() {
             {success && (
               <Alert className="mb-4 border-green-200 bg-green-50">
                 <AlertCircle className="h-4 w-4 text-green-600" />
-                <AlertDescription className="text-green-800 text-sm">
-                  {success}
-                </AlertDescription>
+                <AlertDescription className="text-green-800 text-sm">{success}</AlertDescription>
               </Alert>
             )}
             {!isSignUp ? (
               // Sign In Form
               <div className="max-w-sm mx-auto w-full">
                 <div className="mb-6 sm:mb-8">
-                  <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
-                    Sign In
-                  </h2>
-                  <p className="text-gray-600 text-sm">
-                    Enter your Digital Chain Bank Account details.
-                  </p>
+                  <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">Sign In</h2>
+                  <p className="text-gray-600 text-sm">Enter your Digital Chain Bank Account details.</p>
                 </div>
                 <form onSubmit={handleSignIn} className="space-y-6">
                   <div>
@@ -321,9 +333,7 @@ export default function AuthForm() {
                       type="email"
                       placeholder="Email"
                       value={formData.email}
-                      onChange={(e) =>
-                        setFormData({ ...formData, email: e.target.value })
-                      }
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       required
                       className="w-full h-10 border-0 border-b-2 border-gray-300 rounded-none px-0 bg-transparent text-base outline-none focus:outline-none focus:ring-0 focus:shadow-none focus:border-[#F26623]"
                     />
@@ -333,9 +343,7 @@ export default function AuthForm() {
                       type={showPassword ? "text" : "password"}
                       placeholder="Password"
                       value={formData.password}
-                      onChange={(e) =>
-                        setFormData({ ...formData, password: e.target.value })
-                      }
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                       required
                       className="w-full h-10 border-0 border-b-2 border-gray-300 rounded-none px-0 pr-10 bg-transparent text-base outline-none focus:outline-none focus:ring-0 focus:shadow-none focus:border-[#F26623]"
                     />
@@ -358,10 +366,7 @@ export default function AuthForm() {
                       id="remember"
                       className="w-4 h-4 border-2 border-gray-300 data-[state=checked]:bg-[#F26623] data-[state=checked]:border-[#F26623]"
                     />
-                    <Label
-                      htmlFor="remember"
-                      className="text-sm text-gray-600 cursor-pointer"
-                    >
+                    <Label htmlFor="remember" className="text-sm text-gray-600 cursor-pointer">
                       Remember Me
                     </Label>
                   </div>
@@ -374,9 +379,7 @@ export default function AuthForm() {
                   </Button>
                 </form>
                 <div className="flex flex-col sm:flex-row justify-between items-center mt-6 sm:mt-8 text-xs gap-2 sm:gap-0">
-                  <button className="text-gray-500 hover:text-[#F26623] transition-colors">
-                    Forgot Password?
-                  </button>
+                  <button className="text-gray-500 hover:text-[#F26623] transition-colors">Forgot Password?</button>
                   <span className="text-gray-400 text-center sm:text-right">
                     For Banking of the Future, Based in Panama
                   </span>
@@ -390,8 +393,7 @@ export default function AuthForm() {
                     Create your Digital Chain Bank Account
                   </h2>
                   <p className="text-gray-600 text-sm">
-                    Apply now and you will get access to your account within the
-                    next few days.
+                    Apply now and you will get access to your account within the next few days.
                   </p>
                 </div>
                 <form onSubmit={handleSignUp} className="space-y-4">
@@ -416,9 +418,7 @@ export default function AuthForm() {
                         type="text"
                         placeholder="Last Name"
                         value={formData.lastName}
-                        onChange={(e) =>
-                          setFormData({ ...formData, lastName: e.target.value })
-                        }
+                        onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
                         required
                         className="w-full h-10 border-0 border-b-2 border-gray-300 rounded-none px-0 bg-transparent text-base outline-none focus:outline-none focus:ring-0 focus:shadow-none focus:border-[#F26623]"
                       />
@@ -430,9 +430,7 @@ export default function AuthForm() {
                         type="email"
                         placeholder="Email"
                         value={formData.email}
-                        onChange={(e) =>
-                          setFormData({ ...formData, email: e.target.value })
-                        }
+                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                         required
                         className="w-full h-10 border-0 border-b-2 border-gray-300 rounded-none px-0 bg-transparent text-base outline-none focus:outline-none focus:ring-0 focus:shadow-none focus:border-[#F26623]"
                       />
@@ -442,9 +440,7 @@ export default function AuthForm() {
                         type="number"
                         placeholder="Age"
                         value={formData.age}
-                        onChange={(e) =>
-                          setFormData({ ...formData, age: e.target.value })
-                        }
+                        onChange={(e) => setFormData({ ...formData, age: e.target.value })}
                         required
                         className="w-full h-10 border-0 border-b-2 border-gray-300 rounded-none px-0 bg-transparent text-base outline-none focus:outline-none focus:ring-0 focus:shadow-none focus:border-[#F26623]"
                       />
@@ -455,9 +451,7 @@ export default function AuthForm() {
                       type={showPassword ? "text" : "password"}
                       placeholder="Password"
                       value={formData.password}
-                      onChange={(e) =>
-                        setFormData({ ...formData, password: e.target.value })
-                      }
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                       required
                       className="w-full h-10 border-0 border-b-2 border-gray-300 rounded-none px-0 pr-12 bg-transparent text-base outline-none focus:outline-none focus:ring-0 focus:shadow-none focus:border-[#F26623]"
                     />
@@ -488,9 +482,7 @@ export default function AuthForm() {
                   </div>
                 </form>
                 <div className="flex flex-col sm:flex-row justify-between items-center mt-6 sm:mt-8 text-xs gap-2 sm:gap-0">
-                  <button className="text-gray-500 hover:text-[#F26623] transition-colors">
-                    Return Home
-                  </button>
+                  <button className="text-gray-500 hover:text-[#F26623] transition-colors">Return Home</button>
                   <span className="text-gray-400 text-center sm:text-right">
                     The Banking of the Future, Based in Panama
                   </span>
@@ -501,5 +493,5 @@ export default function AuthForm() {
         </div>
       </div>
     </div>
-  );
+  )
 }
