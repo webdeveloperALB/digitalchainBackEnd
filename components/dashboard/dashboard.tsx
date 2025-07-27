@@ -13,6 +13,7 @@ import TransfersSection from "./transfers-section-fixed";
 import CryptoSection from "./crypto-section-fixed";
 import MessageSection from "./message-section-database";
 import LoansSection from "./loans-section";
+import { useRouter } from "next/navigation";
 
 interface UserProfile {
   id: string;
@@ -55,6 +56,8 @@ export default function Dashboard() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastActivity, setLastActivity] = useState(Date.now());
+  const router = useRouter();
 
   const generateClientId = () => {
     return Math.floor(Math.random() * 1000000)
@@ -151,6 +154,61 @@ export default function Dashboard() {
   useEffect(() => {
     fetchUserData();
   }, []);
+
+  // Idle timeout functionality
+  useEffect(() => {
+    const IDLE_TIME = 90000; // 1 minute 30 seconds in milliseconds
+
+    const handleActivity = () => {
+      setLastActivity(Date.now());
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        setLastActivity(Date.now());
+      }
+    };
+
+    const forceLogout = async () => {
+      try {
+        await supabase.auth.signOut();
+        router.push('/');
+      } catch (error) {
+        console.error('Error during forced logout:', error);
+        // Force redirect even if logout fails
+        router.push('/');
+      }
+    };
+
+    // Add event listeners for user activity
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
+
+    events.forEach(event => {
+      document.addEventListener(event, handleActivity, true);
+    });
+
+    // Add visibility change listener for tab switching
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Set up interval to check for idle time
+    const idleCheckInterval = setInterval(() => {
+      const now = Date.now();
+      const timeSinceLastActivity = now - lastActivity;
+
+      if (timeSinceLastActivity >= IDLE_TIME) {
+        forceLogout();
+      }
+    }, 1000); // Check every second
+
+    // Cleanup function
+    return () => {
+      events.forEach(event => {
+        document.removeEventListener(event, handleActivity, true);
+      });
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      clearInterval(idleCheckInterval);
+    };
+  }, [lastActivity, router]);
 
   const renderActiveSection = () => {
     if (!userProfile) return null;
