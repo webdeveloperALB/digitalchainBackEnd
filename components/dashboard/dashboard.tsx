@@ -392,12 +392,12 @@ export default function Dashboard() {
     <div className="relative h-screen bg-gray-100">
       <div className="flex h-full">
         {userProfile && (
-          <div className="w-64 h-full fixed left-0 top-0 z-20">
+          <div className="md:w-64 md:h-full md:fixed md:left-0 md:top-0 md:z-20">
             <Sidebar activeTab={activeTab} setActiveTab={handleTabChange} userProfile={userProfile} />
           </div>
         )}
 
-        <div className="flex-1 ml-64 overflow-auto">
+        <div className="flex-1 md:ml-64 overflow-auto">
           {isIdle && (
             <div className="absolute top-4 left-4 bg-yellow-100 border border-yellow-400 text-yellow-700 px-3 py-2 rounded text-sm z-40">
               ⚠️ Session will expire due to inactivity
