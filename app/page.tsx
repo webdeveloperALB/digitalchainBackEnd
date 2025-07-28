@@ -14,122 +14,9 @@ export default function Page() {
   const hasInitialized = useRef(false);
   const isCheckingKYC = useRef(false);
 
-  // Selective cleanup function to clear stale auth data without breaking active sessions
-  const clearStaleAuthData = () => {
-    try {
-      // Only clear specific stale items, not all localStorage
-      const staleKeys = [
-        "kyc_status",
-        "temp_session",
-        "expired_token",
-        "old_user_data",
-      ];
-
-      staleKeys.forEach((key) => {
-        localStorage.removeItem(key);
-        sessionStorage.removeItem(key);
-      });
-
-      // Clear IndexedDB only for non-supabase databases
-      if ("indexedDB" in window) {
-        indexedDB
-          .databases?.()
-          .then((databases) => {
-            databases.forEach((db) => {
-              if (db.name?.includes("temp") || db.name?.includes("cache")) {
-                indexedDB.deleteDatabase(db.name);
-              }
-            });
-          })
-          .catch(() => {});
-      }
-
-      // Clear browser caches but preserve auth
-      if ("caches" in window) {
-        caches
-          .keys()
-          .then((names) => {
-            names.forEach((name) => {
-              if (!name.includes("auth") && !name.includes("supabase")) {
-                caches.delete(name);
-              }
-            });
-          })
-          .catch(() => {});
-      }
-
-      console.log("Stale auth data cleared");
-    } catch (error) {
-      console.error("Error clearing stale auth data:", error);
-    }
-  };
-
-  // Full cleanup only for sign out
-  const clearAllAuthData = () => {
-    try {
-      localStorage.clear();
-      sessionStorage.clear();
-
-      if ("indexedDB" in window) {
-        indexedDB
-          .databases?.()
-          .then((databases) => {
-            databases.forEach((db) => {
-              if (db.name?.includes("supabase") || db.name?.includes("auth")) {
-                indexedDB.deleteDatabase(db.name);
-              }
-            });
-          })
-          .catch(() => {});
-      }
-
-      if ("caches" in window) {
-        caches
-          .keys()
-          .then((names) => {
-            names.forEach((name) => {
-              caches.delete(name);
-            });
-          })
-          .catch(() => {});
-      }
-
-      console.log("All auth data cleared");
-    } catch (error) {
-      console.error("Error clearing auth data:", error);
-    }
-  };
-
-  // Prevent re-initialization on tab switch by checking if we already have user data
-  useEffect(() => {
-    const checkPersistedSession = async () => {
-      clearStaleAuthData(); // Clear everything first
-      if (!loading || user) return; // Skip if already loaded or has user
-
-      try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (session?.user) {
-          setUser(session.user);
-          setLoading(false);
-          await checkKYCStatus(session.user.id);
-        }
-      } catch (error) {
-        console.error("Session check error:", error);
-      }
-    };
-
-    checkPersistedSession();
-
-    return () => {
-      clearAllAuthData();
-    };
-  }, []); // Empty dependency array - only run once on mount
-
   // Simplified KYC status check
   const checkKYCStatus = async (userId: string) => {
-    if (isCheckingKYC.current) return; // Prevent double execution
+    if (isCheckingKYC.current) return;
     isCheckingKYC.current = true;
 
     try {
@@ -143,7 +30,6 @@ export default function Page() {
 
       if (userError) {
         console.log("User not found in users table, defaulting to approved");
-        // If user not found, default to approved to skip KYC
         setKycStatus("approved");
         return;
       }
@@ -153,26 +39,22 @@ export default function Page() {
       setKycStatus(status);
     } catch (error) {
       console.error("Error checking KYC status:", error);
-      // Default to approved on error to avoid blocking users
       setKycStatus("approved");
     } finally {
       isCheckingKYC.current = false;
     }
   };
 
-  // Initialize authentication - separate from auth listener
+  // Initialize authentication once
   useEffect(() => {
     let mounted = true;
 
     const initializeAuth = async () => {
-      // Prevent re-initialization if already done
-      if (hasInitialized.current || user) return;
-
-      clearStaleAuthData(); // Clear everything before initializing
+      if (hasInitialized.current) return;
+      hasInitialized.current = true;
 
       try {
         console.log("Initializing authentication...");
-        hasInitialized.current = true;
 
         const {
           data: { session },
@@ -195,7 +77,6 @@ export default function Page() {
           setUser(currentUser);
 
           if (currentUser) {
-            // Check KYC status for authenticated users
             await checkKYCStatus(currentUser.id);
           } else {
             setKycStatus(null);
@@ -212,32 +93,23 @@ export default function Page() {
       }
     };
 
-    // Only initialize if we don't have a user yet and we're still loading
-    if (loading && !user && !hasInitialized.current) {
-      initializeAuth();
-    }
+    initializeAuth();
 
     return () => {
       mounted = false;
-      clearAllAuthData();
     };
-  }, []); // Empty dependency array - only run once on mount
+  }, []);
 
-  // Separate useEffect for auth listener - runs only once
+  // Auth state listener - separate from initialization
   useEffect(() => {
     let mounted = true;
 
-    // Listen for auth changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      clearStaleAuthData(); // Clear data on any auth change
       console.log("Auth state changed:", event, session?.user?.id || "No user");
 
-      if (!mounted) return;
-
-      // Only handle actual auth changes, not initial session
-      if (event === "INITIAL_SESSION") return;
+      if (!mounted || event === "INITIAL_SESSION") return;
 
       const currentUser = session?.user ?? null;
       setUser(currentUser);
@@ -255,9 +127,8 @@ export default function Page() {
     return () => {
       mounted = false;
       subscription.unsubscribe();
-      clearAllAuthData();
     };
-  }, []); // Empty dependency array - only run once on mount
+  }, []);
 
   // Loading screen component
   const LoadingScreen = ({ message }: { message: string }) => (
@@ -397,9 +268,7 @@ export default function Page() {
     );
   }
 
-  // Default to dashboard - this will handle approved, skipped, or any other status
+  // Default to dashboard
   console.log("Loading dashboard for user:", user.id);
-  console.trace("Dashboard render trace"); // This will show us the call stack
-
   return <Dashboard />;
 }

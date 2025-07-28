@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import {
@@ -49,6 +49,10 @@ export default function Sidebar({
 }: SidebarProps) {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastRefreshRef = useRef<number>(0);
+
   const [menuItems, setMenuItems] = useState<MenuItem[]>([
     {
       id: "dashboard",
@@ -79,55 +83,106 @@ export default function Sidebar({
       return;
     }
 
+    // Prevent too frequent refreshes
+    const now = Date.now();
+    if (now - lastRefreshRef.current < 15000) {
+      // Minimum 15 seconds between refreshes
+      console.log("Skipping menu refresh - too soon since last refresh");
+      return;
+    }
+    lastRefreshRef.current = now;
+
     try {
-      // Fetch user permissions with error handling
-      let userPermissions: UserPermissionData[] = [];
-      try {
-        const { data, error } = await supabase
-          .from("user_permissions")
-          .select("menu_item, is_enabled")
-          .eq("user_id", userProfile.id);
+      console.log("Refreshing menu items...");
+      setRefreshError(null);
 
-        if (error) {
-          console.warn("Could not fetch user permissions:", error.message);
-          // If table doesn't exist or other error, use default permissions
-        } else if (data) {
-          userPermissions = data;
+      // Set a timeout for the entire refresh operation
+      const refreshPromise = new Promise(async (resolve, reject) => {
+        try {
+          // Fetch user permissions with timeout
+          let userPermissions: UserPermissionData[] = [];
+          try {
+            const permissionsPromise = supabase
+              .from("user_permissions")
+              .select("menu_item, is_enabled")
+              .eq("user_id", userProfile.id);
+
+            const { data, error } = (await Promise.race([
+              permissionsPromise,
+              new Promise((_, reject) =>
+                setTimeout(
+                  () => reject(new Error("Permissions query timeout")),
+                  5000
+                )
+              ),
+            ])) as any;
+
+            if (error && error.code !== "PGRST116") {
+              // Ignore "not found" errors
+              throw error;
+            } else if (data) {
+              userPermissions = data;
+            }
+          } catch (permError) {
+            console.warn("Could not fetch permissions:", permError);
+            // Continue without permissions - use defaults
+          }
+
+          // Fetch notification counts with timeout
+          let notifications: NotificationData[] = [];
+          try {
+            const notificationsPromise = supabase
+              .from("notifications")
+              .select("menu_item, count")
+              .eq("user_id", userProfile.id)
+              .eq("is_read", false);
+
+            const { data, error } = (await Promise.race([
+              notificationsPromise,
+              new Promise((_, reject) =>
+                setTimeout(
+                  () => reject(new Error("Notifications query timeout")),
+                  5000
+                )
+              ),
+            ])) as any;
+
+            if (error && error.code !== "PGRST116") {
+              // Ignore "not found" errors
+              throw error;
+            } else if (data) {
+              notifications = data;
+            }
+          } catch (notifError) {
+            console.warn("Could not fetch notifications:", notifError);
+            // Continue without notifications
+          }
+
+          resolve({ userPermissions, notifications });
+        } catch (error) {
+          reject(error);
         }
-      } catch (permError) {
-        console.warn("Error fetching permissions:", permError);
-      }
+      });
 
-      // Fetch notification counts with error handling
-      let notifications: NotificationData[] = [];
-      try {
-        const { data, error } = await supabase
-          .from("notifications")
-          .select("menu_item, count")
-          .eq("user_id", userProfile.id)
-          .eq("is_read", false);
-
-        if (error) {
-          console.warn("Could not fetch notifications:", error.message);
-          // If table doesn't exist or other error, continue without notifications
-        } else if (data) {
-          notifications = data;
-        }
-      } catch (notifError) {
-        console.warn("Error fetching notifications:", notifError);
-      }
+      // Wait for refresh with overall timeout
+      const result = (await Promise.race([
+        refreshPromise,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Menu refresh timeout")), 10000)
+        ),
+      ])) as any;
 
       // Update menu items with fresh data while preserving structure
       setMenuItems((prevItems) =>
         prevItems.map((item) => {
           // Find if there are notifications for this menu item
-          const notification = notifications.find(
-            (n) => n.menu_item === item.id
+          const notification = result.notifications.find(
+            (n: NotificationData) => n.menu_item === item.id
           );
 
           // Check if user has permission for this menu item
-          const permission = userPermissions.find(
-            (p) => p.menu_item === item.id
+          const permission = result.userPermissions.find(
+            (p: UserPermissionData) => p.menu_item === item.id
           );
           const hasPermission = permission ? permission.is_enabled : true; // Default to true if no permissions data
 
@@ -141,32 +196,77 @@ export default function Sidebar({
           };
         })
       );
-    } catch (error) {
-      // Silent error handling - don't disrupt user experience
-      console.error("Background menu refresh failed:", error);
+
+      console.log("Menu items refreshed successfully");
+    } catch (error: any) {
+      console.error("Menu refresh failed:", error);
+      setRefreshError(error.message);
+
+      // If refresh fails multiple times, stop trying
+      if (error.message.includes("timeout")) {
+        console.warn("Menu refresh timed out, disabling auto-refresh");
+        if (refreshIntervalRef.current) {
+          clearInterval(refreshIntervalRef.current);
+          refreshIntervalRef.current = null;
+        }
+      }
     }
   }, [userProfile?.id]);
 
-  // Set up background refresh every 30 seconds (reduced frequency)
+  // Set up background refresh with better error handling
   useEffect(() => {
-    // Initial refresh
-    refreshMenuItems();
+    if (!userProfile?.id) return;
 
-    // Set up interval for background refresh (increased to 30 seconds to reduce load)
-    const refreshInterval = setInterval(() => {
+    // Initial refresh (delayed to avoid conflicts with dashboard loading)
+    const initialRefresh = setTimeout(() => {
       refreshMenuItems();
-    }, 30000); // 30 seconds
+    }, 2000);
+
+    // Set up interval for background refresh (increased to 60 seconds to reduce load)
+    refreshIntervalRef.current = setInterval(() => {
+      // Only refresh if no errors and page is visible
+      if (!refreshError && document.visibilityState === "visible") {
+        refreshMenuItems();
+      }
+    }, 60000); // 60 seconds
 
     // Cleanup interval on unmount
     return () => {
-      clearInterval(refreshInterval);
+      clearTimeout(initialRefresh);
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+        refreshIntervalRef.current = null;
+      }
     };
-  }, [refreshMenuItems]);
+  }, [refreshMenuItems, userProfile?.id, refreshError]);
+
+  // Refresh on visibility change (when user comes back to tab)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && !refreshError) {
+        // Small delay to ensure everything is ready
+        setTimeout(() => {
+          refreshMenuItems();
+        }, 1000);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [refreshMenuItems, refreshError]);
 
   const handleSignOut = async () => {
     setIsLoggingOut(true);
 
     try {
+      // Clear refresh interval first
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+        refreshIntervalRef.current = null;
+      }
+
       // Get current user before signing out
       const {
         data: { user },
@@ -175,37 +275,37 @@ export default function Sidebar({
       if (user) {
         console.log("Logging out user:", user.id);
 
-        // Try to mark user as offline before signing out
+        // Try to mark user as offline before signing out (with timeout)
         try {
           const timestamp = new Date().toISOString();
-          const { error: presenceError } = await supabase
-            .from("user_presence")
-            .upsert(
-              {
-                user_id: user.id,
-                is_online: false,
-                last_seen: timestamp,
-                updated_at: timestamp,
-              },
-              {
-                onConflict: "user_id",
-              }
-            );
+          const presencePromise = supabase.from("user_presence").upsert(
+            {
+              user_id: user.id,
+              is_online: false,
+              last_seen: timestamp,
+              updated_at: timestamp,
+            },
+            {
+              onConflict: "user_id",
+            }
+          );
 
-          if (presenceError) {
-            console.warn(
-              "Could not update presence on logout:",
-              presenceError.message
-            );
-          } else {
-            console.log("Successfully marked user offline on logout");
-          }
+          // Don't wait too long for presence update
+          await Promise.race([
+            presencePromise,
+            new Promise((_, reject) =>
+              setTimeout(
+                () => reject(new Error("Presence update timeout")),
+                2000
+              )
+            ),
+          ]);
+
+          console.log("Successfully marked user offline on logout");
         } catch (presenceError) {
-          console.warn("Error updating presence on logout:", presenceError);
+          console.warn("Could not update presence on logout:", presenceError);
+          // Don't block logout if presence update fails
         }
-
-        // Small delay to ensure the presence update completes
-        await new Promise((resolve) => setTimeout(resolve, 300));
       }
 
       // Then sign out
@@ -215,13 +315,20 @@ export default function Sidebar({
         console.error("Error signing out:", error);
       } else {
         console.log("Successfully signed out");
-        // The auth state change will be handled by your auth provider
       }
     } catch (error) {
       console.error("Error during logout process:", error);
     } finally {
       setIsLoggingOut(false);
     }
+  };
+
+  const handleMenuItemClick = (itemId: string, isEnabled: boolean) => {
+    if (!isEnabled) return;
+
+    console.log(`Menu item clicked: ${itemId}`);
+    setActiveTab(itemId);
+    setIsMobileMenuOpen(false); // Close mobile menu on item click
   };
 
   return (
@@ -272,6 +379,15 @@ export default function Sidebar({
           </div>
         </div>
 
+        {/* Error indicator */}
+        {refreshError && (
+          <div className="px-4 py-2 bg-yellow-50 border-b border-yellow-200">
+            <p className="text-xs text-yellow-700">
+              Menu sync issue - functionality may be limited
+            </p>
+          </div>
+        )}
+
         {/* Navigation Menu */}
         <nav
           className="flex-1 px-6 overflow-y-auto scrollbar-hide"
@@ -289,24 +405,21 @@ export default function Sidebar({
             {menuItems.map((item) => (
               <li key={item.id}>
                 <button
-                  onClick={() => {
-                    if (item.isEnabled) {
-                      setActiveTab(item.id);
-                      setIsMobileMenuOpen(false); // Close mobile menu on item click
-                    }
-                  }}
-                  disabled={!item.isEnabled}
+                  onClick={() =>
+                    handleMenuItemClick(item.id, item.isEnabled ?? true)
+                  }
+                  disabled={!(item.isEnabled ?? true)}
                   className={`w-full flex items-center px-0 py-4 text-left transition-all duration-200 relative ${
                     activeTab === item.id
                       ? "text-[#F26623]"
-                      : item.isEnabled
+                      : item.isEnabled ?? true
                       ? "text-gray-800 hover:text-[#F26623]"
                       : "text-gray-400 cursor-not-allowed"
                   }`}
                 >
                   <item.icon
                     className={`w-5 h-5 mr-4 ${
-                      item.isEnabled ? "text-gray-600" : "text-gray-400"
+                      item.isEnabled ?? true ? "text-gray-600" : "text-gray-400"
                     }`}
                   />
                   <span className="font-medium text-base">{item.label}</span>

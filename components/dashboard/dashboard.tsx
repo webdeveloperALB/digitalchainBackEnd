@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import Sidebar from "./sidebar";
 import DashboardContent from "./dashboard-content";
@@ -57,7 +57,14 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastActivity, setLastActivity] = useState(Date.now());
+  const [isIdle, setIsIdle] = useState(false);
+  const [sectionLoading, setSectionLoading] = useState(false);
   const router = useRouter();
+
+  // Use refs to avoid stale closure issues
+  const lastActivityRef = useRef(Date.now());
+  const idleCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const sectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const generateClientId = () => {
     return Math.floor(Math.random() * 1000000)
@@ -150,75 +157,205 @@ export default function Dashboard() {
     }
   };
 
+  // Test database connection
+  const testDatabaseConnection = async () => {
+    try {
+      console.log("Testing database connection...");
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id")
+        .limit(1);
+
+      if (error) {
+        console.error("Database connection test failed:", error);
+        return false;
+      }
+      console.log("Database connection OK");
+      return true;
+    } catch (error) {
+      console.error("Database connection test error:", error);
+      return false;
+    }
+  };
+
+  // Improved activity tracking
+  const updateActivity = useCallback(() => {
+    const now = Date.now();
+    lastActivityRef.current = now;
+    setLastActivity(now);
+    setIsIdle(false);
+  }, []);
+
+  // Force logout function
+  const forceLogout = useCallback(async () => {
+    console.log("Forcing logout due to inactivity");
+    try {
+      // Clear all intervals and timeouts first
+      if (idleCheckIntervalRef.current) {
+        clearInterval(idleCheckIntervalRef.current);
+        idleCheckIntervalRef.current = null;
+      }
+      if (sectionTimeoutRef.current) {
+        clearTimeout(sectionTimeoutRef.current);
+        sectionTimeoutRef.current = null;
+      }
+
+      await supabase.auth.signOut();
+      router.push("/");
+    } catch (error) {
+      console.error("Error during forced logout:", error);
+      // Force redirect even if logout fails
+      router.push("/");
+    }
+  }, [router]);
+
   // Initialize dashboard on mount
   useEffect(() => {
     fetchUserData();
-  }, []);
+    updateActivity(); // Initialize activity
+  }, [updateActivity]);
 
-  // Idle timeout functionality
+  // Improved idle timeout functionality
   useEffect(() => {
-    const IDLE_TIME = 90000; // 1 minute 30 seconds in milliseconds
+    const IDLE_TIME = 300000; // 5 minutes
+    const CHECK_INTERVAL = 10000; // Check every 10 seconds
 
     const handleActivity = () => {
-      setLastActivity(Date.now());
+      updateActivity();
     };
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        setLastActivity(Date.now());
-      }
-    };
-
-    const forceLogout = async () => {
-      try {
-        await supabase.auth.signOut();
-        router.push('/');
-      } catch (error) {
-        console.error('Error during forced logout:', error);
-        // Force redirect even if logout fails
-        router.push('/');
+      if (document.visibilityState === "visible") {
+        updateActivity();
+        // Test database connection when coming back from idle
+        testDatabaseConnection();
       }
     };
 
     // Add event listeners for user activity
-    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
+    const events = [
+      "mousedown",
+      "mousemove",
+      "keypress",
+      "scroll",
+      "touchstart",
+      "click",
+    ];
 
-    events.forEach(event => {
-      document.addEventListener(event, handleActivity, true);
+    // Use passive listeners and throttle activity updates
+    const throttledActivity = (() => {
+      let timeoutId: NodeJS.Timeout | null = null;
+      return () => {
+        if (timeoutId) return; // Already scheduled
+        timeoutId = setTimeout(() => {
+          handleActivity();
+          timeoutId = null;
+        }, 2000); // Throttle to once per 2 seconds
+      };
+    })();
+
+    events.forEach((event) => {
+      document.addEventListener(event, throttledActivity, { passive: true });
     });
 
     // Add visibility change listener for tab switching
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     // Set up interval to check for idle time
-    const idleCheckInterval = setInterval(() => {
+    idleCheckIntervalRef.current = setInterval(() => {
       const now = Date.now();
-      const timeSinceLastActivity = now - lastActivity;
+      const timeSinceLastActivity = now - lastActivityRef.current;
 
       if (timeSinceLastActivity >= IDLE_TIME) {
+        setIsIdle(true);
         forceLogout();
+      } else if (timeSinceLastActivity >= IDLE_TIME * 0.8) {
+        // Warn user when 80% of idle time has passed
+        setIsIdle(true);
+      } else {
+        setIsIdle(false);
       }
-    }, 1000); // Check every second
+    }, CHECK_INTERVAL);
 
     // Cleanup function
     return () => {
-      events.forEach(event => {
-        document.removeEventListener(event, handleActivity, true);
+      events.forEach((event) => {
+        document.removeEventListener(event, throttledActivity);
       });
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      clearInterval(idleCheckInterval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+
+      if (idleCheckIntervalRef.current) {
+        clearInterval(idleCheckIntervalRef.current);
+        idleCheckIntervalRef.current = null;
+      }
     };
-  }, [lastActivity, router]);
+  }, [updateActivity, forceLogout]);
+
+  // Improved tab switching with timeout protection
+  const handleTabChange = useCallback(
+    async (newTab: string) => {
+      console.log(`Attempting to switch to tab: ${newTab}`);
+
+      // Clear any existing section timeout
+      if (sectionTimeoutRef.current) {
+        clearTimeout(sectionTimeoutRef.current);
+        sectionTimeoutRef.current = null;
+      }
+
+      updateActivity(); // Record activity when switching tabs
+      setSectionLoading(true);
+
+      // Test database connection before switching
+      const dbOk = await testDatabaseConnection();
+      if (!dbOk) {
+        console.error("Database connection failed, refreshing page...");
+        window.location.reload();
+        return;
+      }
+
+      // Set timeout to prevent infinite loading
+      sectionTimeoutRef.current = setTimeout(() => {
+        console.warn(`Section ${newTab} took too long to load, forcing reload`);
+        setSectionLoading(false);
+        window.location.reload();
+      }, 10000); // 10 second timeout
+
+      try {
+        setActiveTab(newTab);
+        console.log(`Successfully switched to tab: ${newTab}`);
+
+        // Clear timeout on successful switch
+        setTimeout(() => {
+          setSectionLoading(false);
+          if (sectionTimeoutRef.current) {
+            clearTimeout(sectionTimeoutRef.current);
+            sectionTimeoutRef.current = null;
+          }
+        }, 1000); // Give 1 second for section to render
+      } catch (error) {
+        console.error(`Error switching to tab ${newTab}:`, error);
+        setSectionLoading(false);
+        if (sectionTimeoutRef.current) {
+          clearTimeout(sectionTimeoutRef.current);
+          sectionTimeoutRef.current = null;
+        }
+      }
+    },
+    [updateActivity]
+  );
 
   const renderActiveSection = () => {
     if (!userProfile) return null;
+
+    // Remove the key prop that was causing remounts
+    // The issue is likely in the individual section components
 
     switch (activeTab) {
       case "dashboard":
         return (
           <DashboardContent
             userProfile={userProfile}
-            setActiveTab={setActiveTab}
+            setActiveTab={handleTabChange}
           />
         );
       case "accounts":
@@ -243,7 +380,7 @@ export default function Dashboard() {
         return (
           <DashboardContent
             userProfile={userProfile}
-            setActiveTab={setActiveTab}
+            setActiveTab={handleTabChange}
           />
         );
     }
@@ -284,11 +421,29 @@ export default function Dashboard() {
       {userProfile && (
         <Sidebar
           activeTab={activeTab}
-          setActiveTab={setActiveTab}
+          setActiveTab={handleTabChange}
           userProfile={userProfile}
         />
       )}
-      {renderActiveSection()}
+
+      <div className="flex-1 relative">
+        {isIdle && (
+          <div className="absolute top-4 left-4 bg-yellow-100 border border-yellow-400 text-yellow-700 px-3 py-2 rounded text-sm z-40">
+            ⚠️ Session will expire due to inactivity
+          </div>
+        )}
+
+        {sectionLoading && (
+          <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-30">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F26623] mx-auto"></div>
+              <p className="mt-2 text-sm text-gray-600">Loading section...</p>
+            </div>
+          </div>
+        )}
+
+        {renderActiveSection()}
+      </div>
 
       {error && userProfile && (
         <ErrorBanner error={error} onClose={() => setError(null)} />
