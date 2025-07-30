@@ -18,6 +18,16 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 
+const scrollbarHideStyles = `
+  .scrollbar-hide {
+    -ms-overflow-style: none;  /* Internet Explorer 10+ */
+    scrollbar-width: none;  /* Firefox */
+  }
+  .scrollbar-hide::-webkit-scrollbar { 
+    display: none;  /* Safari and Chrome */
+  }
+`;
+
 interface SidebarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
@@ -333,6 +343,7 @@ export default function Sidebar({
 
   return (
     <>
+      <style jsx>{scrollbarHideStyles}</style>
       {/* Mobile Menu Button */}
       <Button
         variant="ghost"
@@ -380,17 +391,19 @@ export default function Sidebar({
         </div>
 
         {/* Error indicator */}
+        {/* Info indicator */}
         {refreshError && (
           <div className="px-4 py-2 bg-yellow-50 border-b border-yellow-200">
             <p className="text-xs text-yellow-700">
-              Menu sync issue - functionality may be limited
+              For the most accurate balance and recent activity, please refresh
+              the page.
             </p>
           </div>
         )}
 
         {/* Navigation Menu */}
-        <nav className="flex-1 px-6">
-          <ul className="space-y-1 py-4">
+        <nav className="flex-1 px-6 overflow-y-auto scrollbar-hide">
+          <ul className="space-y-1 py-4 min-h-0">
             {menuItems.map((item) => (
               <li key={item.id}>
                 <button
