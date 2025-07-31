@@ -1,6 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+} from "react";
 import { supabase } from "@/lib/supabase";
 import Sidebar from "./sidebar";
 import DashboardContent from "./dashboard-content";
@@ -24,178 +30,602 @@ interface UserProfile {
   updated_at?: string;
 }
 
-const ErrorBanner = ({
-  error,
-  onClose,
-}: {
-  error: string;
-  onClose: () => void;
-}) => (
-  <div className="fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded z-50 max-w-sm">
-    <div className="flex items-center">
-      <span className="mr-2">⚠️</span>
-      <span className="text-sm flex-1">{error}</span>
-      <button
-        onClick={onClose}
-        className="ml-4 text-red-700 hover:text-red-900 text-xl leading-none"
-      >
-        ×
-      </button>
-    </div>
-  </div>
-);
+interface DatabaseState {
+  isHealthy: boolean;
+  lastHealthCheck: number;
+  consecutiveFailures: number;
+  isReconnecting: boolean;
+}
 
-const LoadingSpinner = () => (
-  <div className="min-h-screen flex items-center justify-center">
-    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#F26623]"></div>
-  </div>
-);
+interface SectionCache {
+  [key: string]: {
+    component: React.ReactNode;
+    timestamp: number;
+    isValid: boolean;
+  };
+}
 
-// Wrapper component to catch section loading issues
-const SectionWrapper = ({
-  children,
-  sectionName,
-  onLoadingTimeout,
-}: {
-  children: React.ReactNode;
-  sectionName: string;
-  onLoadingTimeout: (section: string) => void;
-}) => {
-  const [mounted, setMounted] = useState(false);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+// Base props interface that all sections should extend
+interface BaseSectionProps {
+  userProfile: UserProfile;
+}
 
-  useEffect(() => {
-    console.log(`${sectionName} section mounting...`);
+// Extended props for sections that need additional functionality
+interface ExtendedSectionProps extends BaseSectionProps {
+  setActiveTab?: (tab: string) => void;
+}
 
-    // Set timeout for section loading
-    timeoutRef.current = setTimeout(() => {
-      if (!mounted) {
-        console.error(
-          `${sectionName} section failed to mount within 5 seconds`
-        );
-        onLoadingTimeout(sectionName);
-      }
-    }, 5000);
+// Permanent database connection manager
+class DatabaseManager {
+  private static instance: DatabaseManager;
+  private healthCheckInterval: NodeJS.Timeout | null = null;
+  private reconnectionTimeout: NodeJS.Timeout | null = null;
+  private state: DatabaseState = {
+    isHealthy: true,
+    lastHealthCheck: Date.now(),
+    consecutiveFailures: 0,
+    isReconnecting: false,
+  };
+  private listeners: ((state: DatabaseState) => void)[] = [];
+  private connectionPool: Map<string, Promise<any>> = new Map();
 
-    // Mark as mounted after a brief delay
-    const mountTimer = setTimeout(() => {
-      setMounted(true);
-      console.log(`${sectionName} section mounted successfully`);
-    }, 100);
-
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-      clearTimeout(mountTimer);
-      console.log(`${sectionName} section unmounting...`);
-    };
-  }, [sectionName, mounted, onLoadingTimeout]);
-
-  if (!mounted) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F26623] mx-auto"></div>
-          <p className="mt-2 text-sm text-gray-600">Loading {sectionName}...</p>
-        </div>
-      </div>
-    );
+  static getInstance(): DatabaseManager {
+    if (!DatabaseManager.instance) {
+      DatabaseManager.instance = new DatabaseManager();
+    }
+    return DatabaseManager.instance;
   }
 
-  return <>{children}</>;
+  private constructor() {
+    this.startHealthMonitoring();
+  }
+
+  // Subscribe to database state changes
+  subscribe(callback: (state: DatabaseState) => void): () => void {
+    this.listeners.push(callback);
+    // Immediately call with current state
+    callback(this.state);
+
+    return () => {
+      this.listeners = this.listeners.filter(
+        (listener) => listener !== callback
+      );
+    };
+  }
+
+  private notifyListeners(): void {
+    this.listeners.forEach((listener) => listener(this.state));
+  }
+
+  private startHealthMonitoring(): void {
+    // Check health every 30 seconds
+    this.healthCheckInterval = setInterval(() => {
+      this.performHealthCheck();
+    }, 30000);
+
+    // Initial health check
+    this.performHealthCheck();
+  }
+
+  private async performHealthCheck(): Promise<void> {
+    try {
+      const startTime = Date.now();
+
+      // Simple, fast health check query
+      const { error } = await supabase
+        .from("profiles")
+        .select("id")
+        .limit(1)
+        .maybeSingle();
+
+      const responseTime = Date.now() - startTime;
+
+      if (error && error.code !== "PGRST116") {
+        throw error;
+      }
+
+      // Consider unhealthy if response time > 10 seconds
+      if (responseTime > 10000) {
+        throw new Error("Database response too slow");
+      }
+
+      // Health check passed
+      this.state = {
+        isHealthy: true,
+        lastHealthCheck: Date.now(),
+        consecutiveFailures: 0,
+        isReconnecting: false,
+      };
+
+      this.notifyListeners();
+    } catch (error) {
+      console.error("Database health check failed:", error);
+
+      this.state = {
+        ...this.state,
+        isHealthy: false,
+        consecutiveFailures: this.state.consecutiveFailures + 1,
+        lastHealthCheck: Date.now(),
+      };
+
+      this.notifyListeners();
+      this.attemptReconnection();
+    }
+  }
+
+  private attemptReconnection(): void {
+    if (this.state.isReconnecting) return;
+
+    this.state.isReconnecting = true;
+    this.notifyListeners();
+
+    // Exponential backoff: 1s, 2s, 4s, 8s, then 30s max
+    const delay = Math.min(
+      1000 * Math.pow(2, this.state.consecutiveFailures),
+      30000
+    );
+
+    this.reconnectionTimeout = setTimeout(() => {
+      this.performHealthCheck();
+    }, delay);
+  }
+
+  // Execute database operation with automatic retry and connection pooling
+  async executeOperation<T>(
+    operationKey: string,
+    operation: () => Promise<T>,
+    options: {
+      maxRetries?: number;
+      timeoutMs?: number;
+      useCache?: boolean;
+      cacheTime?: number;
+    } = {}
+  ): Promise<T> {
+    const {
+      maxRetries = 3,
+      timeoutMs = 15000,
+      useCache = false,
+      cacheTime = 30000,
+    } = options;
+
+    // Check cache first
+    if (useCache && this.connectionPool.has(operationKey)) {
+      const cachedPromise = this.connectionPool.get(operationKey);
+      const isExpired =
+        Date.now() - (cachedPromise as any).timestamp > cacheTime;
+
+      if (!isExpired) {
+        return cachedPromise as Promise<T>;
+      } else {
+        this.connectionPool.delete(operationKey);
+      }
+    }
+
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        // Wait for healthy connection if needed
+        if (!this.state.isHealthy && attempt === 0) {
+          await this.waitForHealthyConnection(5000);
+        }
+
+        // Create timeout promise
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error("Operation timeout")), timeoutMs);
+        });
+
+        // Execute operation with timeout
+        const operationPromise = operation();
+
+        // Cache the promise if requested
+        if (useCache) {
+          (operationPromise as any).timestamp = Date.now();
+          this.connectionPool.set(operationKey, operationPromise);
+        }
+
+        const result = await Promise.race([operationPromise, timeoutPromise]);
+
+        return result;
+      } catch (error) {
+        lastError = error as Error;
+        console.error(
+          `Database operation failed (attempt ${attempt + 1}/${
+            maxRetries + 1
+          }):`,
+          error
+        );
+
+        // Mark as unhealthy if operation fails
+        if (this.state.isHealthy) {
+          this.state.isHealthy = false;
+          this.state.consecutiveFailures++;
+          this.notifyListeners();
+          this.attemptReconnection();
+        }
+
+        // Wait before retry (exponential backoff)
+        if (attempt < maxRetries) {
+          const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    throw lastError || new Error("Database operation failed after all retries");
+  }
+
+  private waitForHealthyConnection(timeoutMs: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (this.state.isHealthy) {
+        resolve();
+        return;
+      }
+
+      const timeout = setTimeout(() => {
+        reject(new Error("Timeout waiting for healthy database connection"));
+      }, timeoutMs);
+
+      const unsubscribe = this.subscribe((state) => {
+        if (state.isHealthy) {
+          clearTimeout(timeout);
+          unsubscribe();
+          resolve();
+        }
+      });
+    });
+  }
+
+  getState(): DatabaseState {
+    return { ...this.state };
+  }
+
+  destroy(): void {
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
+    }
+    if (this.reconnectionTimeout) {
+      clearTimeout(this.reconnectionTimeout);
+      this.reconnectionTimeout = null;
+    }
+    this.connectionPool.clear();
+    this.listeners = [];
+  }
+}
+
+// Permanent section renderer with caching and preloading
+class SectionRenderer {
+  private cache: SectionCache = {};
+  private preloadQueue: Set<string> = new Set();
+  private readonly CACHE_TTL = 300000; // 5 minutes
+
+  private sections = {
+    dashboard: DashboardContent,
+    accounts: AccountsSection,
+    transfers: TransfersSection,
+    deposit: DepositsSection,
+    payments: PaymentsSection,
+    card: CardSection,
+    crypto: CryptoSection,
+    message: MessageSection,
+    support: SupportSection,
+    loans: LoansSection,
+  };
+
+  // Preload adjacent sections for instant switching
+  preloadSections(currentSection: string): void {
+    const sectionOrder = Object.keys(this.sections);
+    const currentIndex = sectionOrder.indexOf(currentSection);
+
+    // Preload previous and next sections
+    const toPreload = [
+      sectionOrder[currentIndex - 1],
+      sectionOrder[currentIndex + 1],
+    ].filter(Boolean);
+
+    toPreload.forEach((section) => {
+      if (!this.preloadQueue.has(section)) {
+        this.preloadQueue.add(section);
+        // Preload after a short delay to not block current rendering
+        setTimeout(() => this.preloadSection(section), 100);
+      }
+    });
+  }
+
+  private preloadSection(sectionName: string): void {
+    if (this.isCacheValid(sectionName)) return;
+
+    try {
+      // Create a lightweight version for preloading
+      const component = this.createSectionComponent(sectionName, true);
+      this.cache[sectionName] = {
+        component,
+        timestamp: Date.now(),
+        isValid: true,
+      };
+    } catch (error) {
+      console.warn(`Failed to preload section ${sectionName}:`, error);
+    } finally {
+      this.preloadQueue.delete(sectionName);
+    }
+  }
+
+  renderSection(
+    sectionName: string,
+    userProfile: UserProfile,
+    additionalProps: any = {}
+  ): React.ReactNode {
+    // Check cache first
+    if (this.isCacheValid(sectionName)) {
+      return this.cache[sectionName].component;
+    }
+
+    // Render fresh component
+    const component = this.createSectionComponent(
+      sectionName,
+      false,
+      userProfile,
+      additionalProps
+    );
+
+    // Cache the component
+    this.cache[sectionName] = {
+      component,
+      timestamp: Date.now(),
+      isValid: true,
+    };
+
+    // Preload adjacent sections
+    this.preloadSections(sectionName);
+
+    return component;
+  }
+
+  private createSectionComponent(
+    sectionName: string,
+    isPreload: boolean = false,
+    userProfile?: UserProfile,
+    additionalProps: any = {}
+  ): React.ReactNode {
+    const SectionComponent =
+      this.sections[sectionName as keyof typeof this.sections];
+
+    if (!SectionComponent) {
+      return this.createErrorComponent(`Section "${sectionName}" not found`);
+    }
+
+    try {
+      // For preloading, create a minimal version
+      if (isPreload) {
+        return React.createElement("div", {
+          className: "preloaded-section",
+          "data-section": sectionName,
+        });
+      }
+
+      // Ensure userProfile is provided for full components
+      if (!userProfile) {
+        return this.createErrorComponent("User profile not available");
+      }
+
+      // Create props with proper typing
+      const props: ExtendedSectionProps = {
+        userProfile,
+        ...additionalProps,
+      };
+
+      // Special handling for dashboard which needs setActiveTab
+      if (sectionName === "dashboard" && additionalProps.setActiveTab) {
+        props.setActiveTab = additionalProps.setActiveTab;
+      }
+
+      return React.createElement(
+        SectionComponent as React.ComponentType<any>,
+        props
+      );
+    } catch (error) {
+      console.error(`Error creating section ${sectionName}:`, error);
+      return this.createErrorComponent(`Failed to load ${sectionName}`);
+    }
+  }
+
+  private createErrorComponent(message: string): React.ReactNode {
+    return React.createElement("div", {
+      className: "min-h-screen flex items-center justify-center",
+      children: React.createElement("div", {
+        className: "text-center",
+        children: [
+          React.createElement("div", {
+            key: "icon",
+            className:
+              "w-16 h-16 bg-red-100 rounded-lg flex items-center justify-center mx-auto mb-4",
+            children: "⚠️",
+          }),
+          React.createElement("h2", {
+            key: "title",
+            className: "text-xl font-semibold text-gray-900 mb-2",
+            children: "Section Error",
+          }),
+          React.createElement("p", {
+            key: "message",
+            className: "text-gray-600",
+            children: message,
+          }),
+        ],
+      }),
+    });
+  }
+
+  private isCacheValid(sectionName: string): boolean {
+    const cached = this.cache[sectionName];
+    if (!cached || !cached.isValid) return false;
+
+    const isExpired = Date.now() - cached.timestamp > this.CACHE_TTL;
+    if (isExpired) {
+      delete this.cache[sectionName];
+      return false;
+    }
+
+    return true;
+  }
+
+  invalidateCache(sectionName?: string): void {
+    if (sectionName) {
+      delete this.cache[sectionName];
+    } else {
+      this.cache = {};
+    }
+  }
+
+  destroy(): void {
+    this.cache = {};
+    this.preloadQueue.clear();
+  }
+}
+
+// Status indicator component
+const ConnectionStatusIndicator = ({ dbState }: { dbState: DatabaseState }) => {
+  if (dbState.isHealthy) return null;
+
+  return (
+    <div className="fixed top-0 left-0 right-0 bg-yellow-50 border-b border-yellow-200 text-yellow-800 px-4 py-2 text-sm text-center z-50">
+      <div className="flex items-center justify-center gap-2">
+        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-600"></div>
+        <span>
+          {dbState.isReconnecting
+            ? "Reconnecting to database..."
+            : `Connection issues detected (${dbState.consecutiveFailures} failures)`}
+        </span>
+      </div>
+    </div>
+  );
 };
 
+// Main Dashboard Component
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [lastActivity, setLastActivity] = useState(Date.now());
-  const [sectionError, setSectionError] = useState<string | null>(null);
+  const [dbState, setDbState] = useState<DatabaseState>({
+    isHealthy: true,
+    lastHealthCheck: Date.now(),
+    consecutiveFailures: 0,
+    isReconnecting: false,
+  });
+
   const router = useRouter();
-
-  // Use refs to avoid stale closure issues
   const lastActivityRef = useRef(Date.now());
-  const idleCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const activityTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const generateClientId = () => {
+  // Initialize permanent managers
+  const dbManager = useMemo(() => DatabaseManager.getInstance(), []);
+  const sectionRenderer = useMemo(() => new SectionRenderer(), []);
+
+  // Generate client ID
+  const generateClientId = useCallback(() => {
     return Math.floor(Math.random() * 1000000)
       .toString()
       .padStart(6, "0");
-  };
+  }, []);
 
-  const createUserProfile = async (user: any): Promise<UserProfile> => {
-    const clientId = generateClientId();
+  // Create user profile with database manager
+  const createUserProfile = useCallback(
+    async (user: any): Promise<UserProfile> => {
+      const profileData = {
+        id: user.id,
+        client_id: generateClientId(),
+        full_name:
+          user.user_metadata?.full_name || user.email?.split("@")[0] || "User",
+        email: user.email,
+      };
 
-    const profileData = {
-      id: user.id,
-      client_id: clientId,
-      full_name:
-        user.user_metadata?.full_name || user.email?.split("@")[0] || "User",
-      email: user.email,
-    };
+      const profile = await dbManager.executeOperation(
+        `create-profile-${user.id}`,
+        async () => {
+          const { data, error } = await supabase
+            .from("profiles")
+            .upsert(profileData, { onConflict: "id" })
+            .select()
+            .single();
 
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .upsert(profileData, { onConflict: "id" })
-      .select()
-      .single();
+          if (error) throw error;
+          return data;
+        },
+        { maxRetries: 3, timeoutMs: 10000 }
+      );
 
-    if (profileError) {
-      console.error("Profile creation error:", profileError);
-      throw profileError;
-    }
+      // Create balances asynchronously (non-blocking)
+      const balanceOperations = [
+        "crypto_balances",
+        "euro_balances",
+        "cad_balances",
+        "usd_balances",
+      ];
 
-    // Create initial balances (non-blocking)
-    const balanceOperations = [
-      { table: "crypto_balances", name: "crypto" },
-      { table: "euro_balances", name: "euro" },
-      { table: "cad_balances", name: "cad" },
-      { table: "usd_balances", name: "usd" },
-    ];
+      balanceOperations.forEach((table) => {
+        dbManager
+          .executeOperation(
+            `create-balance-${table}-${user.id}`,
+            async () => {
+              const { error } = await supabase
+                .from(table)
+                .upsert(
+                  { user_id: user.id, balance: 0 },
+                  { onConflict: "user_id" }
+                );
+              if (error) throw error;
+            },
+            { maxRetries: 2, timeoutMs: 5000 }
+          )
+          .catch((error) => {
+            console.warn(`Failed to create ${table}:`, error);
+          });
+      });
 
-    balanceOperations.forEach(async (operation) => {
-      try {
-        await supabase
-          .from(operation.table)
-          .upsert({ user_id: user.id, balance: 0 }, { onConflict: "user_id" });
-      } catch (error) {
-        console.warn(`Could not create ${operation.name} balance:`, error);
-      }
-    });
+      return profile;
+    },
+    [dbManager, generateClientId]
+  );
 
-    return profile;
-  };
-
-  const fetchUserData = async () => {
+  // Fetch user data with database manager
+  const fetchUserData = useCallback(async (): Promise<void> => {
     try {
       setError(null);
+      setLoading(true);
 
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+      const userData = await dbManager.executeOperation(
+        "fetch-user-auth",
+        async () => {
+          const {
+            data: { user },
+            error,
+          } = await supabase.auth.getUser();
+          if (error) throw error;
+          if (!user) throw new Error("No authenticated user found");
+          return user;
+        },
+        { maxRetries: 2, timeoutMs: 8000 }
+      );
 
-      if (userError) {
-        throw new Error(`Authentication failed: ${userError.message}`);
-      }
+      const profile = await dbManager.executeOperation(
+        `fetch-profile-${userData.id}`,
+        async () => {
+          const { data, error } = await supabase
+            .from("profiles")
+            .select("*")
+            .eq("id", userData.id)
+            .single();
 
-      if (!user) {
-        throw new Error("No authenticated user found");
-      }
-
-      let { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .single();
-
-      if (profileError?.code === "PGRST116") {
-        profile = await createUserProfile(user);
-      } else if (profileError) {
-        throw profileError;
-      }
+          if (error?.code === "PGRST116") {
+            return await createUserProfile(userData);
+          }
+          if (error) throw error;
+          return data;
+        },
+        { maxRetries: 3, timeoutMs: 10000, useCache: true, cacheTime: 60000 }
+      );
 
       setUserProfile(profile);
     } catch (error: any) {
@@ -204,47 +634,16 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [dbManager, createUserProfile]);
 
-  // Improved activity tracking
+  // Activity tracking
   const updateActivity = useCallback(() => {
-    const now = Date.now();
-    lastActivityRef.current = now;
-    setLastActivity(now);
+    lastActivityRef.current = Date.now();
   }, []);
 
-  // Force logout function
-  const forceLogout = useCallback(async () => {
-    console.log("Forcing logout due to inactivity");
-    try {
-      if (idleCheckIntervalRef.current) {
-        clearInterval(idleCheckIntervalRef.current);
-        idleCheckIntervalRef.current = null;
-      }
-
-      await supabase.auth.signOut();
-      router.push("/");
-    } catch (error) {
-      console.error("Error during forced logout:", error);
-      router.push("/");
-    }
-  }, [router]);
-
-  // Initialize dashboard on mount
-  useEffect(() => {
-    fetchUserData();
-    updateActivity();
-  }, [updateActivity]);
-
-  // Simplified idle timeout functionality
-  useEffect(() => {
-    const IDLE_TIME = 900000; // 15 minutes (increased from 5)
-    const CHECK_INTERVAL = 30000; // Check every 30 seconds
-
-    const handleActivity = () => {
-      updateActivity();
-    };
-
+  // Auto-logout on inactivity
+  const setupActivityTracking = useCallback(() => {
+    const IDLE_TIME = 900000; // 15 minutes
     const events = [
       "mousedown",
       "mousemove",
@@ -254,6 +653,7 @@ export default function Dashboard() {
       "click",
     ];
 
+    const handleActivity = () => updateActivity();
     const throttledActivity = (() => {
       let timeoutId: NodeJS.Timeout | null = null;
       return () => {
@@ -261,7 +661,7 @@ export default function Dashboard() {
         timeoutId = setTimeout(() => {
           handleActivity();
           timeoutId = null;
-        }, 5000); // Throttle to once per 5 seconds
+        }, 10000); // Throttle to once per 10 seconds
       };
     })();
 
@@ -269,173 +669,77 @@ export default function Dashboard() {
       document.addEventListener(event, throttledActivity, { passive: true });
     });
 
-    idleCheckIntervalRef.current = setInterval(() => {
-      const now = Date.now();
-      const timeSinceLastActivity = now - lastActivityRef.current;
-
+    // Check for inactivity every minute
+    activityTimeoutRef.current = setInterval(() => {
+      const timeSinceLastActivity = Date.now() - lastActivityRef.current;
       if (timeSinceLastActivity >= IDLE_TIME) {
-        forceLogout();
+        console.log("Auto-logout due to inactivity");
+        supabase.auth.signOut().finally(() => router.push("/"));
       }
-    }, CHECK_INTERVAL);
+    }, 60000);
 
     return () => {
       events.forEach((event) => {
         document.removeEventListener(event, throttledActivity);
       });
-
-      if (idleCheckIntervalRef.current) {
-        clearInterval(idleCheckIntervalRef.current);
-        idleCheckIntervalRef.current = null;
+      if (activityTimeoutRef.current) {
+        clearInterval(activityTimeoutRef.current);
       }
     };
-  }, [updateActivity, forceLogout]);
+  }, [updateActivity, router]);
 
-  // Simple tab switching
+  // Enhanced tab switching
   const handleTabChange = useCallback(
     (newTab: string) => {
-      console.log(`Switching to tab: ${newTab}`);
       updateActivity();
-      setSectionError(null);
       setActiveTab(newTab);
+      // Clear section cache for fresh data
+      sectionRenderer.invalidateCache(newTab);
     },
-    [updateActivity]
+    [updateActivity, sectionRenderer]
   );
 
-  // Handle section loading timeout
-  const handleSectionTimeout = useCallback((sectionName: string) => {
-    console.error(`Section ${sectionName} timed out`);
-    setSectionError(
-      `${sectionName} section failed to load. This might be due to a database connection issue.`
-    );
+  // Initialize dashboard
+  useEffect(() => {
+    fetchUserData();
+    updateActivity();
 
-    // Offer recovery options
-    setTimeout(() => {
-      const shouldReload = window.confirm(
-        `The ${sectionName} section is not responding. Would you like to reload the page to fix this issue?`
-      );
-      if (shouldReload) {
-        window.location.reload();
-      }
-    }, 1000);
-  }, []);
+    const cleanup = setupActivityTracking();
 
-  const renderActiveSection = () => {
-    if (!userProfile) return null;
+    // Subscribe to database state changes
+    const unsubscribe = dbManager.subscribe(setDbState);
 
-    // Wrap each section to catch loading issues
-    switch (activeTab) {
-      case "dashboard":
-        return (
-          <SectionWrapper
-            sectionName="Dashboard"
-            onLoadingTimeout={handleSectionTimeout}
-          >
-            <DashboardContent
-              userProfile={userProfile}
-              setActiveTab={handleTabChange}
-            />
-          </SectionWrapper>
-        );
-      case "accounts":
-        return (
-          <SectionWrapper
-            sectionName="Accounts"
-            onLoadingTimeout={handleSectionTimeout}
-          >
-            <AccountsSection userProfile={userProfile} />
-          </SectionWrapper>
-        );
-      case "transfers":
-        return (
-          <SectionWrapper
-            sectionName="Transfers"
-            onLoadingTimeout={handleSectionTimeout}
-          >
-            <TransfersSection userProfile={userProfile} />
-          </SectionWrapper>
-        );
-      case "deposit":
-        return (
-          <SectionWrapper
-            sectionName="Deposits"
-            onLoadingTimeout={handleSectionTimeout}
-          >
-            <DepositsSection userProfile={userProfile} />
-          </SectionWrapper>
-        );
-      case "payments":
-        return (
-          <SectionWrapper
-            sectionName="Payments"
-            onLoadingTimeout={handleSectionTimeout}
-          >
-            <PaymentsSection userProfile={userProfile} />
-          </SectionWrapper>
-        );
-      case "card":
-        return (
-          <SectionWrapper
-            sectionName="Card"
-            onLoadingTimeout={handleSectionTimeout}
-          >
-            <CardSection userProfile={userProfile} />
-          </SectionWrapper>
-        );
-      case "crypto":
-        return (
-          <SectionWrapper
-            sectionName="Crypto"
-            onLoadingTimeout={handleSectionTimeout}
-          >
-            <CryptoSection userProfile={userProfile} />
-          </SectionWrapper>
-        );
-      case "message":
-        return (
-          <SectionWrapper
-            sectionName="Message"
-            onLoadingTimeout={handleSectionTimeout}
-          >
-            <MessageSection userProfile={userProfile} />
-          </SectionWrapper>
-        );
-      case "support":
-        return (
-          <SectionWrapper
-            sectionName="Support"
-            onLoadingTimeout={handleSectionTimeout}
-          >
-            <SupportSection userProfile={userProfile} />
-          </SectionWrapper>
-        );
-      case "loans":
-        return (
-          <SectionWrapper
-            sectionName="Loans"
-            onLoadingTimeout={handleSectionTimeout}
-          >
-            <LoansSection />
-          </SectionWrapper>
-        );
-      default:
-        return (
-          <SectionWrapper
-            sectionName="Dashboard"
-            onLoadingTimeout={handleSectionTimeout}
-          >
-            <DashboardContent
-              userProfile={userProfile}
-              setActiveTab={handleTabChange}
-            />
-          </SectionWrapper>
-        );
-    }
-  };
+    return () => {
+      cleanup();
+      unsubscribe();
+    };
+  }, [fetchUserData, updateActivity, setupActivityTracking, dbManager]);
 
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      sectionRenderer.destroy();
+      // Don't destroy dbManager as it's singleton
+    };
+  }, [sectionRenderer]);
+
+  // Render loading state
   if (loading) {
-    return <LoadingSpinner />;
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#F26623] mx-auto"></div>
+          <p className="mt-4 text-gray-600">
+            {dbState.isReconnecting
+              ? "Connecting to database..."
+              : "Loading dashboard..."}
+          </p>
+        </div>
+      </div>
+    );
   }
 
+  // Render error state
   if (error && !userProfile) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -444,26 +748,31 @@ export default function Dashboard() {
             <div className="w-8 h-8 text-red-500">⚠️</div>
           </div>
           <h2 className="text-xl font-semibold text-gray-900 mb-2">
-            Authentication Error
+            Connection Error
           </h2>
           <p className="text-gray-600 mb-4">{error}</p>
           <button
             onClick={() => {
-              setLoading(true);
               setError(null);
               fetchUserData();
             }}
-            className="bg-[#F26623] text-white px-4 py-2 rounded-lg hover:bg-[#d55a1f] transition-colors"
+            className="bg-[#F26623] text-white px-6 py-2 rounded-lg hover:bg-[#d55a1f] transition-colors"
           >
-            Try Again
+            Retry Connection
           </button>
+          <div className="mt-3 text-xs text-gray-500">
+            Database Status: {dbState.isHealthy ? "Healthy" : "Issues Detected"}
+          </div>
         </div>
       </div>
     );
   }
 
+  // Render main dashboard
   return (
     <div className="relative h-screen bg-gray-100">
+      <ConnectionStatusIndicator dbState={dbState} />
+
       <div className="flex h-full">
         {userProfile && (
           <div className="md:w-64 md:h-full md:fixed md:left-0 md:top-0 md:z-20">
@@ -475,20 +784,17 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div className="flex-1 md:ml-64 overflow-auto">
-          {renderActiveSection()}
+        <div
+          className={`flex-1 md:ml-64 overflow-auto ${
+            !dbState.isHealthy ? "pt-12" : ""
+          }`}
+        >
+          {userProfile &&
+            sectionRenderer.renderSection(activeTab, userProfile, {
+              setActiveTab: handleTabChange,
+            })}
         </div>
       </div>
-
-      {error && userProfile && (
-        <ErrorBanner error={error} onClose={() => setError(null)} />
-      )}
-      {sectionError && (
-        <ErrorBanner
-          error={sectionError}
-          onClose={() => setSectionError(null)}
-        />
-      )}
     </div>
   );
 }

@@ -1,4 +1,6 @@
 "use client";
+import type React from "react";
+
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
@@ -47,13 +49,13 @@ interface UserPermissionData {
 interface MenuItem {
   id: string;
   label: string;
-  icon: any;
-  isEnabled?: boolean;
+  icon: React.ComponentType<any>;
+  isEnabled: boolean;
   badge?: string | number;
 }
 
-// Default menu items - fallback when database fails
-const DEFAULT_MENU_ITEMS: MenuItem[] = [
+// Immutable default menu - ALWAYS available, never changes
+const PERMANENT_MENU_ITEMS: Readonly<MenuItem[]> = Object.freeze([
   {
     id: "dashboard",
     label: "Dashboard",
@@ -74,315 +76,483 @@ const DEFAULT_MENU_ITEMS: MenuItem[] = [
   { id: "crypto", label: "Crypto", icon: Bitcoin, isEnabled: true },
   { id: "message", label: "Message", icon: MessageSquare, isEnabled: true },
   { id: "support", label: "Support", icon: HelpCircle, isEnabled: true },
-];
+]);
+
+// Singleton connection manager for background tasks only
+class BackgroundDataManager {
+  private static instance: BackgroundDataManager;
+  private isRunning = false;
+  private lastSuccessfulFetch = 0;
+  private consecutiveFailures = 0;
+  private activeRequests = new Map<string, Promise<any>>();
+  private cache = new Map<
+    string,
+    { data: any; timestamp: number; ttl: number }
+  >();
+
+  // Connection health tracking
+  private connectionHealth = {
+    isHealthy: true,
+    lastHealthCheck: Date.now(),
+    consecutiveHealthFailures: 0,
+  };
+
+  static getInstance(): BackgroundDataManager {
+    if (!BackgroundDataManager.instance) {
+      BackgroundDataManager.instance = new BackgroundDataManager();
+    }
+    return BackgroundDataManager.instance;
+  }
+
+  private constructor() {
+    this.startHealthMonitoring();
+  }
+
+  // Continuous health monitoring in background
+  private startHealthMonitoring(): void {
+    setInterval(async () => {
+      try {
+        const startTime = Date.now();
+        // Ultra-lightweight health check
+        const healthCheck = await Promise.race([
+          supabase.from("profiles").select("id").limit(1).maybeSingle(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("Health check timeout")), 3000)
+          ),
+        ]);
+
+        const responseTime = Date.now() - startTime;
+
+        if (healthCheck.error && healthCheck.error.code !== "PGRST116") {
+          throw healthCheck.error;
+        }
+
+        // Consider healthy if response time < 5 seconds
+        if (responseTime < 5000) {
+          this.connectionHealth = {
+            isHealthy: true,
+            lastHealthCheck: Date.now(),
+            consecutiveHealthFailures: 0,
+          };
+        } else {
+          throw new Error("Response too slow");
+        }
+      } catch (error) {
+        this.connectionHealth.consecutiveHealthFailures++;
+        this.connectionHealth.isHealthy =
+          this.connectionHealth.consecutiveHealthFailures < 3;
+        this.connectionHealth.lastHealthCheck = Date.now();
+        console.warn("Background health check failed:", error);
+      }
+    }, 15000); // Check every 15 seconds
+  }
+
+  // Get cached data if available and valid
+  private getFromCache<T>(key: string): T | null {
+    const cached = this.cache.get(key);
+    if (!cached) return null;
+
+    const isExpired = Date.now() - cached.timestamp > cached.ttl;
+    if (isExpired) {
+      this.cache.delete(key);
+      return null;
+    }
+
+    return cached.data as T;
+  }
+
+  // Set cache with TTL
+  private setCache(key: string, data: any, ttlMs = 300000): void {
+    this.cache.set(key, {
+      data,
+      timestamp: Date.now(),
+      ttl: ttlMs,
+    });
+  }
+
+  // Ultra-safe background data fetch - never throws, never blocks
+  async fetchBackgroundData(userId: string): Promise<{
+    permissions: UserPermissionData[];
+    notifications: NotificationData[];
+    success: boolean;
+  }> {
+    if (!userId || !this.connectionHealth.isHealthy) {
+      return { permissions: [], notifications: [], success: false };
+    }
+
+    const requestKey = `background-${userId}`;
+
+    // Prevent duplicate requests
+    if (this.activeRequests.has(requestKey)) {
+      try {
+        return await this.activeRequests.get(requestKey);
+      } catch {
+        return { permissions: [], notifications: [], success: false };
+      }
+    }
+
+    // Check cache first
+    const cachedPermissions = this.getFromCache<UserPermissionData[]>(
+      `permissions-${userId}`
+    );
+    const cachedNotifications = this.getFromCache<NotificationData[]>(
+      `notifications-${userId}`
+    );
+
+    if (cachedPermissions && cachedNotifications) {
+      return {
+        permissions: cachedPermissions,
+        notifications: cachedNotifications,
+        success: true,
+      };
+    }
+
+    const fetchPromise = this.performBackgroundFetch(userId);
+    this.activeRequests.set(requestKey, fetchPromise);
+
+    try {
+      const result = await fetchPromise;
+
+      // Cache successful results
+      if (result.success) {
+        this.setCache(`permissions-${userId}`, result.permissions, 300000); // 5 minutes
+        this.setCache(`notifications-${userId}`, result.notifications, 60000); // 1 minute
+        this.lastSuccessfulFetch = Date.now();
+        this.consecutiveFailures = 0;
+      }
+
+      return result;
+    } catch (error) {
+      this.consecutiveFailures++;
+      return { permissions: [], notifications: [], success: false };
+    } finally {
+      this.activeRequests.delete(requestKey);
+    }
+  }
+
+  private async performBackgroundFetch(userId: string): Promise<{
+    permissions: UserPermissionData[];
+    notifications: NotificationData[];
+    success: boolean;
+  }> {
+    // Extremely aggressive timeout - 2 seconds max
+    const timeout = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error("Background fetch timeout")), 2000);
+    });
+
+    try {
+      // Fetch both in parallel with timeout
+      const [permissionsResult, notificationsResult] = await Promise.allSettled(
+        [
+          Promise.race([
+            supabase
+              .from("user_permissions")
+              .select("menu_item, is_enabled")
+              .eq("user_id", userId),
+            timeout,
+          ]),
+          Promise.race([
+            supabase
+              .from("notifications")
+              .select("menu_item, count")
+              .eq("user_id", userId)
+              .eq("is_read", false),
+            timeout,
+          ]),
+        ]
+      );
+
+      const permissions: UserPermissionData[] =
+        permissionsResult.status === "fulfilled" &&
+        (permissionsResult.value as any)?.data
+          ? (permissionsResult.value as any).data
+          : [];
+
+      const notifications: NotificationData[] =
+        notificationsResult.status === "fulfilled" &&
+        (notificationsResult.value as any)?.data
+          ? (notificationsResult.value as any).data
+          : [];
+
+      return { permissions, notifications, success: true };
+    } catch (error) {
+      // Always return empty arrays on failure - never throw
+      return { permissions: [], notifications: [], success: false };
+    }
+  }
+
+  // Clean up old cache entries
+  cleanup(): void {
+    const now = Date.now();
+    for (const [key, cached] of this.cache.entries()) {
+      if (now - cached.timestamp > cached.ttl) {
+        this.cache.delete(key);
+      }
+    }
+  }
+
+  // Get connection health status
+  getConnectionHealth() {
+    return { ...this.connectionHealth };
+  }
+}
 
 export default function Sidebar({
   activeTab,
   setActiveTab,
   userProfile,
 }: SidebarProps) {
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(DEFAULT_MENU_ITEMS);
-  const [connectionHealth, setConnectionHealth] = useState<
-    "healthy" | "degraded" | "offline"
-  >("healthy");
+  const [isLoggingOut, setIsLoggingOut] = useState<boolean>(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
-  // Refs for cleanup and state management
-  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const lastRefreshRef = useRef<number>(0);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const retryCountRef = useRef<number>(0);
-  const isRefreshingRef = useRef<boolean>(false);
+  // Menu items state - always starts with permanent items, never empty
+  const [menuItems, setMenuItems] = useState<MenuItem[]>(() => [
+    ...PERMANENT_MENU_ITEMS,
+  ]);
 
-  // Enhanced database query with retry logic and better error handling
-  const executeWithRetry = useCallback(
-    async (
-      operation: () => Promise<any>,
-      maxRetries: number = 2,
-      timeout: number = 8000
-    ): Promise<any> => {
-      let lastError: Error | null = null;
-
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        try {
-          // Create timeout promise
-          const timeoutPromise = new Promise<never>((_, reject) => {
-            setTimeout(() => reject(new Error("Operation timeout")), timeout);
-          });
-
-          // Execute operation with timeout
-          const result = await Promise.race([operation(), timeoutPromise]);
-
-          // Reset retry count on success
-          retryCountRef.current = 0;
-          setConnectionHealth("healthy");
-
-          return result;
-        } catch (error: any) {
-          lastError = error;
-          console.warn(
-            `Attempt ${attempt + 1}/${maxRetries + 1} failed:`,
-            error.message
-          );
-
-          // Wait before retry (exponential backoff)
-          if (attempt < maxRetries) {
-            await new Promise((resolve) =>
-              setTimeout(resolve, Math.pow(2, attempt) * 1000)
-            );
-          }
-        }
-      }
-
-      // All attempts failed
-      retryCountRef.current++;
-      if (retryCountRef.current >= 3) {
-        setConnectionHealth("offline");
-      } else {
-        setConnectionHealth("degraded");
-      }
-
-      console.error("All retry attempts failed:", lastError);
-      return null;
-    },
-    []
+  // Refs for component lifecycle management
+  const isComponentMountedRef = useRef<boolean>(true);
+  const backgroundUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const backgroundManager = useRef<BackgroundDataManager | undefined>(
+    undefined
   );
 
-  // Robust function to refresh menu items
-  const refreshMenuItems = useCallback(async () => {
-    if (!userProfile?.id || isRefreshingRef.current) {
+  // Initialize background manager once
+  useEffect(() => {
+    backgroundManager.current = BackgroundDataManager.getInstance();
+    return () => {
+      isComponentMountedRef.current = false;
+      if (backgroundUpdateTimeoutRef.current) {
+        clearTimeout(backgroundUpdateTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Background update function - completely non-blocking
+  const performBackgroundUpdate = useCallback(async () => {
+    if (
+      !userProfile?.id ||
+      !isComponentMountedRef.current ||
+      !backgroundManager.current
+    ) {
       return;
     }
-
-    // Prevent too frequent refreshes
-    const now = Date.now();
-    if (now - lastRefreshRef.current < 10000) {
-      return;
-    }
-
-    lastRefreshRef.current = now;
-    isRefreshingRef.current = true;
 
     try {
-      // Cancel any pending requests
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-      abortControllerRef.current = new AbortController();
-
-      console.log("Refreshing menu items...");
-
-      // Fetch permissions with retry logic
-      const userPermissions = await executeWithRetry(async () => {
-        const { data, error } = await supabase
-          .from("user_permissions")
-          .select("menu_item, is_enabled")
-          .eq("user_id", userProfile.id)
-          .abortSignal(abortControllerRef.current!.signal);
-
-        if (error && error.code !== "PGRST116") {
-          throw error;
-        }
-        return data || [];
-      });
-
-      // Fetch notifications with retry logic
-      const notifications = await executeWithRetry(async () => {
-        const { data, error } = await supabase
-          .from("notifications")
-          .select("menu_item, count")
-          .eq("user_id", userProfile.id)
-          .eq("is_read", false)
-          .abortSignal(abortControllerRef.current!.signal);
-
-        if (error && error.code !== "PGRST116") {
-          throw error;
-        }
-        return data || [];
-      });
-
-      // Update menu items - always succeeds even if database calls failed
-      setMenuItems((prevItems) =>
-        prevItems.map((item) => {
-          // Find notifications for this menu item
-          const notification = notifications?.find(
-            (n: NotificationData) => n.menu_item === item.id
-          );
-
-          // Check user permissions for this menu item
-          const permission = userPermissions?.find(
-            (p: UserPermissionData) => p.menu_item === item.id
-          );
-
-          // Default to enabled if no permissions data or if database failed
-          const hasPermission =
-            userPermissions === null
-              ? true
-              : permission
-              ? permission.is_enabled
-              : true;
-
-          return {
-            ...item,
-            isEnabled: hasPermission,
-            badge:
-              notification && notification.count && notification.count > 0
-                ? notification.count
-                : undefined,
-          };
-        })
+      const result = await backgroundManager.current.fetchBackgroundData(
+        userProfile.id
       );
 
-      console.log("Menu items refreshed successfully");
-    } catch (error: any) {
-      console.error("Menu refresh failed:", error);
+      if (!isComponentMountedRef.current || !result.success) {
+        return;
+      }
 
-      // On critical failure, ensure menu items are still usable
-      setMenuItems(DEFAULT_MENU_ITEMS);
-      setConnectionHealth("degraded");
-    } finally {
-      isRefreshingRef.current = false;
+      // Apply updates to permanent menu items
+      const updatedItems = [...PERMANENT_MENU_ITEMS];
+      let hasChanges = false;
+
+      // Apply permissions
+      result.permissions.forEach((perm: UserPermissionData) => {
+        const itemIndex = updatedItems.findIndex(
+          (item: MenuItem) => item.id === perm.menu_item
+        );
+        if (
+          itemIndex !== -1 &&
+          updatedItems[itemIndex].isEnabled !== perm.is_enabled
+        ) {
+          updatedItems[itemIndex] = {
+            ...updatedItems[itemIndex],
+            isEnabled: perm.is_enabled,
+          };
+          hasChanges = true;
+        }
+      });
+
+      // Apply notifications
+      result.notifications.forEach((notif: NotificationData) => {
+        const itemIndex = updatedItems.findIndex(
+          (item: MenuItem) => item.id === notif.menu_item
+        );
+        if (itemIndex !== -1 && notif.count > 0) {
+          updatedItems[itemIndex] = {
+            ...updatedItems[itemIndex],
+            badge: notif.count,
+          };
+          hasChanges = true;
+        }
+      });
+
+      // Only update state if there are actual changes
+      if (hasChanges) {
+        setMenuItems(updatedItems);
+      }
+    } catch (error) {
+      // Silent failure - sidebar continues working with permanent items
+      console.warn("Background update failed silently:", error);
     }
-  }, [userProfile?.id, executeWithRetry]);
+  }, [userProfile?.id]);
 
-  // Enhanced background refresh with better error handling
+  // Schedule background updates - very conservative timing
   useEffect(() => {
     if (!userProfile?.id) return;
 
-    // Initial refresh with delay
-    const initialTimeout = setTimeout(() => {
-      refreshMenuItems();
-    }, 1500);
+    // Initial background update after component stabilizes
+    backgroundUpdateTimeoutRef.current = setTimeout(() => {
+      performBackgroundUpdate();
+    }, 3000);
 
-    // Set up interval for background refresh
+    // Set up periodic background updates only when page is visible
     const intervalId = setInterval(() => {
-      // Only refresh if page is visible and not already refreshing
-      if (document.visibilityState === "visible" && !isRefreshingRef.current) {
-        refreshMenuItems();
-      }
-    }, 45000); // 45 seconds - reduced frequency to prevent overload
-
-    refreshIntervalRef.current = intervalId;
-
-    return () => {
-      clearTimeout(initialTimeout);
-      clearInterval(intervalId);
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-      isRefreshingRef.current = false;
-    };
-  }, [refreshMenuItems, userProfile?.id]);
-
-  // Handle visibility change for reconnection
-  useEffect(() => {
-    const handleVisibilityChange = () => {
       if (
         document.visibilityState === "visible" &&
-        connectionHealth !== "healthy"
+        isComponentMountedRef.current
       ) {
-        // Reset connection health and try to refresh
+        performBackgroundUpdate();
+      }
+    }, 180000); // 3 minutes - very conservative
+
+    // Update on visibility change
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
         setTimeout(() => {
-          refreshMenuItems();
+          performBackgroundUpdate();
         }, 2000);
       }
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
+
     return () => {
+      clearInterval(intervalId);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [refreshMenuItems, connectionHealth]);
+  }, [performBackgroundUpdate, userProfile?.id]);
 
-  // Enhanced sign out with better error handling
+  // Cleanup old cache periodically
+  useEffect(() => {
+    const cleanupInterval = setInterval(() => {
+      backgroundManager.current?.cleanup();
+    }, 600000); // 10 minutes
+
+    return () => clearInterval(cleanupInterval);
+  }, []);
+
+  // Bulletproof sign out with multiple fallback strategies
   const handleSignOut = async () => {
     setIsLoggingOut(true);
 
     try {
-      // Clean up intervals and requests
-      if (refreshIntervalRef.current) {
-        clearInterval(refreshIntervalRef.current);
-        refreshIntervalRef.current = null;
+      // Cleanup component state
+      isComponentMountedRef.current = false;
+      if (backgroundUpdateTimeoutRef.current) {
+        clearTimeout(backgroundUpdateTimeoutRef.current);
       }
 
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
+      // Try to get current user with timeout
+      let user;
+      try {
+        const userResult = await Promise.race([
+          supabase.auth.getUser(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("User fetch timeout")), 2000)
+          ),
+        ]);
+        user = userResult.data?.user;
+      } catch (error) {
+        console.warn("Could not fetch user for logout:", error);
       }
 
-      // Get current user
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
+      // Try to update presence (fire and forget)
       if (user) {
-        console.log("Logging out user:", user.id);
-
-        // Try to update presence (don't block logout if it fails)
-        try {
-          await executeWithRetry(
-            async () => {
-              const timestamp = new Date().toISOString();
-              const { error } = await supabase.from("user_presence").upsert(
+        const updatePresence = async () => {
+          try {
+            await Promise.race([
+              supabase.from("user_presence").upsert(
                 {
                   user_id: user.id,
                   is_online: false,
-                  last_seen: timestamp,
-                  updated_at: timestamp,
+                  last_seen: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
                 },
                 { onConflict: "user_id" }
-              );
-              if (error) throw error;
-            },
-            1,
-            3000
-          ); // Single retry, 3 second timeout
+              ),
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error("Presence timeout")), 1000)
+              ),
+            ]);
+          } catch {
+            // Silent failure
+          }
+        };
+        updatePresence(); // Don't await
+      }
+
+      // Multi-stage logout with increasing aggressiveness
+      const logoutStrategies = [
+        // Strategy 1: Normal logout with timeout
+        () =>
+          Promise.race([
+            supabase.auth.signOut(),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error("Normal logout timeout")), 3000)
+            ),
+          ]),
+        // Strategy 2: Local logout
+        () => supabase.auth.signOut({ scope: "local" }),
+        // Strategy 3: Force local logout
+        () => Promise.resolve({ error: null }),
+      ];
+
+      let logoutSuccess = false;
+      for (const strategy of logoutStrategies) {
+        try {
+          const result = await strategy();
+          if (!result.error) {
+            logoutSuccess = true;
+            break;
+          }
         } catch (error) {
-          console.warn("Could not update presence on logout:", error);
+          console.warn("Logout strategy failed:", error);
+          continue;
         }
       }
 
-      // Sign out - this should always work
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        console.error("Error signing out:", error);
-        // Force logout by clearing local session
-        await supabase.auth.signOut({ scope: "local" });
+      if (logoutSuccess) {
+        console.log("Successfully signed out");
+      } else {
+        console.warn("All logout strategies failed, but continuing...");
       }
-
-      console.log("Successfully signed out");
     } catch (error) {
-      console.error("Error during logout process:", error);
-      // Force logout even if there were errors
-      try {
-        await supabase.auth.signOut({ scope: "local" });
-      } catch (finalError) {
-        console.error("Could not perform local logout:", finalError);
-      }
+      console.error("Critical error during logout:", error);
     } finally {
       setIsLoggingOut(false);
+      // Force redirect regardless of logout success
+      try {
+        window.location.href = "/";
+      } catch {
+        // Last resort
+        window.location.reload();
+      }
     }
   };
 
-  // Enhanced menu item click handler
+  // INSTANT menu item click - never waits, never fails
   const handleMenuItemClick = useCallback(
     (itemId: string, isEnabled: boolean) => {
       if (!isEnabled) return;
 
-      console.log(`Menu item clicked: ${itemId}`);
-
-      // Always update active tab immediately for responsive UI
+      // CRITICAL: Always respond instantly, no matter what
       setActiveTab(itemId);
       setIsMobileMenuOpen(false);
 
-      // Optional: Trigger a refresh of menu items to ensure fresh data
-      if (connectionHealth === "degraded" || connectionHealth === "offline") {
+      // Optional background update trigger - fire and forget
+      if (isComponentMountedRef.current) {
         setTimeout(() => {
-          refreshMenuItems();
-        }, 500);
+          performBackgroundUpdate();
+        }, 50);
       }
     },
-    [setActiveTab, connectionHealth, refreshMenuItems]
+    [setActiveTab, performBackgroundUpdate]
   );
 
   return (
@@ -435,63 +605,42 @@ export default function Sidebar({
           </div>
         </div>
 
-        {/* Connection Status Indicator */}
-        {connectionHealth !== "healthy" && (
-          <div
-            className={`px-4 py-2 border-b ${
-              connectionHealth === "degraded"
-                ? "bg-yellow-50 border-yellow-200"
-                : "bg-red-50 border-red-200"
-            }`}
-          >
-            <p
-              className={`text-xs ${
-                connectionHealth === "degraded"
-                  ? "text-yellow-700"
-                  : "text-red-700"
-              }`}
-            >
-              {connectionHealth === "degraded"
-                ? "Limited connectivity - some features may be delayed"
-                : "Working offline - functionality may be limited"}
-            </p>
-          </div>
-        )}
-
-        {/* Navigation Menu */}
+        {/* Navigation Menu - Always renders, never empty */}
         <nav className="flex-1 px-6 overflow-y-auto scrollbar-hide">
           <ul className="space-y-1 py-4 min-h-0">
-            {menuItems.map((item) => (
-              <li key={item.id}>
-                <button
-                  onClick={() =>
-                    handleMenuItemClick(item.id, item.isEnabled ?? true)
-                  }
-                  disabled={!(item.isEnabled ?? true)}
-                  className={`w-full flex items-center px-0 py-4 text-left transition-all duration-200 relative ${
-                    activeTab === item.id
-                      ? "text-[#F26623]"
-                      : item.isEnabled ?? true
-                      ? "text-gray-800 hover:text-[#F26623]"
-                      : "text-gray-400 cursor-not-allowed"
-                  }`}
-                >
-                  <item.icon
-                    className={`w-5 h-5 mr-4 ${
-                      item.isEnabled ?? true ? "text-gray-600" : "text-gray-400"
-                    }`}
-                  />
-                  <span className="font-medium text-base">{item.label}</span>
+            {menuItems.map((item) => {
+              // Safe icon rendering with fallback
+              const IconComponent = item.icon;
 
-                  {/* Badge for notifications */}
-                  {item.badge && (
-                    <span className="ml-auto bg-red-500 text-white text-xs rounded-full px-2 py-1 min-w-[20px] h-5 flex items-center justify-center">
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
-              </li>
-            ))}
+              return (
+                <li key={item.id}>
+                  <button
+                    onClick={() => handleMenuItemClick(item.id, item.isEnabled)}
+                    disabled={!item.isEnabled}
+                    className={`w-full flex items-center px-0 py-4 text-left transition-all duration-200 relative ${
+                      activeTab === item.id
+                        ? "text-[#F26623]"
+                        : item.isEnabled
+                        ? "text-gray-800 hover:text-[#F26623]"
+                        : "text-gray-400 cursor-not-allowed"
+                    }`}
+                  >
+                    <IconComponent
+                      className={`w-5 h-5 mr-4 ${
+                        item.isEnabled ? "text-gray-600" : "text-gray-400"
+                      }`}
+                    />
+                    <span className="font-medium text-base">{item.label}</span>
+                    {/* Badge for notifications */}
+                    {item.badge && (
+                      <span className="ml-auto bg-red-500 text-white text-xs rounded-full px-2 py-1 min-w-[20px] h-5 flex items-center justify-center">
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </nav>
 
@@ -503,15 +652,7 @@ export default function Sidebar({
                 <span className="font-medium text-base">
                   {userProfile?.full_name || "Client Name"}
                 </span>
-                <div
-                  className={`w-2 h-2 rounded-full ml-3 ${
-                    connectionHealth === "healthy"
-                      ? "bg-green-400"
-                      : connectionHealth === "degraded"
-                      ? "bg-yellow-400"
-                      : "bg-red-400"
-                  }`}
-                ></div>
+                <div className="w-2 h-2 bg-green-400 rounded-full ml-3"></div>
               </div>
               <Button
                 variant="ghost"

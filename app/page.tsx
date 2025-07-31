@@ -18,10 +18,8 @@ export default function Page() {
   const checkKYCStatus = async (userId: string) => {
     if (isCheckingKYC.current) return;
     isCheckingKYC.current = true;
-
     try {
       console.log("Checking KYC status for user:", userId);
-
       const { data: userData, error: userError } = await supabase
         .from("users")
         .select("kyc_status")
@@ -48,14 +46,11 @@ export default function Page() {
   // Initialize authentication once
   useEffect(() => {
     let mounted = true;
-
     const initializeAuth = async () => {
       if (hasInitialized.current) return;
       hasInitialized.current = true;
-
       try {
         console.log("Initializing authentication...");
-
         const {
           data: { session },
           error,
@@ -72,16 +67,13 @@ export default function Page() {
 
         const currentUser = session?.user ?? null;
         console.log("Current user:", currentUser?.id || "No user");
-
         if (mounted) {
           setUser(currentUser);
-
           if (currentUser) {
             await checkKYCStatus(currentUser.id);
           } else {
             setKycStatus(null);
           }
-
           setLoading(false);
         }
       } catch (error) {
@@ -103,12 +95,10 @@ export default function Page() {
   // Auth state listener - separate from initialization
   useEffect(() => {
     let mounted = true;
-
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log("Auth state changed:", event, session?.user?.id || "No user");
-
       if (!mounted || event === "INITIAL_SESSION") return;
 
       const currentUser = session?.user ?? null;
@@ -118,9 +108,11 @@ export default function Page() {
       if (currentUser && event === "SIGNED_IN") {
         console.log("User signed in, checking KYC...");
         await checkKYCStatus(currentUser.id);
-      } else if (!currentUser) {
+      } else if (!currentUser && event === "SIGNED_OUT") {
         console.log("User signed out");
         setKycStatus(null);
+        // Ensure loading is false when user signs out
+        setLoading(false);
       }
     });
 
@@ -149,8 +141,8 @@ export default function Page() {
     </div>
   );
 
-  // Show loading screen during initial load
-  if (loading) {
+  // Show loading screen during initial load only
+  if (loading && hasInitialized.current) {
     return <LoadingScreen message="Loading your account..." />;
   }
 
