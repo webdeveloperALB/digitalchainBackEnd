@@ -52,6 +52,30 @@ interface MenuItem {
   badge?: string | number;
 }
 
+// Default menu items - fallback when database fails
+const DEFAULT_MENU_ITEMS: MenuItem[] = [
+  {
+    id: "dashboard",
+    label: "Dashboard",
+    icon: LayoutDashboard,
+    isEnabled: true,
+  },
+  { id: "accounts", label: "Accounts", icon: Wallet, isEnabled: true },
+  {
+    id: "transfers",
+    label: "Transfers",
+    icon: ArrowLeftRight,
+    isEnabled: true,
+  },
+  { id: "deposit", label: "Deposit", icon: Download, isEnabled: true },
+  { id: "payments", label: "Payments", icon: CreditCard, isEnabled: true },
+  { id: "loans", label: "Loans", icon: Banknote, isEnabled: true },
+  { id: "card", label: "Card", icon: CreditCard, isEnabled: true },
+  { id: "crypto", label: "Crypto", icon: Bitcoin, isEnabled: true },
+  { id: "message", label: "Message", icon: MessageSquare, isEnabled: true },
+  { id: "support", label: "Support", icon: HelpCircle, isEnabled: true },
+];
+
 export default function Sidebar({
   activeTab,
   setActiveTab,
@@ -59,142 +83,145 @@ export default function Sidebar({
 }: SidebarProps) {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>(DEFAULT_MENU_ITEMS);
+  const [connectionHealth, setConnectionHealth] = useState<
+    "healthy" | "degraded" | "offline"
+  >("healthy");
+
+  // Refs for cleanup and state management
   const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastRefreshRef = useRef<number>(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const retryCountRef = useRef<number>(0);
+  const isRefreshingRef = useRef<boolean>(false);
 
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([
-    {
-      id: "dashboard",
-      label: "Dashboard",
-      icon: LayoutDashboard,
-      isEnabled: true,
-    },
-    { id: "accounts", label: "Accounts", icon: Wallet, isEnabled: true },
-    {
-      id: "transfers",
-      label: "Transfers",
-      icon: ArrowLeftRight,
-      isEnabled: true,
-    },
-    { id: "deposit", label: "Deposit", icon: Download, isEnabled: true },
-    { id: "payments", label: "Payments", icon: CreditCard, isEnabled: true },
-    { id: "loans", label: "Loans", icon: Banknote, isEnabled: true },
-    { id: "card", label: "Card", icon: CreditCard, isEnabled: true },
-    { id: "crypto", label: "Crypto", icon: Bitcoin, isEnabled: true },
-    { id: "message", label: "Message", icon: MessageSquare, isEnabled: true },
-    { id: "support", label: "Support", icon: HelpCircle, isEnabled: true },
-  ]);
+  // Enhanced database query with retry logic and better error handling
+  const executeWithRetry = useCallback(
+    async (
+      operation: () => Promise<any>,
+      maxRetries: number = 2,
+      timeout: number = 8000
+    ): Promise<any> => {
+      let lastError: Error | null = null;
 
-  // Function to refresh menu items from backend/database
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          // Create timeout promise
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error("Operation timeout")), timeout);
+          });
+
+          // Execute operation with timeout
+          const result = await Promise.race([operation(), timeoutPromise]);
+
+          // Reset retry count on success
+          retryCountRef.current = 0;
+          setConnectionHealth("healthy");
+
+          return result;
+        } catch (error: any) {
+          lastError = error;
+          console.warn(
+            `Attempt ${attempt + 1}/${maxRetries + 1} failed:`,
+            error.message
+          );
+
+          // Wait before retry (exponential backoff)
+          if (attempt < maxRetries) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, Math.pow(2, attempt) * 1000)
+            );
+          }
+        }
+      }
+
+      // All attempts failed
+      retryCountRef.current++;
+      if (retryCountRef.current >= 3) {
+        setConnectionHealth("offline");
+      } else {
+        setConnectionHealth("degraded");
+      }
+
+      console.error("All retry attempts failed:", lastError);
+      return null;
+    },
+    []
+  );
+
+  // Robust function to refresh menu items
   const refreshMenuItems = useCallback(async () => {
-    if (!userProfile?.id) {
-      console.log("No user profile available, skipping menu refresh");
+    if (!userProfile?.id || isRefreshingRef.current) {
       return;
     }
 
     // Prevent too frequent refreshes
     const now = Date.now();
-    if (now - lastRefreshRef.current < 15000) {
-      // Minimum 15 seconds between refreshes
-      console.log("Skipping menu refresh - too soon since last refresh");
+    if (now - lastRefreshRef.current < 10000) {
       return;
     }
+
     lastRefreshRef.current = now;
+    isRefreshingRef.current = true;
 
     try {
+      // Cancel any pending requests
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      abortControllerRef.current = new AbortController();
+
       console.log("Refreshing menu items...");
-      setRefreshError(null);
 
-      // Set a timeout for the entire refresh operation
-      const refreshPromise = new Promise(async (resolve, reject) => {
-        try {
-          // Fetch user permissions with timeout
-          let userPermissions: UserPermissionData[] = [];
-          try {
-            const permissionsPromise = supabase
-              .from("user_permissions")
-              .select("menu_item, is_enabled")
-              .eq("user_id", userProfile.id);
+      // Fetch permissions with retry logic
+      const userPermissions = await executeWithRetry(async () => {
+        const { data, error } = await supabase
+          .from("user_permissions")
+          .select("menu_item, is_enabled")
+          .eq("user_id", userProfile.id)
+          .abortSignal(abortControllerRef.current!.signal);
 
-            const { data, error } = (await Promise.race([
-              permissionsPromise,
-              new Promise((_, reject) =>
-                setTimeout(
-                  () => reject(new Error("Permissions query timeout")),
-                  5000
-                )
-              ),
-            ])) as any;
-
-            if (error && error.code !== "PGRST116") {
-              // Ignore "not found" errors
-              throw error;
-            } else if (data) {
-              userPermissions = data;
-            }
-          } catch (permError) {
-            console.warn("Could not fetch permissions:", permError);
-            // Continue without permissions - use defaults
-          }
-
-          // Fetch notification counts with timeout
-          let notifications: NotificationData[] = [];
-          try {
-            const notificationsPromise = supabase
-              .from("notifications")
-              .select("menu_item, count")
-              .eq("user_id", userProfile.id)
-              .eq("is_read", false);
-
-            const { data, error } = (await Promise.race([
-              notificationsPromise,
-              new Promise((_, reject) =>
-                setTimeout(
-                  () => reject(new Error("Notifications query timeout")),
-                  5000
-                )
-              ),
-            ])) as any;
-
-            if (error && error.code !== "PGRST116") {
-              // Ignore "not found" errors
-              throw error;
-            } else if (data) {
-              notifications = data;
-            }
-          } catch (notifError) {
-            console.warn("Could not fetch notifications:", notifError);
-            // Continue without notifications
-          }
-
-          resolve({ userPermissions, notifications });
-        } catch (error) {
-          reject(error);
+        if (error && error.code !== "PGRST116") {
+          throw error;
         }
+        return data || [];
       });
 
-      // Wait for refresh with overall timeout
-      const result = (await Promise.race([
-        refreshPromise,
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("Menu refresh timeout")), 10000)
-        ),
-      ])) as any;
+      // Fetch notifications with retry logic
+      const notifications = await executeWithRetry(async () => {
+        const { data, error } = await supabase
+          .from("notifications")
+          .select("menu_item, count")
+          .eq("user_id", userProfile.id)
+          .eq("is_read", false)
+          .abortSignal(abortControllerRef.current!.signal);
 
-      // Update menu items with fresh data while preserving structure
+        if (error && error.code !== "PGRST116") {
+          throw error;
+        }
+        return data || [];
+      });
+
+      // Update menu items - always succeeds even if database calls failed
       setMenuItems((prevItems) =>
         prevItems.map((item) => {
-          // Find if there are notifications for this menu item
-          const notification = result.notifications.find(
+          // Find notifications for this menu item
+          const notification = notifications?.find(
             (n: NotificationData) => n.menu_item === item.id
           );
 
-          // Check if user has permission for this menu item
-          const permission = result.userPermissions.find(
+          // Check user permissions for this menu item
+          const permission = userPermissions?.find(
             (p: UserPermissionData) => p.menu_item === item.id
           );
-          const hasPermission = permission ? permission.is_enabled : true; // Default to true if no permissions data
+
+          // Default to enabled if no permissions data or if database failed
+          const hasPermission =
+            userPermissions === null
+              ? true
+              : permission
+              ? permission.is_enabled
+              : true;
 
           return {
             ...item,
@@ -210,54 +237,55 @@ export default function Sidebar({
       console.log("Menu items refreshed successfully");
     } catch (error: any) {
       console.error("Menu refresh failed:", error);
-      setRefreshError(error.message);
 
-      // If refresh fails multiple times, stop trying
-      if (error.message.includes("timeout")) {
-        console.warn("Menu refresh timed out, disabling auto-refresh");
-        if (refreshIntervalRef.current) {
-          clearInterval(refreshIntervalRef.current);
-          refreshIntervalRef.current = null;
-        }
-      }
+      // On critical failure, ensure menu items are still usable
+      setMenuItems(DEFAULT_MENU_ITEMS);
+      setConnectionHealth("degraded");
+    } finally {
+      isRefreshingRef.current = false;
     }
-  }, [userProfile?.id]);
+  }, [userProfile?.id, executeWithRetry]);
 
-  // Set up background refresh with better error handling
+  // Enhanced background refresh with better error handling
   useEffect(() => {
     if (!userProfile?.id) return;
 
-    // Initial refresh (delayed to avoid conflicts with dashboard loading)
-    const initialRefresh = setTimeout(() => {
+    // Initial refresh with delay
+    const initialTimeout = setTimeout(() => {
       refreshMenuItems();
-    }, 2000);
+    }, 1500);
 
-    // Set up interval for background refresh (increased to 60 seconds to reduce load)
-    refreshIntervalRef.current = setInterval(() => {
-      // Only refresh if no errors and page is visible
-      if (!refreshError && document.visibilityState === "visible") {
+    // Set up interval for background refresh
+    const intervalId = setInterval(() => {
+      // Only refresh if page is visible and not already refreshing
+      if (document.visibilityState === "visible" && !isRefreshingRef.current) {
         refreshMenuItems();
       }
-    }, 60000); // 60 seconds
+    }, 45000); // 45 seconds - reduced frequency to prevent overload
 
-    // Cleanup interval on unmount
+    refreshIntervalRef.current = intervalId;
+
     return () => {
-      clearTimeout(initialRefresh);
-      if (refreshIntervalRef.current) {
-        clearInterval(refreshIntervalRef.current);
-        refreshIntervalRef.current = null;
+      clearTimeout(initialTimeout);
+      clearInterval(intervalId);
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
       }
+      isRefreshingRef.current = false;
     };
-  }, [refreshMenuItems, userProfile?.id, refreshError]);
+  }, [refreshMenuItems, userProfile?.id]);
 
-  // Refresh on visibility change (when user comes back to tab)
+  // Handle visibility change for reconnection
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible" && !refreshError) {
-        // Small delay to ensure everything is ready
+      if (
+        document.visibilityState === "visible" &&
+        connectionHealth !== "healthy"
+      ) {
+        // Reset connection health and try to refresh
         setTimeout(() => {
           refreshMenuItems();
-        }, 1000);
+        }, 2000);
       }
     };
 
@@ -265,19 +293,24 @@ export default function Sidebar({
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [refreshMenuItems, refreshError]);
+  }, [refreshMenuItems, connectionHealth]);
 
+  // Enhanced sign out with better error handling
   const handleSignOut = async () => {
     setIsLoggingOut(true);
 
     try {
-      // Clear refresh interval first
+      // Clean up intervals and requests
       if (refreshIntervalRef.current) {
         clearInterval(refreshIntervalRef.current);
         refreshIntervalRef.current = null;
       }
 
-      // Get current user before signing out
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+
+      // Get current user
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -285,65 +318,77 @@ export default function Sidebar({
       if (user) {
         console.log("Logging out user:", user.id);
 
-        // Try to mark user as offline before signing out (with timeout)
+        // Try to update presence (don't block logout if it fails)
         try {
-          const timestamp = new Date().toISOString();
-          const presencePromise = supabase.from("user_presence").upsert(
-            {
-              user_id: user.id,
-              is_online: false,
-              last_seen: timestamp,
-              updated_at: timestamp,
+          await executeWithRetry(
+            async () => {
+              const timestamp = new Date().toISOString();
+              const { error } = await supabase.from("user_presence").upsert(
+                {
+                  user_id: user.id,
+                  is_online: false,
+                  last_seen: timestamp,
+                  updated_at: timestamp,
+                },
+                { onConflict: "user_id" }
+              );
+              if (error) throw error;
             },
-            {
-              onConflict: "user_id",
-            }
-          );
-
-          // Don't wait too long for presence update
-          await Promise.race([
-            presencePromise,
-            new Promise((_, reject) =>
-              setTimeout(
-                () => reject(new Error("Presence update timeout")),
-                2000
-              )
-            ),
-          ]);
-
-          console.log("Successfully marked user offline on logout");
-        } catch (presenceError) {
-          console.warn("Could not update presence on logout:", presenceError);
-          // Don't block logout if presence update fails
+            1,
+            3000
+          ); // Single retry, 3 second timeout
+        } catch (error) {
+          console.warn("Could not update presence on logout:", error);
         }
       }
 
-      // Then sign out
+      // Sign out - this should always work
       const { error } = await supabase.auth.signOut();
-
       if (error) {
         console.error("Error signing out:", error);
-      } else {
-        console.log("Successfully signed out");
+        // Force logout by clearing local session
+        await supabase.auth.signOut({ scope: "local" });
       }
+
+      console.log("Successfully signed out");
     } catch (error) {
       console.error("Error during logout process:", error);
+      // Force logout even if there were errors
+      try {
+        await supabase.auth.signOut({ scope: "local" });
+      } catch (finalError) {
+        console.error("Could not perform local logout:", finalError);
+      }
     } finally {
       setIsLoggingOut(false);
     }
   };
 
-  const handleMenuItemClick = (itemId: string, isEnabled: boolean) => {
-    if (!isEnabled) return;
+  // Enhanced menu item click handler
+  const handleMenuItemClick = useCallback(
+    (itemId: string, isEnabled: boolean) => {
+      if (!isEnabled) return;
 
-    console.log(`Menu item clicked: ${itemId}`);
-    setActiveTab(itemId);
-    setIsMobileMenuOpen(false); // Close mobile menu on item click
-  };
+      console.log(`Menu item clicked: ${itemId}`);
+
+      // Always update active tab immediately for responsive UI
+      setActiveTab(itemId);
+      setIsMobileMenuOpen(false);
+
+      // Optional: Trigger a refresh of menu items to ensure fresh data
+      if (connectionHealth === "degraded" || connectionHealth === "offline") {
+        setTimeout(() => {
+          refreshMenuItems();
+        }, 500);
+      }
+    },
+    [setActiveTab, connectionHealth, refreshMenuItems]
+  );
 
   return (
     <>
       <style jsx>{scrollbarHideStyles}</style>
+
       {/* Mobile Menu Button */}
       <Button
         variant="ghost"
@@ -369,13 +414,13 @@ export default function Sidebar({
       {/* Sidebar */}
       <div
         className={`
-    fixed md:relative
-    w-64 bg-[#F5F0F0] h-screen flex flex-col
-    transform transition-transform duration-300 ease-in-out z-50
-    ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}
-    md:translate-x-0
-    overflow-hidden
-  `}
+          fixed md:relative
+          w-64 bg-[#F5F0F0] h-screen flex flex-col
+          transform transition-transform duration-300 ease-in-out z-50
+          ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}
+          md:translate-x-0
+          overflow-hidden
+        `}
       >
         {/* Logo Section */}
         <div className="px-6 pt-2 flex-shrink-0 border-b border-gray-200/50">
@@ -390,13 +435,25 @@ export default function Sidebar({
           </div>
         </div>
 
-        {/* Error indicator */}
-        {/* Info indicator */}
-        {refreshError && (
-          <div className="px-4 py-2 bg-yellow-50 border-b border-yellow-200">
-            <p className="text-xs text-yellow-700">
-              For the most accurate balance and recent activity, please refresh
-              the page.
+        {/* Connection Status Indicator */}
+        {connectionHealth !== "healthy" && (
+          <div
+            className={`px-4 py-2 border-b ${
+              connectionHealth === "degraded"
+                ? "bg-yellow-50 border-yellow-200"
+                : "bg-red-50 border-red-200"
+            }`}
+          >
+            <p
+              className={`text-xs ${
+                connectionHealth === "degraded"
+                  ? "text-yellow-700"
+                  : "text-red-700"
+              }`}
+            >
+              {connectionHealth === "degraded"
+                ? "Limited connectivity - some features may be delayed"
+                : "Working offline - functionality may be limited"}
             </p>
           </div>
         )}
@@ -446,7 +503,15 @@ export default function Sidebar({
                 <span className="font-medium text-base">
                   {userProfile?.full_name || "Client Name"}
                 </span>
-                <div className="w-2 h-2 bg-green-400 rounded-full ml-3"></div>
+                <div
+                  className={`w-2 h-2 rounded-full ml-3 ${
+                    connectionHealth === "healthy"
+                      ? "bg-green-400"
+                      : connectionHealth === "degraded"
+                      ? "bg-yellow-400"
+                      : "bg-red-400"
+                  }`}
+                ></div>
               </div>
               <Button
                 variant="ghost"
