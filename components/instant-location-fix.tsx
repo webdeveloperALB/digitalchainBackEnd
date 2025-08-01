@@ -1,41 +1,47 @@
-"use client"
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { supabase } from "@/lib/supabase"
+"use client";
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { supabase } from "@/lib/supabase";
 
 export default function InstantLocationFix() {
-  const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<any>(null)
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<any>(null);
 
   const updateLocationNow = async () => {
-    setLoading(true)
+    setLoading(true);
     try {
       // Get current user
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      const { data: sessionData, error: sessionError } =
+        await supabase.auth.getSession();
 
-      if (!user) {
-        setResult({ error: "No user logged in" })
-        setLoading(false)
-        return
+      if (sessionError) {
+        setResult({ error: sessionError.message });
+        setLoading(false);
+        return;
       }
 
-      console.log("Updating location for user:", user.id)
+      const user = sessionData.session?.user;
+      if (!user) {
+        setResult({ error: "No user logged in" });
+        setLoading(false);
+        return;
+      }
+
+      console.log("Updating location for user:", user.id);
 
       // Get IP address
-      const ipResponse = await fetch("https://api.ipify.org?format=json")
-      const ipData = await ipResponse.json()
-      const userIP = ipData.ip
+      const ipResponse = await fetch("https://api.ipify.org?format=json");
+      const ipData = await ipResponse.json();
+      const userIP = ipData.ip;
 
-      console.log("Got IP:", userIP)
+      console.log("Got IP:", userIP);
 
       // Get location data
-      const locationResponse = await fetch(`https://ipapi.co/${userIP}/json/`)
-      const locationData = await locationResponse.json()
+      const locationResponse = await fetch(`https://ipapi.co/${userIP}/json/`);
+      const locationData = await locationResponse.json();
 
-      console.log("Got location:", locationData)
+      console.log("Got location:", locationData);
 
       // Update database with location
       const updateData = {
@@ -48,59 +54,73 @@ export default function InstantLocationFix() {
         country_code: locationData.country_code || "XX",
         city: locationData.city || "Unknown",
         region: locationData.region || "Unknown",
-      }
+      };
 
-      console.log("Updating database with:", updateData)
+      console.log("Updating database with:", updateData);
 
       const { data, error } = await supabase
         .from("user_presence")
         .upsert(updateData, { onConflict: "user_id" })
-        .select()
+        .select();
 
       if (error) {
-        console.error("Database error:", error)
-        setResult({ error: error.message, updateData })
+        console.error("Database error:", error);
+        setResult({ error: error.message, updateData });
       } else {
-        console.log("Database updated successfully:", data)
+        console.log("Database updated successfully:", data);
         setResult({
           success: true,
           ip: userIP,
           location: locationData,
           saved: data[0],
-        })
+        });
       }
     } catch (error) {
-      console.error("Update failed:", error)
-      setResult({ error: error instanceof Error ? error.message : "Unknown error" })
+      console.error("Update failed:", error);
+      setResult({
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
     }
-    setLoading(false)
-  }
+    setLoading(false);
+  };
 
   const checkCurrentData = async () => {
-    setLoading(true)
+    setLoading(true);
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      const { data: sessionData, error: sessionError } =
+        await supabase.auth.getSession();
 
-      if (!user) {
-        setResult({ error: "No user logged in" })
-        setLoading(false)
-        return
+      if (sessionError) {
+        setResult({ error: sessionError.message });
+        setLoading(false);
+        return;
       }
 
-      const { data, error } = await supabase.from("user_presence").select("*").eq("user_id", user.id).single()
+      const user = sessionData.session?.user;
+      if (!user) {
+        setResult({ error: "No user logged in" });
+        setLoading(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("user_presence")
+        .select("*")
+        .eq("user_id", user.id)
+        .single();
 
       if (error) {
-        setResult({ error: error.message })
+        setResult({ error: error.message });
       } else {
-        setResult({ currentData: data })
+        setResult({ currentData: data });
       }
     } catch (error) {
-      setResult({ error: error instanceof Error ? error.message : "Unknown error" })
+      setResult({
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
     }
-    setLoading(false)
-  }
+    setLoading(false);
+  };
 
   return (
     <Card className="max-w-2xl mx-auto mb-6">
@@ -109,10 +129,18 @@ export default function InstantLocationFix() {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex gap-4">
-          <Button onClick={updateLocationNow} disabled={loading} className="bg-red-600 hover:bg-red-700">
+          <Button
+            onClick={updateLocationNow}
+            disabled={loading}
+            className="bg-red-600 hover:bg-red-700"
+          >
             {loading ? "Updating..." : "🔥 UPDATE LOCATION NOW"}
           </Button>
-          <Button onClick={checkCurrentData} disabled={loading} variant="outline">
+          <Button
+            onClick={checkCurrentData}
+            disabled={loading}
+            variant="outline"
+          >
             {loading ? "Checking..." : "Check Current Data"}
           </Button>
         </div>
@@ -127,5 +155,5 @@ export default function InstantLocationFix() {
         )}
       </CardContent>
     </Card>
-  )
+  );
 }

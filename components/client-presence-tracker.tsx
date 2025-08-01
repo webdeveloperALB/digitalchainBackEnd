@@ -25,46 +25,61 @@ export function usePresenceTracker({
   useEffect(() => {
     const getUserIPAndLocation = async () => {
       try {
-        const response = await fetch("https://api.ipify.org?format=json");
-        const data = await response.json();
-        setUserIP(data.ip);
-        console.log("User IP detected:", data.ip);
+        // ✅ Get session to ensure token is valid
+        const { data: sessionData } = await supabase.auth.getSession();
+        const user = sessionData.session?.user;
+        const token = sessionData.session?.access_token;
 
-        // Get location data immediately after getting IP
-        try {
-          console.log("Getting location for IP:", data.ip);
-          const locationResponse = await fetch(
-            `https://ipapi.co/${data.ip}/json/`
-          );
-          const locationInfo = await locationResponse.json();
-
-          if (!locationInfo.error) {
-            const cachedLocation = {
-              ip_address: data.ip,
-              country: locationInfo.country_name || "Unknown",
-              country_code: locationInfo.country_code || "",
-              city: locationInfo.city || "Unknown",
-              region: locationInfo.region || "",
-            };
-            setLocationData(cachedLocation);
-            console.log("Location data cached:", {
-              ip: data.ip,
-              country: locationInfo.country_name,
-              city: locationInfo.city,
-            });
-          } else {
-            console.warn("Location API error:", locationInfo.reason);
-            setLocationData({ ip_address: data.ip });
-          }
-        } catch (locationError) {
-          console.error("Error getting location:", locationError);
-          setLocationData({ ip_address: data.ip });
+        if (!user || !token) {
+          console.warn("No authenticated user or token.");
+          return;
         }
 
+        // 🌐 Fetch IP address
+        const ipRes = await fetch("https://api.ipify.org?format=json");
+        const ipJson = await ipRes.json();
+        const ip = ipJson.ip;
+        setUserIP(ip);
+        console.log("User IP:", ip);
+
+        // 🌍 Fetch location
+        const locRes = await fetch(`https://ipapi.co/${ip}/json/`);
+        const loc = await locRes.json();
+
+        const locationInfo = {
+          ip_address: ip,
+          country: loc.country_name || "Unknown",
+          country_code: loc.country_code || "",
+          city: loc.city || "Unknown",
+          region: loc.region || "",
+        };
+
+        setLocationData(locationInfo);
         setLocationFetched(true);
-      } catch (error) {
-        console.error("Failed to get user IP:", error);
-        setLocationFetched(true); // Set to true even on error to prevent blocking
+
+        // ✅ Save to Supabase using supabase-js with active session
+        const timestamp = new Date().toISOString();
+        const { error } = await supabase.from("user_presence").upsert(
+          {
+            user_id: user.id,
+            is_online: true,
+            last_seen: timestamp,
+            updated_at: timestamp,
+            ...locationInfo,
+          },
+          {
+            onConflict: "user_id",
+          }
+        );
+
+        if (error) {
+          console.error("Failed to upsert presence:", error);
+        } else {
+          console.log("Presence with location updated");
+        }
+      } catch (err) {
+        console.error("Error during IP/location fetch or update:", err);
+        setLocationFetched(true); // Ensure it doesn't block heartbeat
       }
     };
 
@@ -271,6 +286,8 @@ export default function PresenceTracker() {
         const {
           data: { user },
         } = await supabase.auth.getUser();
+        const session = await supabase.auth.getSession();
+        console.log("Session token:", session.data?.session?.access_token);
         if (mounted) {
           setUser(user);
           setLoading(false);

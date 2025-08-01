@@ -18,13 +18,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Get IP address from request
-    const ipAddress = extractIPFromRequest(request);
+    const ipAddress = body.ip_address || extractIPFromRequest(request);
 
     // Get location data if IP is available and user is coming online
     let locationData = {};
     if (ipAddress && is_online) {
       try {
-        const locationData = await getLocationData(ipAddress);
+        locationData = await getLocationData(ipAddress);
       } catch (error) {
         console.error("Error getting location data:", error);
         locationData = { ip_address: ipAddress };

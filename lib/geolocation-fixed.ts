@@ -7,7 +7,6 @@ export interface LocationData {
   timezone?: string;
 }
 
-// Get client IP using a reliable service
 export async function getClientIPAddress(): Promise<string> {
   try {
     const response = await fetch("https://api.ipify.org?format=json");
@@ -20,7 +19,6 @@ export async function getClientIPAddress(): Promise<string> {
   }
 }
 
-// Get location data from IP
 export async function getLocationData(
   ip: string
 ): Promise<Partial<LocationData>> {
@@ -31,7 +29,6 @@ export async function getLocationData(
 
   try {
     console.log("Getting location for IP:", ip);
-
     const response = await fetch(`https://ipapi.co/${ip}/json/`);
 
     if (!response.ok) {
@@ -46,8 +43,8 @@ export async function getLocationData(
       return { ip };
     }
 
-    const locationData = {
-      ip,
+    const locationData: LocationData = {
+      ip: data.ip || ip,
       country: data.country_name || "Unknown",
       country_code: data.country_code || "",
       city: data.city || "Unknown",
@@ -63,7 +60,6 @@ export async function getLocationData(
   }
 }
 
-// Server-side function to extract IP from request headers
 export function extractIPFromRequest(request: Request): string {
   const headers = [
     "x-forwarded-for",
@@ -90,6 +86,6 @@ export function extractIPFromRequest(request: Request): string {
   return "";
 }
 
-// Alternative names for backward compatibility
+// Aliases for compatibility
 export const getIPFromRequest = extractIPFromRequest;
 export const getLocationFromIP = getLocationData;

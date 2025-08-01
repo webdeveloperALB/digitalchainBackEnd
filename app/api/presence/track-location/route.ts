@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { extractIPFromRequest, getLocationData } from "@/lib/geolocation-fixed"
+import { extractIPFromRequest, getLocationData } from "@/lib/geolocation-fixed";
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,16 +28,23 @@ export async function POST(request: NextRequest) {
       updated_at: timestamp,
     };
 
-    // Get IP address - try client_ip first, then extract from headers
+    // Determine IP address
     const ipAddress = client_ip || extractIPFromRequest(request);
-
     console.log("Final IP address:", ipAddress);
 
-    // If user is coming online and we have an IP, get location data
+    // Fetch location data if user is online
     if (is_online && ipAddress) {
+      let locationData: {
+        ip?: string;
+        country?: string;
+        country_code?: string;
+        city?: string;
+        region?: string;
+      } = {};
+
       try {
         console.log("Getting location data for IP:", ipAddress);
-        const locationData = await getLocationData(ipAddress);
+        locationData = await getLocationData(ipAddress);
 
         updateData = {
           ...updateData,
@@ -55,7 +62,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Update the database
+    // Save to Supabase
     const { data, error } = await supabase
       .from("user_presence")
       .upsert(updateData, { onConflict: "user_id" })

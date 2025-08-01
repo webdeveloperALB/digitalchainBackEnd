@@ -1,363 +1,415 @@
-"use client"
+"use client";
 
-import { useState, useEffect, useCallback, useRef } from "react"
-import { supabase } from "@/lib/supabase"
-import type { User, Session } from "@supabase/supabase-js"
+import { useState, useEffect, useCallback, useRef } from "react";
+import { supabase } from "@/lib/supabase";
+import type { User, Session } from "@supabase/supabase-js";
 
 interface SessionState {
-    user: User | null
-    session: Session | null
-    loading: boolean
-    error: string | null
-    isRefreshing: boolean
+  user: User | null;
+  session: Session | null;
+  loading: boolean;
+  error: string | null;
+  isRefreshing: boolean;
 }
 
 export function useSessionManager() {
-    const [sessionState, setSessionState] = useState<SessionState>({
-        user: null,
-        session: null,
-        loading: true,
-        error: null,
-        isRefreshing: false,
-    })
+  const [sessionState, setSessionState] = useState<SessionState>({
+    user: null,
+    session: null,
+    loading: true,
+    error: null,
+    isRefreshing: false,
+  });
 
-    const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-    const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null)
-    const lastActivityRef = useRef<number>(Date.now())
-    const isRefreshingRef = useRef<boolean>(false)
+  // Refs for cleanup and state management
+  const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastActivityRef = useRef<number>(Date.now());
+  const isRefreshingRef = useRef<boolean>(false);
+  const mountedRef = useRef<boolean>(true);
+  const lastRefreshAttemptRef = useRef<number>(0);
+  const currentSessionRef = useRef<Session | null>(null);
 
-    // Proactive session refresh function
-    const refreshSession = useCallback(
-        async (force = false) => {
-            // Prevent multiple simultaneous refresh attempts
-            if (isRefreshingRef.current && !force) {
-                console.log("Session refresh already in progress, skipping...")
-                return sessionState.session
-            }
+  // Constants for timing (centralized configuration)
+  const REFRESH_COOLDOWN = 5000; // 5 seconds minimum between refresh attempts
+  const SESSION_REFRESH_THRESHOLD = 10 * 60 * 1000; // 10 minutes before expiry
+  const ACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 minutes of inactivity
+  const HEARTBEAT_INTERVAL = 5 * 60 * 1000; // 5 minutes heartbeat
+  const VALIDATION_INTERVAL = 15 * 60 * 1000; // 15 minutes validation check
 
-            isRefreshingRef.current = true
-            setSessionState((prev) => ({ ...prev, isRefreshing: true, error: null }))
-
-            try {
-                console.log("Refreshing Supabase session...")
-
-                // Get current session
-                const {
-                    data: { session },
-                    error: sessionError,
-                } = await supabase.auth.getSession()
-
-                if (sessionError) {
-                    console.error("Session fetch error:", sessionError)
-                    throw new Error(`Session fetch failed: ${sessionError.message}`)
-                }
-
-                if (!session) {
-                    console.log("No active session found")
-                    setSessionState({
-                        user: null,
-                        session: null,
-                        loading: false,
-                        error: null,
-                        isRefreshing: false,
-                    })
-                    return null
-                }
-
-                // Check if session is close to expiring (refresh if less than 10 minutes left)
-                const expiresAt = session.expires_at ? session.expires_at * 1000 : 0
-                const now = Date.now()
-                const timeUntilExpiry = expiresAt - now
-                const shouldRefresh = timeUntilExpiry < 10 * 60 * 1000 // 10 minutes instead of 5
-
-                if (shouldRefresh || force) {
-                    console.log("Session needs refresh, refreshing token...")
-
-                    const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession()
-
-                    if (refreshError) {
-                        console.error("Session refresh error:", refreshError)
-                        throw new Error(`Session refresh failed: ${refreshError.message}`)
-                    }
-
-                    if (refreshData.session) {
-                        console.log("Session refreshed successfully")
-
-                        // Validate the refreshed session with a test query
-                        const { error: testError } = await supabase
-                            .from("users")
-                            .select("id")
-                            .eq("id", refreshData.session.user.id)
-                            .limit(1)
-
-                        if (testError) {
-                            console.error("Session validation failed:", testError)
-                            throw new Error("Refreshed session is invalid")
-                        }
-
-                        setSessionState({
-                            user: refreshData.session.user,
-                            session: refreshData.session,
-                            loading: false,
-                            error: null,
-                            isRefreshing: false,
-                        })
-
-                        // Schedule next refresh
-                        scheduleNextRefresh(refreshData.session)
-
-                        return refreshData.session
-                    }
-                } else {
-                    // Even if session doesn't need refresh, still validate it every 2 minutes
-                    console.log("Session still valid, performing validation check...")
-
-                    // Quick validation check
-                    const { error: testError } = await supabase.from("users").select("id").eq("id", session.user.id).limit(1)
-
-                    if (testError) {
-                        console.error("Session validation failed, forcing refresh:", testError)
-                        // Force refresh if validation fails
-                        const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession()
-
-                        if (refreshError) {
-                            throw new Error(`Session refresh failed: ${refreshError.message}`)
-                        }
-
-                        if (refreshData.session) {
-                            setSessionState({
-                                user: refreshData.session.user,
-                                session: refreshData.session,
-                                loading: false,
-                                error: null,
-                                isRefreshing: false,
-                            })
-                            scheduleNextRefresh(refreshData.session)
-                            return refreshData.session
-                        }
-                    } else {
-                        // Session is valid, just update state and schedule next check
-                        setSessionState({
-                            user: session.user,
-                            session: session,
-                            loading: false,
-                            error: null,
-                            isRefreshing: false,
-                        })
-                        scheduleNextRefresh(session)
-                        return session
-                    }
-                }
-            } catch (error: any) {
-                console.error("Session refresh failed:", error)
-                setSessionState({
-                    user: null,
-                    session: null,
-                    loading: false,
-                    error: error.message || "Session refresh failed",
-                    isRefreshing: false,
-                })
-                return null
-            } finally {
-                isRefreshingRef.current = false
-            }
-        },
-        [sessionState.session],
-    )
-
-    // Schedule the next automatic refresh
-    const scheduleNextRefresh = useCallback(
-        (session: Session) => {
-            if (refreshTimeoutRef.current) {
-                clearTimeout(refreshTimeoutRef.current)
-            }
-
-            const expiresAt = session.expires_at ? session.expires_at * 1000 : 0
-            const now = Date.now()
-            const timeUntilExpiry = expiresAt - now
-
-            // Refresh every 2 minutes, or 5 minutes before expiry if that's sooner
-            const refreshIn = Math.min(timeUntilExpiry - 5 * 60 * 1000, 2 * 60 * 1000) // 2 minutes
-
-            if (refreshIn > 0) {
-                console.log(`Scheduling next session refresh in ${Math.round(refreshIn / 1000 / 60)} minutes`)
-                refreshTimeoutRef.current = setTimeout(() => {
-                    refreshSession(true)
-                }, refreshIn)
-            }
-        },
-        [refreshSession],
-    )
-
-    // Update last activity timestamp
-    const updateActivity = useCallback(() => {
-        lastActivityRef.current = Date.now()
-    }, [])
-
-    // Initialize session and set up listeners
-    useEffect(() => {
-        let mounted = true
-
-        const initializeSession = async () => {
-            try {
-                await refreshSession(true)
-            } catch (error) {
-                console.error("Failed to initialize session:", error)
-                if (mounted) {
-                    setSessionState((prev) => ({ ...prev, loading: false }))
-                }
-            }
-        }
-
-        initializeSession()
-
-        // Listen for auth state changes
-        const {
-            data: { subscription },
-        } = supabase.auth.onAuthStateChange(async (event, session) => {
-            console.log("Auth state changed:", event)
-
-            if (!mounted) return
-
-            if (event === "SIGNED_OUT" || !session) {
-                setSessionState({
-                    user: null,
-                    session: null,
-                    loading: false,
-                    error: null,
-                    isRefreshing: false,
-                })
-
-                // Clear timers
-                if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current)
-                if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current)
-            } else if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
-                setSessionState({
-                    user: session.user,
-                    session: session,
-                    loading: false,
-                    error: null,
-                    isRefreshing: false,
-                })
-
-                scheduleNextRefresh(session)
-            }
-        })
-
-        return () => {
-            mounted = false
-            subscription.unsubscribe()
-            if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current)
-            if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current)
-        }
-    }, [refreshSession, scheduleNextRefresh])
-
-    // Set up activity-based session management
-    useEffect(() => {
-        // Activity events that should trigger session refresh check
-        const activityEvents = ["mousedown", "mousemove", "keypress", "scroll", "touchstart", "click"]
-
-        const handleActivity = () => {
-            updateActivity()
-
-            // If user has been inactive for more than 10 minutes, refresh session
-            const timeSinceLastActivity = Date.now() - lastActivityRef.current
-            if (timeSinceLastActivity > 10 * 60 * 1000 && sessionState.session) {
-                // Changed from 30 to 10 minutes
-                console.log("User became active after inactivity, refreshing session...")
-                refreshSession()
-            }
-        }
-
-        // Add activity listeners
-        activityEvents.forEach((event) => {
-            document.addEventListener(event, handleActivity, { passive: true })
-        })
-
-        // Set up heartbeat to keep session alive during active use
-        heartbeatIntervalRef.current = setInterval(
-            () => {
-                const timeSinceLastActivity = Date.now() - lastActivityRef.current
-
-                // If user has been active in the last 5 minutes, refresh session
-                if (timeSinceLastActivity < 5 * 60 * 1000 && sessionState.session) {
-                    refreshSession()
-                }
-            },
-            2 * 60 * 1000, // Check every 2 minutes instead of 15
-        )
-
-        return () => {
-            activityEvents.forEach((event) => {
-                document.removeEventListener(event, handleActivity)
-            })
-            if (heartbeatIntervalRef.current) {
-                clearInterval(heartbeatIntervalRef.current)
-            }
-        }
-    }, [refreshSession, updateActivity, sessionState.session])
-
-    // Handle visibility change
-    useEffect(() => {
-        const handleVisibilityChange = async () => {
-            if (!document.hidden && sessionState.session) {
-                console.log("Tab became visible, checking session...")
-                updateActivity()
-
-                // Check if we need to refresh due to inactivity
-                const timeSinceLastActivity = Date.now() - lastActivityRef.current
-                if (timeSinceLastActivity > 5 * 60 * 1000) {
-                    // Changed from 10 to 5 minutes
-                    await refreshSession(true)
-                }
-            }
-        }
-
-        const handleFocus = async () => {
-            if (sessionState.session) {
-                console.log("Window focused, checking session...")
-                updateActivity()
-                await refreshSession()
-            }
-        }
-
-        document.addEventListener("visibilitychange", handleVisibilityChange)
-        window.addEventListener("focus", handleFocus)
-
-        return () => {
-            document.removeEventListener("visibilitychange", handleVisibilityChange)
-            window.removeEventListener("focus", handleFocus)
-        }
-    }, [refreshSession, updateActivity, sessionState.session])
-
-    // Manual refresh function for components
-    const manualRefresh = useCallback(async () => {
-        return await refreshSession(true)
-    }, [refreshSession])
-
-    // Sign out with cleanup
-    const signOut = useCallback(async () => {
-        // Clear all timers
-        if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current)
-        if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current)
-
-        // Clean up presence tracking
-        if (window.presenceCleanup) {
-            window.presenceCleanup()
-        }
-
-        // Sign out from Supabase
-        await supabase.auth.signOut()
-    }, [])
-
-    return {
-        user: sessionState.user,
-        session: sessionState.session,
-        loading: sessionState.loading,
-        error: sessionState.error,
-        isRefreshing: sessionState.isRefreshing,
-        refreshSession: manualRefresh,
-        signOut,
-        updateActivity,
+  // Clear all timers utility
+  const clearAllTimers = useCallback(() => {
+    if (refreshTimeoutRef.current) {
+      clearTimeout(refreshTimeoutRef.current);
+      refreshTimeoutRef.current = null;
     }
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+    }
+  }, []);
+
+  // Update session state safely
+  const updateSessionState = useCallback((updates: Partial<SessionState>) => {
+    if (!mountedRef.current) return;
+
+    setSessionState((prev) => {
+      const newState = { ...prev, ...updates };
+      // Update ref for immediate access
+      currentSessionRef.current = newState.session;
+      return newState;
+    });
+  }, []);
+
+  // Proactive session refresh function
+  const refreshSession = useCallback(
+    async (force = false): Promise<Session | null> => {
+      // Prevent excessive refresh attempts
+      const now = Date.now();
+      if (!force && now - lastRefreshAttemptRef.current < REFRESH_COOLDOWN) {
+        console.log("Refresh cooldown active, skipping...");
+        return currentSessionRef.current;
+      }
+
+      // Prevent multiple simultaneous refresh attempts
+      if (isRefreshingRef.current && !force) {
+        console.log("Session refresh already in progress, skipping...");
+        return currentSessionRef.current;
+      }
+
+      if (!mountedRef.current) {
+        console.log("Component unmounted, skipping refresh...");
+        return null;
+      }
+
+      isRefreshingRef.current = true;
+      lastRefreshAttemptRef.current = now;
+      updateSessionState({ isRefreshing: true, error: null });
+
+      try {
+        console.log("Refreshing Supabase session...");
+
+        // Get current session
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
+
+        if (!mountedRef.current) return null;
+
+        if (sessionError) {
+          console.error("Session fetch error:", sessionError);
+          throw new Error(`Session fetch failed: ${sessionError.message}`);
+        }
+
+        if (!session) {
+          console.log("No active session found");
+          updateSessionState({
+            user: null,
+            session: null,
+            loading: false,
+            error: null,
+            isRefreshing: false,
+          });
+          clearAllTimers();
+          return null;
+        }
+
+        // Check if session needs refresh
+        const expiresAt = session.expires_at ? session.expires_at * 1000 : 0;
+        const timeUntilExpiry = expiresAt - now;
+        const shouldRefresh = timeUntilExpiry < SESSION_REFRESH_THRESHOLD;
+
+        if (shouldRefresh || force) {
+          console.log("Session needs refresh, refreshing token...");
+
+          const { data: refreshData, error: refreshError } =
+            await supabase.auth.refreshSession();
+
+          if (!mountedRef.current) return null;
+
+          if (refreshError) {
+            console.error("Session refresh error:", refreshError);
+            throw new Error(`Session refresh failed: ${refreshError.message}`);
+          }
+
+          if (refreshData.session) {
+            console.log("Session refreshed successfully");
+            updateSessionState({
+              user: refreshData.session.user,
+              session: refreshData.session,
+              loading: false,
+              error: null,
+              isRefreshing: false,
+            });
+
+            scheduleNextRefresh(refreshData.session);
+            return refreshData.session;
+          }
+        } else {
+          // Session is still valid
+          console.log("Session still valid");
+          updateSessionState({
+            user: session.user,
+            session: session,
+            loading: false,
+            error: null,
+            isRefreshing: false,
+          });
+
+          scheduleNextRefresh(session);
+          return session;
+        }
+      } catch (error: any) {
+        console.error("Session refresh failed:", error);
+        if (mountedRef.current) {
+          updateSessionState({
+            user: null,
+            session: null,
+            loading: false,
+            error: error.message || "Session refresh failed",
+            isRefreshing: false,
+          });
+        }
+        clearAllTimers();
+        return null;
+      } finally {
+        isRefreshingRef.current = false;
+      }
+
+      return null;
+    },
+    [] // Remove sessionState.session dependency to prevent cycles
+  );
+
+  // Schedule the next automatic refresh
+  const scheduleNextRefresh = useCallback(
+    (session: Session) => {
+      if (!mountedRef.current) return;
+
+      clearAllTimers();
+
+      const expiresAt = session.expires_at ? session.expires_at * 1000 : 0;
+      const now = Date.now();
+      const timeUntilExpiry = expiresAt - now;
+
+      // Schedule refresh for halfway to expiry, but not more than 15 minutes
+      const refreshIn = Math.min(
+        Math.max(timeUntilExpiry / 2, 60000), // At least 1 minute, at most half the time to expiry
+        VALIDATION_INTERVAL // But never more than 15 minutes
+      );
+
+      if (refreshIn > 0 && timeUntilExpiry > SESSION_REFRESH_THRESHOLD) {
+        console.log(
+          `Scheduling next session refresh in ${Math.round(
+            refreshIn / 1000 / 60
+          )} minutes`
+        );
+        refreshTimeoutRef.current = setTimeout(() => {
+          if (mountedRef.current) {
+            refreshSession(false);
+          }
+        }, refreshIn);
+      }
+    },
+    [refreshSession, clearAllTimers]
+  );
+
+  // Update last activity timestamp
+  const updateActivity = useCallback(() => {
+    lastActivityRef.current = Date.now();
+  }, []);
+
+  // Initialize session and set up listeners
+  useEffect(() => {
+    mountedRef.current = true;
+
+    const initializeSession = async () => {
+      if (!mountedRef.current) return;
+
+      try {
+        console.log("Initializing session...");
+        await refreshSession(true);
+      } catch (error) {
+        console.error("Failed to initialize session:", error);
+        if (mountedRef.current) {
+          updateSessionState({ loading: false });
+        }
+      }
+    };
+
+    initializeSession();
+
+    // Listen for auth state changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log("Auth state changed:", event);
+
+      if (!mountedRef.current) return;
+
+      if (event === "SIGNED_OUT" || !session) {
+        updateSessionState({
+          user: null,
+          session: null,
+          loading: false,
+          error: null,
+          isRefreshing: false,
+        });
+        clearAllTimers();
+      } else if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+        updateSessionState({
+          user: session.user,
+          session: session,
+          loading: false,
+          error: null,
+          isRefreshing: false,
+        });
+        scheduleNextRefresh(session);
+      }
+    });
+
+    return () => {
+      mountedRef.current = false;
+      subscription.unsubscribe();
+      clearAllTimers();
+    };
+  }, []); // Remove all dependencies to prevent re-initialization
+
+  // Set up activity-based session management
+  useEffect(() => {
+    const activityEvents = [
+      "mousedown",
+      "mousemove",
+      "keypress",
+      "scroll",
+      "touchstart",
+      "click",
+    ];
+
+    const handleActivity = () => {
+      updateActivity();
+    };
+
+    // Add activity listeners
+    activityEvents.forEach((event) => {
+      document.addEventListener(event, handleActivity, { passive: true });
+    });
+
+    // Set up heartbeat for active users
+    const heartbeatInterval = setInterval(() => {
+      if (!mountedRef.current || !currentSessionRef.current) return;
+
+      const timeSinceLastActivity = Date.now() - lastActivityRef.current;
+
+      // Only refresh if user has been active recently and session exists
+      if (timeSinceLastActivity < ACTIVITY_TIMEOUT) {
+        const expiresAt = currentSessionRef.current.expires_at
+          ? currentSessionRef.current.expires_at * 1000
+          : 0;
+        const timeUntilExpiry = expiresAt - Date.now();
+
+        // Only refresh if close to expiry
+        if (timeUntilExpiry < SESSION_REFRESH_THRESHOLD) {
+          console.log("Heartbeat refresh - session close to expiry");
+          refreshSession(false);
+        }
+      }
+    }, HEARTBEAT_INTERVAL);
+
+    heartbeatIntervalRef.current = heartbeatInterval;
+
+    return () => {
+      activityEvents.forEach((event) => {
+        document.removeEventListener(event, handleActivity);
+      });
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+      }
+    };
+  }, [refreshSession, updateActivity]);
+
+  // Handle visibility change
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (!document.hidden && currentSessionRef.current && mountedRef.current) {
+        console.log("Tab became visible, checking session...");
+        updateActivity();
+
+        const timeSinceLastActivity = Date.now() - lastActivityRef.current;
+        const expiresAt = currentSessionRef.current.expires_at
+          ? currentSessionRef.current.expires_at * 1000
+          : 0;
+        const timeUntilExpiry = expiresAt - Date.now();
+
+        // Only refresh if session is close to expiry or user was inactive too long
+        if (
+          timeUntilExpiry < SESSION_REFRESH_THRESHOLD ||
+          timeSinceLastActivity > ACTIVITY_TIMEOUT
+        ) {
+          await refreshSession(true);
+        }
+      }
+    };
+
+    const handleFocus = async () => {
+      if (currentSessionRef.current && mountedRef.current) {
+        updateActivity();
+
+        const expiresAt = currentSessionRef.current.expires_at
+          ? currentSessionRef.current.expires_at * 1000
+          : 0;
+        const timeUntilExpiry = expiresAt - Date.now();
+
+        // Only refresh if close to expiry
+        if (timeUntilExpiry < SESSION_REFRESH_THRESHOLD) {
+          await refreshSession(false);
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [refreshSession, updateActivity]);
+
+  // Manual refresh function for components
+  const manualRefresh = useCallback(async () => {
+    return await refreshSession(true);
+  }, [refreshSession]);
+
+  // Sign out with cleanup
+  const signOut = useCallback(async () => {
+    clearAllTimers();
+
+    // Clean up presence tracking
+    if (window.presenceCleanup) {
+      window.presenceCleanup();
+    }
+
+    updateSessionState({
+      user: null,
+      session: null,
+      loading: false,
+      error: null,
+      isRefreshing: false,
+    });
+
+    await supabase.auth.signOut();
+  }, [clearAllTimers, updateSessionState]);
+
+  return {
+    user: sessionState.user,
+    session: sessionState.session,
+    loading: sessionState.loading,
+    error: sessionState.error,
+    isRefreshing: sessionState.isRefreshing,
+    refreshSession: manualRefresh,
+    signOut,
+    updateActivity,
+  };
 }

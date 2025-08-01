@@ -13,11 +13,19 @@ export default function LocationTest() {
     setLoading(true);
     try {
       // Get current user
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const { data: sessionData, error: sessionError } =
+        await supabase.auth.getSession();
+
+      if (sessionError) {
+        setResult({ error: sessionError.message });
+        setLoading(false);
+        return;
+      }
+
+      const user = sessionData.session?.user;
       if (!user) {
         setResult({ error: "No user logged in" });
+        setLoading(false);
         return;
       }
 

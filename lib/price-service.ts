@@ -20,7 +20,7 @@ class PriceService {
       );
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(`Crypto fetch failed: ${response.status}`);
       }
 
       const data = await response.json();
@@ -30,11 +30,10 @@ class PriceService {
       return data;
     } catch (error) {
       console.error("Error fetching crypto prices:", error);
-      // Return cached data or fallback
       return (
         this.cryptoCache || {
-          bitcoin: { usd: 43250 },
-          ethereum: { usd: 2650 },
+          bitcoin: { usd: 43250, usd_24h_change: 0 },
+          ethereum: { usd: 2650, usd_24h_change: 0 },
         }
       );
     }
@@ -52,11 +51,11 @@ class PriceService {
 
     try {
       const response = await fetch(
-        "https://api.exchangerate-api.com/v4/latest/USD"
+        "https://api.exchangerate.host/latest?base=USD"
       );
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(`Fiat rate fetch failed: ${response.status}`);
       }
 
       const data = await response.json();
@@ -66,12 +65,11 @@ class PriceService {
       return data.rates;
     } catch (error) {
       console.error("Error fetching exchange rates:", error);
-      // Return cached data or fallback
       return (
         this.exchangeCache || {
-          EUR: 1.18,
-          CAD: 0.74,
-          GBP: 1.27,
+          EUR: 0.92,
+          CAD: 1.35,
+          GBP: 0.78,
         }
       );
     }

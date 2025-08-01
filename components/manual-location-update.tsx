@@ -1,26 +1,33 @@
-"use client"
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { supabase } from "@/lib/supabase"
-import { MapPin, Globe, Wifi } from "lucide-react"
+"use client";
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { supabase } from "@/lib/supabase";
+import { MapPin, Globe, Wifi } from "lucide-react";
 
 export default function ManualLocationUpdate() {
-  const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<any>(null)
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<any>(null);
 
   const updateMyLocationNow = async () => {
-    setLoading(true)
+    setLoading(true);
     try {
       // Get current user
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      const { data: sessionData, error: sessionError } =
+        await supabase.auth.getSession();
+
+      if (sessionError) {
+        setResult({ error: sessionError.message });
+        setLoading(false);
+        return;
+      }
+
+      const user = sessionData.session?.user;
 
       if (!user) {
-        setResult({ error: "Please log in first" })
-        setLoading(false)
-        return
+        setResult({ error: "Please log in first" });
+        setLoading(false);
+        return;
       }
 
       // Clear any sample data first
@@ -33,16 +40,16 @@ export default function ManualLocationUpdate() {
           city: null,
           region: null,
         })
-        .eq("user_id", user.id)
+        .eq("user_id", user.id);
 
       // Get real IP
-      const ipResponse = await fetch("https://api.ipify.org?format=json")
-      const ipData = await ipResponse.json()
-      const realIP = ipData.ip
+      const ipResponse = await fetch("https://api.ipify.org?format=json");
+      const ipData = await ipResponse.json();
+      const realIP = ipData.ip;
 
       // Get real location
-      const locationResponse = await fetch(`https://ipapi.co/${realIP}/json/`)
-      const locationInfo = await locationResponse.json()
+      const locationResponse = await fetch(`https://ipapi.co/${realIP}/json/`);
+      const locationInfo = await locationResponse.json();
 
       // Update with real data
       const updateData = {
@@ -55,40 +62,50 @@ export default function ManualLocationUpdate() {
         country_code: locationInfo.country_code || "",
         city: locationInfo.city || "Unknown",
         region: locationInfo.region || "",
-      }
+      };
 
       const { data, error } = await supabase
         .from("user_presence")
         .upsert(updateData, { onConflict: "user_id" })
-        .select()
+        .select();
 
       if (error) {
-        setResult({ error: error.message })
+        setResult({ error: error.message });
       } else {
         setResult({
           success: true,
           realIP,
           location: `${locationInfo.city}, ${locationInfo.country_name}`,
           fullData: data[0],
-        })
+        });
       }
     } catch (error) {
-      setResult({ error: error instanceof Error ? error.message : "Failed to update location" })
+      setResult({
+        error:
+          error instanceof Error ? error.message : "Failed to update location",
+      });
     }
-    setLoading(false)
-  }
+    setLoading(false);
+  };
 
   const clearSampleData = async () => {
-    setLoading(true)
+    setLoading(true);
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      const { data: sessionData, error: sessionError } =
+        await supabase.auth.getSession();
+
+      if (sessionError) {
+        setResult({ error: sessionError.message });
+        setLoading(false);
+        return;
+      }
+
+      const user = sessionData.session?.user;
 
       if (!user) {
-        setResult({ error: "Please log in first" })
-        setLoading(false)
-        return
+        setResult({ error: "Please log in first" });
+        setLoading(false);
+        return;
       }
 
       // Clear location data
@@ -101,18 +118,20 @@ export default function ManualLocationUpdate() {
           city: null,
           region: null,
         })
-        .eq("user_id", user.id)
+        .eq("user_id", user.id);
 
       if (error) {
-        setResult({ error: error.message })
+        setResult({ error: error.message });
       } else {
-        setResult({ success: true, message: "Sample data cleared" })
+        setResult({ success: true, message: "Sample data cleared" });
       }
     } catch (error) {
-      setResult({ error: error instanceof Error ? error.message : "Failed to clear data" })
+      setResult({
+        error: error instanceof Error ? error.message : "Failed to clear data",
+      });
     }
-    setLoading(false)
-  }
+    setLoading(false);
+  };
 
   return (
     <Card className="max-w-2xl mx-auto mb-6">
@@ -124,11 +143,19 @@ export default function ManualLocationUpdate() {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex gap-4">
-          <Button onClick={updateMyLocationNow} disabled={loading} className="bg-blue-600 hover:bg-blue-700">
+          <Button
+            onClick={updateMyLocationNow}
+            disabled={loading}
+            className="bg-blue-600 hover:bg-blue-700"
+          >
             <Wifi className="h-4 w-4 mr-2" />
             {loading ? "Updating..." : "Update My Real Location"}
           </Button>
-          <Button onClick={clearSampleData} disabled={loading} variant="outline">
+          <Button
+            onClick={clearSampleData}
+            disabled={loading}
+            variant="outline"
+          >
             <Globe className="h-4 w-4 mr-2" />
             {loading ? "Clearing..." : "Clear Sample Data"}
           </Button>
@@ -149,7 +176,9 @@ export default function ManualLocationUpdate() {
                     <strong>Your Real Location:</strong> {result.location}
                   </div>
                 )}
-                {result.message && <div className="text-sm">{result.message}</div>}
+                {result.message && (
+                  <div className="text-sm">{result.message}</div>
+                )}
               </div>
             ) : (
               <div className="p-4 bg-red-50 border border-red-200 rounded">
@@ -158,11 +187,13 @@ export default function ManualLocationUpdate() {
             )}
             <details className="text-xs">
               <summary className="cursor-pointer">Full Details</summary>
-              <pre className="mt-2 p-2 bg-gray-100 rounded overflow-auto">{JSON.stringify(result, null, 2)}</pre>
+              <pre className="mt-2 p-2 bg-gray-100 rounded overflow-auto">
+                {JSON.stringify(result, null, 2)}
+              </pre>
             </details>
           </div>
         )}
       </CardContent>
     </Card>
-  )
+  );
 }

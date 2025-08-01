@@ -1,80 +1,89 @@
-"use client"
-import { useEffect, useState } from "react"
-import { supabase } from "@/lib/supabase"
+"use client";
+
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 export default function AutoLocationTracker() {
-  const [status, setStatus] = useState<string>("Initializing...")
+  const [status, setStatus] = useState<string>("Initializing...");
 
   useEffect(() => {
     const updateLocation = async () => {
       try {
-        setStatus("Getting user...")
+        setStatus("Getting session...");
 
-        // Get current user
-        const {
-          data: { user },
-        } = await supabase.auth.getUser()
+        // ✅ Get full session to ensure auth token exists
+        const { data: sessionData, error: sessionError } =
+          await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
 
+        const user = sessionData.session?.user;
         if (!user) {
-          setStatus("No user logged in")
-          return
+          setStatus("No user logged in");
+          return;
         }
 
-        setStatus("Getting IP address...")
+        setStatus("Getting IP address...");
 
-        // Get IP
-        const ipResponse = await fetch("https://api.ipify.org?format=json")
-        const ipData = await ipResponse.json()
-        const userIP = ipData.ip
+        const ipRes = await fetch("https://api.ipify.org?format=json");
+        const ipJson = await ipRes.json();
+        const ip = ipJson.ip;
 
-        setStatus(`Got IP: ${userIP}, getting location...`)
+        setStatus(`Got IP: ${ip}, getting location...`);
 
-        // Get location
-        const locationResponse = await fetch(`https://ipapi.co/${userIP}/json/`)
-        const locationData = await locationResponse.json()
+        const locRes = await fetch(`https://ipapi.co/${ip}/json/`);
+        const loc = await locRes.json();
 
-        setStatus(`Got location: ${locationData.city}, ${locationData.country_name}. Saving...`)
+        const locationInfo = {
+          ip_address: ip,
+          country: loc.country_name || "Unknown",
+          country_code: loc.country_code || "XX",
+          city: loc.city || "Unknown",
+          region: loc.region || "Unknown",
+        };
 
-        // Save to database
-        const { error } = await supabase.from("user_presence").upsert(
-          {
-            user_id: user.id,
-            is_online: true,
-            last_seen: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            ip_address: userIP,
-            country: locationData.country_name || "Unknown",
-            country_code: locationData.country_code || "XX",
-            city: locationData.city || "Unknown",
-            region: locationData.region || "Unknown",
-          },
-          { onConflict: "user_id" },
-        )
+        setStatus(
+          `Saving location: ${locationInfo.city}, ${locationInfo.country}...`
+        );
 
-        if (error) {
-          setStatus(`Error: ${error.message}`)
-          console.error("Location update error:", error)
+        const timestamp = new Date().toISOString();
+        const { error: upsertError } = await supabase
+          .from("user_presence")
+          .upsert(
+            {
+              user_id: user.id,
+              is_online: true,
+              last_seen: timestamp,
+              updated_at: timestamp,
+              ...locationInfo,
+            },
+            { onConflict: "user_id" }
+          );
+
+        if (upsertError) {
+          console.error("Upsert failed:", upsertError);
+          setStatus(`❌ DB Error: ${upsertError.message}`);
         } else {
-          setStatus(`✅ Location updated: ${locationData.city}, ${locationData.country_name}`)
-          console.log("Location updated successfully")
+          setStatus(
+            `✅ Location saved: ${locationInfo.city}, ${locationInfo.country}`
+          );
+          console.log("Location upserted:", locationInfo);
         }
-      } catch (error) {
-        setStatus(`Error: ${error instanceof Error ? error.message : "Unknown error"}`)
-        console.error("Location tracking error:", error)
+      } catch (err) {
+        console.error("Location tracking failed:", err);
+        setStatus(
+          `❌ Error: ${err instanceof Error ? err.message : "Unknown"}`
+        );
       }
-    }
+    };
 
-    updateLocation()
-
-    // Update every 30 seconds
-    const interval = setInterval(updateLocation, 30000)
-
-    return () => clearInterval(interval)
-  }, [])
+    updateLocation();
+    const interval = setInterval(updateLocation, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="fixed bottom-4 right-4 bg-blue-600 text-white p-2 rounded text-xs max-w-xs">
       Location Tracker: {status}
     </div>
-  )
+  );
 }

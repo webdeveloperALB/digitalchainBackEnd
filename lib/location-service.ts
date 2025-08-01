@@ -1,40 +1,45 @@
 export interface LocationInfo {
-  ip: string
-  country?: string
-  country_code?: string
-  city?: string
-  region?: string
+  ip: string;
+  country?: string;
+  country_code?: string;
+  city?: string;
+  region?: string;
 }
 
-// Get user's IP address
 export async function getUserIP(): Promise<string> {
   try {
-    const response = await fetch("https://api.ipify.org?format=json")
-    const data = await response.json()
-    return data.ip || ""
+    const response = await fetch("https://api.ipify.org?format=json");
+    const data: { ip?: string } = await response.json();
+    return data.ip ?? "";
   } catch (error) {
-    console.error("Failed to get IP:", error)
-    return ""
+    console.error("Failed to get IP:", error);
+    return "";
   }
 }
 
-// Get location from IP
 export async function getLocationFromIP(ip: string): Promise<LocationInfo> {
-  if (!ip) return { ip: "" }
+  if (!ip) {
+    console.warn("No IP provided for location lookup");
+    return { ip: "" };
+  }
 
   try {
-    const response = await fetch(`https://ipapi.co/${ip}/json/`)
-    const data = await response.json()
+    const response = await fetch(`https://ipapi.co/${ip}/json/`);
+    if (!response.ok) {
+      throw new Error(`Location API error: ${response.statusText}`);
+    }
+
+    const data: any = await response.json();
 
     return {
-      ip,
+      ip: data.ip || ip,
       country: data.country_name || "Unknown",
       country_code: data.country_code || "",
       city: data.city || "Unknown",
       region: data.region || "",
-    }
+    };
   } catch (error) {
-    console.error("Failed to get location:", error)
-    return { ip }
+    console.error("Failed to get location from IP:", error);
+    return { ip };
   }
 }

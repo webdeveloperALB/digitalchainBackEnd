@@ -14,7 +14,6 @@ export default function Page() {
   const hasInitialized = useRef(false);
   const isCheckingKYC = useRef(false);
 
-  // Simplified KYC status check
   const checkKYCStatus = async (userId: string) => {
     if (isCheckingKYC.current) return;
     isCheckingKYC.current = true;
@@ -43,45 +42,35 @@ export default function Page() {
     }
   };
 
-  // Initialize authentication once
+  // Initial auth/session setup
   useEffect(() => {
     let mounted = true;
     const initializeAuth = async () => {
       if (hasInitialized.current) return;
       hasInitialized.current = true;
-      try {
-        console.log("Initializing authentication...");
-        const {
-          data: { session },
-          error,
-        } = await supabase.auth.getSession();
+      console.log("Initializing authentication...");
 
-        if (error) {
-          console.error("Session error:", error);
-          if (mounted) {
-            setError("Authentication error. Please refresh the page.");
-            setLoading(false);
-          }
-          return;
-        }
+      const {
+        data: { session },
+        error,
+      } = await supabase.auth.getSession();
 
-        const currentUser = session?.user ?? null;
-        console.log("Current user:", currentUser?.id || "No user");
+      if (error || !session?.user) {
+        console.warn("Session not found or invalid");
         if (mounted) {
-          setUser(currentUser);
-          if (currentUser) {
-            await checkKYCStatus(currentUser.id);
-          } else {
-            setKycStatus(null);
-          }
+          setUser(null);
+          setKycStatus(null);
           setLoading(false);
         }
-      } catch (error) {
-        console.error("Auth initialization error:", error);
-        if (mounted) {
-          setError("Failed to initialize. Please refresh the page.");
-          setLoading(false);
-        }
+        return;
+      }
+
+      const currentUser = session.user;
+      console.log("Authenticated user:", currentUser.id);
+      if (mounted) {
+        setUser(currentUser);
+        await checkKYCStatus(currentUser.id);
+        setLoading(false);
       }
     };
 
@@ -92,15 +81,15 @@ export default function Page() {
     };
   }, []);
 
-  // Auth state listener - separate from initialization
+  // Supabase auth listener
   useEffect(() => {
     let mounted = true;
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("Auth state changed:", event, session?.user?.id || "No user");
       if (!mounted || event === "INITIAL_SESSION") return;
 
+      console.log("Auth state changed:", event, session?.user?.id || "No user");
       const currentUser = session?.user ?? null;
       setUser(currentUser);
       setError(null);
@@ -111,7 +100,6 @@ export default function Page() {
       } else if (!currentUser && event === "SIGNED_OUT") {
         console.log("User signed out");
         setKycStatus(null);
-        // Ensure loading is false when user signs out
         setLoading(false);
       }
     });
@@ -122,7 +110,31 @@ export default function Page() {
     };
   }, []);
 
-  // Loading screen component
+  // Periodic idle session check
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) {
+        console.warn("Session expired or signed out during idle");
+        setUser(null);
+        setKycStatus(null);
+        setLoading(false);
+      }
+    }, 60 * 1000); // Every 60 seconds
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Debug logs
+  console.group("== Page Render ==");
+  console.log("User:", user);
+  console.log("KYC Status:", kycStatus);
+  console.log("Loading:", loading);
+  console.log("Initialized:", hasInitialized.current);
+  console.groupEnd();
+
   const LoadingScreen = ({ message }: { message: string }) => (
     <div className="min-h-screen flex flex-col items-center justify-center space-y-4 bg-gradient-to-br from-orange-50 to-orange-100">
       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#F26623]"></div>
@@ -141,17 +153,12 @@ export default function Page() {
     </div>
   );
 
-  // Show loading screen during initial load only
   if (loading && hasInitialized.current) {
     return <LoadingScreen message="Loading your account..." />;
   }
 
-  // Show auth form if no user
-  if (!user) {
-    return <AuthForm />;
-  }
+  if (!user) return <AuthForm />;
 
-  // Handle KYC flow
   if (kycStatus === "not_started") {
     return (
       <KYCVerification
@@ -187,7 +194,7 @@ export default function Page() {
             KYC Under Review
           </h1>
           <p className="text-gray-600 mb-4">
-            Your KYC documents are being reviewed. This usually takes 1-3
+            Your KYC documents are being reviewed. This usually takes 1–3
             business days.
           </p>
           <div className="space-y-2">
@@ -260,7 +267,6 @@ export default function Page() {
     );
   }
 
-  // Default to dashboard
   console.log("Loading dashboard for user:", user.id);
   return <Dashboard />;
 }

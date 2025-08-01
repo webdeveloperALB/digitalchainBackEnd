@@ -1,4 +1,5 @@
-// Real-time exchange rate service
+// lib/exchange-rates.ts
+
 export interface ExchangeRates {
   fiat: { [key: string]: number };
   crypto: { [key: string]: number };
@@ -25,76 +26,104 @@ export class ExchangeRateService {
 
   private async updateRates() {
     try {
-      // --- Fetch fiat exchange rates ---
-      const fiatResponse = await fetch(
-        "https://api.exchangerate-api.com/v4/latest/USD"
-      );
+      let fiatData: any = {};
+      let cryptoData: any = {};
 
-      if (!fiatResponse.ok) {
-        throw new Error(
-          `ExchangeRate-API error: ${fiatResponse.status} ${fiatResponse.statusText}`
+      // --- Fetch fiat exchange rates ---
+      try {
+        console.log("Fetching fiat rates...");
+        const fiatResponse = await fetch(
+          "https://api.exchangerate.host/latest?base=USD"
+        );
+
+        if (!fiatResponse.ok) {
+          throw new Error(
+            `ExchangeRate.host error: ${fiatResponse.status} ${fiatResponse.statusText}`
+          );
+        }
+
+        fiatData = await fiatResponse.json();
+        console.log("Fiat rates fetched successfully");
+      } catch (fiatError: any) {
+        console.error(
+          "Failed to fetch fiat exchange rates:",
+          fiatError.message || fiatError
         );
       }
-
-      const fiatData = await fiatResponse.json();
 
       // --- Fetch crypto prices ---
-      const cryptoResponse = await fetch(
-        "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,cardano,polkadot,chainlink&vs_currencies=usd"
-      );
+      try {
+        console.log("Fetching crypto rates...");
+        const cryptoResponse = await fetch(
+          "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,cardano,polkadot,chainlink&vs_currencies=usd"
+        );
 
-      if (!cryptoResponse.ok) {
-        throw new Error(
-          `CoinGecko API error: ${cryptoResponse.status} ${cryptoResponse.statusText}`
+        if (!cryptoResponse.ok) {
+          throw new Error(
+            `CoinGecko API error: ${cryptoResponse.status} ${cryptoResponse.statusText}`
+          );
+        }
+
+        cryptoData = await cryptoResponse.json();
+        console.log("Crypto rates fetched successfully");
+      } catch (cryptoError: any) {
+        console.error(
+          "Failed to fetch crypto prices:",
+          cryptoError.message || cryptoError
         );
       }
 
-      const cryptoData = await cryptoResponse.json();
+      // Set rates only if at least one source worked
+      if (Object.keys(fiatData).length || Object.keys(cryptoData).length) {
+        this.rates = {
+          fiat: {
+            USD: 1,
+            EUR: 1 / (fiatData.rates?.EUR || 1),
+            CAD: 1 / (fiatData.rates?.CAD || 1),
+            GBP: 1 / (fiatData.rates?.GBP || 1),
+            JPY: 1 / (fiatData.rates?.JPY || 1),
+            AUD: 1 / (fiatData.rates?.AUD || 1),
+            CHF: 1 / (fiatData.rates?.CHF || 1),
+            ...fiatData.rates,
+          },
+          crypto: {
+            BTC: cryptoData.bitcoin?.usd || 50000,
+            ETH: cryptoData.ethereum?.usd || 3000,
+            ADA: cryptoData.cardano?.usd || 0.5,
+            DOT: cryptoData.polkadot?.usd || 7,
+            LINK: cryptoData.chainlink?.usd || 15,
+          },
+          lastUpdated: Date.now(),
+        };
 
-      this.rates = {
-        fiat: {
-          USD: 1,
-          EUR: 1 / fiatData.rates.EUR,
-          CAD: 1 / fiatData.rates.CAD,
-          GBP: 1 / fiatData.rates.GBP,
-          JPY: 1 / fiatData.rates.JPY,
-          AUD: 1 / fiatData.rates.AUD,
-          CHF: 1 / fiatData.rates.CHF,
-          ...fiatData.rates,
-        },
-        crypto: {
-          BTC: cryptoData.bitcoin?.usd || 50000,
-          ETH: cryptoData.ethereum?.usd || 3000,
-          ADA: cryptoData.cardano?.usd || 0.5,
-          DOT: cryptoData.polkadot?.usd || 7,
-          LINK: cryptoData.chainlink?.usd || 15,
-        },
-        lastUpdated: Date.now(),
-      };
-
-      // Notify listeners
-      this.listeners.forEach((listener) => listener(this.rates));
-      console.log("Exchange rates updated:", new Date().toLocaleTimeString());
+        this.listeners.forEach((listener) => listener(this.rates));
+        console.log(
+          "Exchange rates updated at",
+          new Date().toLocaleTimeString()
+        );
+      } else {
+        console.warn("No rates updated: both fiat and crypto fetch failed");
+      }
     } catch (error: any) {
-      console.error("Failed to update exchange rates:", error.message || error);
+      console.error("Failed to update exchange rates:", {
+        message: error.message,
+        stack: error.stack,
+        fullError: error,
+      });
     }
   }
 
   private startAutoUpdate() {
-    // Update every 30 seconds for real-time rates
     this.updateInterval = setInterval(() => {
       this.updateRates();
-    }, 30000);
+    }, 30000); // every 30 seconds
   }
 
   subscribe(listener: (rates: ExchangeRates) => void) {
     this.listeners.push(listener);
-    // Immediately call with current rates
     if (this.rates.lastUpdated > 0) {
       listener(this.rates);
     }
-
-    // Return unsubscribe function
     return () => {
       this.listeners = this.listeners.filter((l) => l !== listener);
     };
@@ -111,31 +140,28 @@ export class ExchangeRateService {
   ): number {
     if (fromCurrency === toCurrency) return amount;
 
-    const fromUpper = fromCurrency.toUpperCase();
-    const toUpper = toCurrency.toUpperCase();
+    const from = fromCurrency.toUpperCase();
+    const to = toCurrency.toUpperCase();
 
-    // Get USD value first
     let usdValue = amount;
 
-    // Convert from source currency to USD
-    if (fromUpper !== "USD") {
-      if (this.rates.fiat[fromUpper]) {
-        usdValue = amount / this.rates.fiat[fromUpper];
-      } else if (this.rates.crypto[fromUpper]) {
-        usdValue = amount * this.rates.crypto[fromUpper];
+    if (from !== "USD") {
+      if (this.rates.fiat[from]) {
+        usdValue = amount / this.rates.fiat[from];
+      } else if (this.rates.crypto[from]) {
+        usdValue = amount * this.rates.crypto[from];
       }
     }
 
-    // Convert from USD to target currency
-    if (toUpper === "USD") {
+    if (to === "USD") {
       return usdValue;
-    } else if (this.rates.fiat[toUpper]) {
-      return usdValue * this.rates.fiat[toUpper];
-    } else if (this.rates.crypto[toUpper]) {
-      return usdValue / this.rates.crypto[toUpper];
+    } else if (this.rates.fiat[to]) {
+      return usdValue * this.rates.fiat[to];
+    } else if (this.rates.crypto[to]) {
+      return usdValue / this.rates.crypto[to];
     }
 
-    return amount; // Fallback
+    return amount; // fallback
   }
 
   getExchangeRate(fromCurrency: string, toCurrency: string): number {
