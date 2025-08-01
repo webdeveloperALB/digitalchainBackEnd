@@ -250,23 +250,27 @@ export default function Page() {
     };
   }, []);
 
-  // Manual force refresh function for emergency use
-  const handleForceRefresh = useCallback(async () => {
-    if (!user) return;
+  // Manual force refresh function for emergency use - HARD RELOAD
+  const handleForceRefresh = useCallback(() => {
+    console.log("🔄 HARD RELOAD triggered (Ctrl+Shift+R equivalent)");
 
-    console.log("🔄 Manual force refresh triggered");
-    setLoading(true);
-    setError(null);
-
-    const validatedUser = await forceValidateSession();
-    if (validatedUser) {
-      await forceFetchUserData(validatedUser.id);
-    } else {
-      setUser(null);
-      setKycStatus(null);
-      setLoading(false);
+    // Clear all possible caches and force hard reload
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        registrations.forEach((registration) => registration.unregister());
+      });
     }
-  }, [user, forceValidateSession, forceFetchUserData]);
+
+    // Clear browser caches
+    if ("caches" in window) {
+      caches.keys().then((names) => {
+        names.forEach((name) => caches.delete(name));
+      });
+    }
+
+    // Force hard reload with cache bypass
+    window.location.reload();
+  }, []);
 
   // Debug logs
   console.group("== Page Render ==");
@@ -289,15 +293,15 @@ export default function Page() {
       <div className="flex gap-2">
         <button
           onClick={handleForceRefresh}
-          className="bg-[#F26623] hover:bg-[#E55A1F] text-white font-medium py-2 px-4 rounded-md transition-colors"
+          className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
         >
-          Force Refresh
+          🔄 Hard Reload
         </button>
         <button
           onClick={() => window.location.reload()}
           className="bg-gray-500 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-md transition-colors"
         >
-          Reload Page
+          Soft Reload
         </button>
       </div>
     </div>
