@@ -11,6 +11,7 @@ export default function Page() {
   const [loading, setLoading] = useState(true);
   const [kycStatus, setKycStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [retryAttempts, setRetryAttempts] = useState(0);
   const hasInitialized = useRef(false);
   const isCheckingKYC = useRef(false);
   const forceRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -19,10 +20,12 @@ export default function Page() {
   // FORCE FETCH function with maximum retry power
   const forceFetchUserData = useCallback(
     async (userId: string, retryCount = 0): Promise<void> => {
-      const MAX_RETRIES = 5;
-      const RETRY_DELAY = 1000; // 1 second base delay
+      const MAX_RETRIES = 3; // Reduced from 5
+      const RETRY_DELAY = 2000; // Increased base delay
 
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || isCheckingKYC.current) return;
+
+      isCheckingKYC.current = true;
 
       try {
         console.log(
@@ -45,6 +48,7 @@ export default function Page() {
             if (mountedRef.current) {
               setKycStatus("approved");
               setLoading(false);
+              setError(null);
             }
             return;
           }
@@ -58,6 +62,7 @@ export default function Page() {
           setKycStatus(status);
           setLoading(false);
           setError(null);
+          setRetryAttempts(0); // Reset retry attempts on success
         }
       } catch (error) {
         console.error(
@@ -66,9 +71,8 @@ export default function Page() {
         );
 
         if (retryCount < MAX_RETRIES && mountedRef.current) {
-          // Exponential backoff with jitter
-          const delay =
-            RETRY_DELAY * Math.pow(2, retryCount) + Math.random() * 1000;
+          // Exponential backoff
+          const delay = RETRY_DELAY * Math.pow(2, retryCount);
           console.log(`🔄 Retrying in ${delay}ms...`);
 
           setTimeout(() => {
@@ -84,11 +88,11 @@ export default function Page() {
           if (mountedRef.current) {
             setKycStatus("approved");
             setLoading(false);
-            setError(
-              "Unable to verify KYC status, proceeding with default access"
-            );
+            setError(null);
           }
         }
+      } finally {
+        isCheckingKYC.current = false;
       }
     },
     []
@@ -99,7 +103,7 @@ export default function Page() {
     try {
       console.log("🔍 FORCE validating session...");
 
-      // Get fresh session with force refresh
+      // Get fresh session
       const {
         data: { session },
         error,
@@ -110,7 +114,7 @@ export default function Page() {
         return null;
       }
 
-      // Double-check session validity by making an authenticated request
+      // Double-check session validity
       const { data: authData, error: authError } =
         await supabase.auth.getUser();
 
@@ -136,6 +140,13 @@ export default function Page() {
       console.log("🚀 FORCE initializing authentication...");
       setLoading(true);
 
+      // Check for cache-busting parameter and remove it
+      if (window.location.search.includes("_t=")) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("_t");
+        window.history.replaceState({}, "", url.pathname + url.search);
+      }
+
       const validatedUser = await forceValidateSession();
 
       if (!mountedRef.current) return;
@@ -156,7 +167,7 @@ export default function Page() {
     initializeAuth();
   }, [forceValidateSession, forceFetchUserData]);
 
-  // Auth state listener with FORCE refresh capability
+  // Auth state listener
   useEffect(() => {
     const {
       data: { subscription },
@@ -189,10 +200,10 @@ export default function Page() {
     };
   }, [forceFetchUserData]);
 
-  // AGGRESSIVE session monitoring - but with safeguards
+  // Session monitoring (reduced frequency)
   useEffect(() => {
     const interval = setInterval(async () => {
-      if (!mountedRef.current || !user) return;
+      if (!mountedRef.current || !user || loading) return;
 
       try {
         const {
@@ -211,21 +222,25 @@ export default function Page() {
       } catch (error) {
         console.error("❌ Session monitoring error:", error);
       }
-    }, 30000); // Check every 30 seconds instead of 60
+    }, 60000); // Back to 60 seconds
 
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user, loading]);
 
-  // Force refresh mechanism for stuck states
+  // Force refresh mechanism for stuck states (increased timeout)
   useEffect(() => {
-    if (loading && user && hasInitialized.current) {
-      // If we're loading for more than 10 seconds with a valid user, force refresh
+    if (loading && user && hasInitialized.current && !isCheckingKYC.current) {
+      // If we're loading for more than 15 seconds with a valid user, show error
       forceRefreshTimeoutRef.current = setTimeout(() => {
         if (mountedRef.current && loading && user) {
-          console.log("⚡ EMERGENCY FORCE REFRESH - stuck loading detected");
-          forceFetchUserData(user.id);
+          console.log("⚡ EMERGENCY - stuck loading detected");
+          setRetryAttempts((prev) => prev + 1);
+          setError(
+            "Connection timeout. Please try refreshing the page or contact support if the issue persists."
+          );
+          setLoading(false); // Stop loading to show the error
         }
-      }, 10000);
+      }, 15000); // Increased from 10 seconds
     } else {
       if (forceRefreshTimeoutRef.current) {
         clearTimeout(forceRefreshTimeoutRef.current);
@@ -238,7 +253,7 @@ export default function Page() {
         clearTimeout(forceRefreshTimeoutRef.current);
       }
     };
-  }, [loading, user, forceFetchUserData]);
+  }, [loading, user]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -250,32 +265,27 @@ export default function Page() {
     };
   }, []);
 
-  // Manual force refresh function for emergency use - HARD RELOAD
-  const handleForceRefresh = useCallback(() => {
-    console.log("🔄 TRUE HARD RELOAD triggered (Ctrl+Shift+R equivalent)");
+  // Manual retry function instead of hard reload
+  const handleRetry = useCallback(async () => {
+    if (!user) return;
 
-    // Clear all possible caches and force hard reload
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.getRegistrations().then((registrations) => {
-        registrations.forEach((registration) => registration.unregister());
-      });
+    console.log("🔄 Manual retry triggered");
+    setError(null);
+    setLoading(true);
+
+    // Clear any existing timeouts
+    if (forceRefreshTimeoutRef.current) {
+      clearTimeout(forceRefreshTimeoutRef.current);
+      forceRefreshTimeoutRef.current = null;
     }
 
-    // Clear browser caches
-    if ("caches" in window) {
-      caches.keys().then((names) => {
-        names.forEach((name) => caches.delete(name));
-      });
-    }
+    await forceFetchUserData(user.id);
+  }, [user, forceFetchUserData]);
 
-    // Force hard reload with cache bypass - TRUE Ctrl+Shift+R equivalent
-    // Method 1: Add cache-busting parameter and replace current page
-    const url = new URL(window.location.href);
-    url.searchParams.set("_t", Date.now().toString());
-    window.location.replace(url.href);
-
-    // Alternative Method 2 (uncomment if Method 1 doesn't work):
-    // window.location.href = window.location.href + (window.location.href.includes('?') ? '&' : '?') + '_cache_bust=' + Date.now();
+  // Only use hard reload as last resort
+  const handleHardReload = useCallback(() => {
+    console.log("🔄 HARD RELOAD triggered as last resort");
+    window.location.reload();
   }, []);
 
   // Debug logs
@@ -283,6 +293,7 @@ export default function Page() {
   console.log("User:", user?.id || "null");
   console.log("KYC Status:", kycStatus);
   console.log("Loading:", loading);
+  console.log("Retry Attempts:", retryAttempts);
   console.log("Initialized:", hasInitialized.current);
   console.log("Mounted:", mountedRef.current);
   console.groupEnd();
@@ -294,22 +305,70 @@ export default function Page() {
       {error && (
         <div className="text-center max-w-md">
           <p className="text-red-600 mb-4">{error}</p>
+          <div className="flex gap-2 justify-center">
+            <button
+              onClick={handleRetry}
+              className="bg-[#F26623] hover:bg-[#E55A1F] text-white font-medium py-2 px-4 rounded-md transition-colors"
+            >
+              Retry
+            </button>
+            {retryAttempts >= 2 && (
+              <button
+                onClick={handleHardReload}
+                className="bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
+              >
+                Hard Refresh
+              </button>
+            )}
+          </div>
         </div>
       )}
+    </div>
+  );
+
+  const ErrorScreen = ({ message }: { message: string }) => (
+    <div className="min-h-screen flex flex-col items-center justify-center space-y-4 bg-gradient-to-br from-red-50 to-red-100">
+      <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
+        <svg
+          className="w-8 h-8 text-red-600"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"
+          />
+        </svg>
+      </div>
+      <p className="text-red-600 text-lg text-center max-w-md">{message}</p>
       <div className="flex gap-2">
         <button
-          onClick={handleForceRefresh}
-          className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
+          onClick={handleRetry}
+          className="bg-[#F26623] hover:bg-[#E55A1F] text-white font-medium py-2 px-4 rounded-md transition-colors"
         >
-          Confirm
+          Try Again
+        </button>
+        <button
+          onClick={() => supabase.auth.signOut()}
+          className="bg-gray-500 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-md transition-colors"
+        >
+          Sign Out
         </button>
       </div>
     </div>
   );
 
-  // Show loading only when truly initializing or when we have a user but no KYC status yet
-  if (loading && (hasInitialized.current || (user && kycStatus === null))) {
+  // Show loading only when truly initializing
+  if (loading && hasInitialized.current) {
     return <LoadingScreen message="Loading your account..." />;
+  }
+
+  // Show error screen if we have persistent errors
+  if (error && !loading && retryAttempts >= 3) {
+    return <ErrorScreen message={error} />;
   }
 
   if (!user) return <AuthForm />;
