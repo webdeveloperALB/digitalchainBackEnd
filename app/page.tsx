@@ -1,4 +1,5 @@
 "use client";
+
 import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import AuthForm from "@/components/auth/auth-form";
@@ -12,18 +13,49 @@ export default function Page() {
   const [kycStatus, setKycStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retryAttempts, setRetryAttempts] = useState(0);
+
+  // Refs for state management
   const hasInitialized = useRef(false);
   const isCheckingKYC = useRef(false);
   const forceRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const mountedRef = useRef(true);
+  const lastActiveTime = useRef(Date.now());
+  const isTabVisible = useRef(true);
 
-  // FORCE FETCH function with maximum retry power
+  // Page Visibility API to handle tab switching
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      const wasVisible = isTabVisible.current;
+      isTabVisible.current = !document.hidden;
+
+      if (!wasVisible && isTabVisible.current) {
+        // Tab became visible again
+        lastActiveTime.current = Date.now();
+        console.log("👁️ Tab became visible again");
+      } else if (wasVisible && !isTabVisible.current) {
+        // Tab became hidden
+        console.log("🙈 Tab became hidden");
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
+
+  // FORCE FETCH function with tab visibility awareness
   const forceFetchUserData = useCallback(
     async (userId: string, retryCount = 0): Promise<void> => {
-      const MAX_RETRIES = 3; // Reduced from 5
-      const RETRY_DELAY = 2000; // Increased base delay
+      const MAX_RETRIES = 3;
+      const RETRY_DELAY = 2000;
 
       if (!mountedRef.current || isCheckingKYC.current) return;
+
+      // Don't fetch if tab is not visible unless it's the initial load
+      if (!isTabVisible.current && hasInitialized.current) {
+        console.log("🙈 Skipping fetch - tab not visible");
+        return;
+      }
 
       isCheckingKYC.current = true;
 
@@ -34,7 +66,6 @@ export default function Page() {
           })`
         );
 
-        // Force a fresh database connection and query
         const { data: userData, error: userError } = await supabase
           .from("users")
           .select("kyc_status")
@@ -43,7 +74,6 @@ export default function Page() {
 
         if (userError) {
           if (userError.code === "PGRST116") {
-            // User not found - this is OK, default to approved
             console.log("✅ User not in users table, defaulting to approved");
             if (mountedRef.current) {
               setKycStatus("approved");
@@ -62,7 +92,7 @@ export default function Page() {
           setKycStatus(status);
           setLoading(false);
           setError(null);
-          setRetryAttempts(0); // Reset retry attempts on success
+          setRetryAttempts(0);
         }
       } catch (error) {
         console.error(
@@ -71,17 +101,14 @@ export default function Page() {
         );
 
         if (retryCount < MAX_RETRIES && mountedRef.current) {
-          // Exponential backoff
           const delay = RETRY_DELAY * Math.pow(2, retryCount);
           console.log(`🔄 Retrying in ${delay}ms...`);
-
           setTimeout(() => {
             if (mountedRef.current) {
               forceFetchUserData(userId, retryCount + 1);
             }
           }, delay);
         } else {
-          // Final fallback - default to approved to prevent infinite loading
           console.log(
             "🛡️ Max retries reached, defaulting to approved to prevent infinite loading"
           );
@@ -98,12 +125,11 @@ export default function Page() {
     []
   );
 
-  // FORCE SESSION CHECK with aggressive validation
+  // FORCE SESSION CHECK with tab visibility awareness
   const forceValidateSession = useCallback(async (): Promise<User | null> => {
     try {
       console.log("🔍 FORCE validating session...");
 
-      // Get fresh session
       const {
         data: { session },
         error,
@@ -114,24 +140,30 @@ export default function Page() {
         return null;
       }
 
-      // Double-check session validity
-      const { data: authData, error: authError } =
-        await supabase.auth.getUser();
+      // Only double-check if tab is visible or it's initial load
+      if (isTabVisible.current || !hasInitialized.current) {
+        const { data: authData, error: authError } =
+          await supabase.auth.getUser();
 
-      if (authError || !authData.user) {
-        console.log("❌ Session validation failed");
-        return null;
+        if (authError || !authData.user) {
+          console.log("❌ Session validation failed");
+          return null;
+        }
+
+        console.log("✅ Session validated successfully:", authData.user.id);
+        return authData.user;
       }
 
-      console.log("✅ Session validated successfully:", authData.user.id);
-      return authData.user;
+      // If tab is not visible, trust the session
+      console.log("✅ Session trusted (tab not visible):", session.user.id);
+      return session.user;
     } catch (error) {
       console.error("❌ Session validation error:", error);
       return null;
     }
   }, []);
 
-  // Initialize authentication with FORCE
+  // Initialize authentication
   useEffect(() => {
     const initializeAuth = async () => {
       if (hasInitialized.current || !mountedRef.current) return;
@@ -148,7 +180,6 @@ export default function Page() {
       }
 
       const validatedUser = await forceValidateSession();
-
       if (!mountedRef.current) return;
 
       if (!validatedUser) {
@@ -167,43 +198,64 @@ export default function Page() {
     initializeAuth();
   }, [forceValidateSession, forceFetchUserData]);
 
-  // Auth state listener
+  // Auth state listener with debouncing
   useEffect(() => {
+    let debounceTimeout: NodeJS.Timeout;
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mountedRef.current || event === "INITIAL_SESSION") return;
 
-      console.log(
-        "🔄 Auth state changed:",
-        event,
-        session?.user?.id || "No user"
-      );
-
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
-      setError(null);
-
-      if (currentUser && event === "SIGNED_IN") {
-        console.log("🚀 User signed in, FORCE fetching data...");
-        setLoading(true);
-        await forceFetchUserData(currentUser.id);
-      } else if (!currentUser && event === "SIGNED_OUT") {
-        console.log("👋 User signed out");
-        setKycStatus(null);
-        setLoading(false);
+      // Clear any existing debounce
+      if (debounceTimeout) {
+        clearTimeout(debounceTimeout);
       }
+
+      // Debounce auth state changes to prevent rapid firing
+      debounceTimeout = setTimeout(async () => {
+        console.log(
+          "🔄 Auth state changed:",
+          event,
+          session?.user?.id || "No user"
+        );
+
+        const currentUser = session?.user ?? null;
+        setUser(currentUser);
+        setError(null);
+
+        if (currentUser && event === "SIGNED_IN") {
+          console.log("🚀 User signed in, FORCE fetching data...");
+          setLoading(true);
+          await forceFetchUserData(currentUser.id);
+        } else if (!currentUser && event === "SIGNED_OUT") {
+          console.log("👋 User signed out");
+          setKycStatus(null);
+          setLoading(false);
+        }
+      }, 500); // 500ms debounce
     });
 
     return () => {
+      if (debounceTimeout) {
+        clearTimeout(debounceTimeout);
+      }
       subscription.unsubscribe();
     };
   }, [forceFetchUserData]);
 
-  // Session monitoring (reduced frequency)
+  // Session monitoring with tab visibility awareness
   useEffect(() => {
     const interval = setInterval(async () => {
       if (!mountedRef.current || !user || loading) return;
+
+      // Only monitor session if tab has been visible recently
+      const timeSinceActive = Date.now() - lastActiveTime.current;
+      if (!isTabVisible.current && timeSinceActive > 300000) {
+        // 5 minutes
+        console.log("⏰ Skipping session check - tab inactive too long");
+        return;
+      }
 
       try {
         const {
@@ -222,15 +274,14 @@ export default function Page() {
       } catch (error) {
         console.error("❌ Session monitoring error:", error);
       }
-    }, 60000); // Back to 60 seconds
+    }, 120000); // Increased to 2 minutes
 
     return () => clearInterval(interval);
   }, [user, loading]);
 
-  // Force refresh mechanism for stuck states (increased timeout)
+  // Force refresh mechanism
   useEffect(() => {
     if (loading && user && hasInitialized.current && !isCheckingKYC.current) {
-      // If we're loading for more than 15 seconds with a valid user, show error
       forceRefreshTimeoutRef.current = setTimeout(() => {
         if (mountedRef.current && loading && user) {
           console.log("⚡ EMERGENCY - stuck loading detected");
@@ -238,9 +289,9 @@ export default function Page() {
           setError(
             "Connection timeout. Please try refreshing the page or contact support if the issue persists."
           );
-          setLoading(false); // Stop loading to show the error
+          setLoading(false);
         }
-      }, 15000); // Increased from 10 seconds
+      }, 15000);
     } else {
       if (forceRefreshTimeoutRef.current) {
         clearTimeout(forceRefreshTimeoutRef.current);
@@ -265,15 +316,13 @@ export default function Page() {
     };
   }, []);
 
-  // Manual retry function instead of hard reload
+  // Manual retry function
   const handleRetry = useCallback(async () => {
     if (!user) return;
-
     console.log("🔄 Manual retry triggered");
     setError(null);
     setLoading(true);
 
-    // Clear any existing timeouts
     if (forceRefreshTimeoutRef.current) {
       clearTimeout(forceRefreshTimeoutRef.current);
       forceRefreshTimeoutRef.current = null;
@@ -282,7 +331,6 @@ export default function Page() {
     await forceFetchUserData(user.id);
   }, [user, forceFetchUserData]);
 
-  // Only use hard reload as last resort
   const handleHardReload = useCallback(() => {
     console.log("🔄 HARD RELOAD triggered as last resort");
     window.location.reload();
@@ -293,6 +341,7 @@ export default function Page() {
   console.log("User:", user?.id || "null");
   console.log("KYC Status:", kycStatus);
   console.log("Loading:", loading);
+  console.log("Tab Visible:", isTabVisible.current);
   console.log("Retry Attempts:", retryAttempts);
   console.log("Initialized:", hasInitialized.current);
   console.log("Mounted:", mountedRef.current);
