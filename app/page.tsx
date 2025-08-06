@@ -252,7 +252,7 @@ export default function Page() {
 
   // Manual force refresh function for emergency use - HARD RELOAD
   const handleForceRefresh = useCallback(() => {
-    console.log("🔄 HARD RELOAD triggered (Ctrl+Shift+R equivalent)");
+    console.log("🔄 TRUE HARD RELOAD triggered (Ctrl+Shift+R equivalent)");
 
     // Clear all possible caches and force hard reload
     if ("serviceWorker" in navigator) {
@@ -268,8 +268,14 @@ export default function Page() {
       });
     }
 
-    // Force hard reload with cache bypass
-    window.location.reload();
+    // Force hard reload with cache bypass - TRUE Ctrl+Shift+R equivalent
+    // Method 1: Add cache-busting parameter and replace current page
+    const url = new URL(window.location.href);
+    url.searchParams.set("_t", Date.now().toString());
+    window.location.replace(url.href);
+
+    // Alternative Method 2 (uncomment if Method 1 doesn't work):
+    // window.location.href = window.location.href + (window.location.href.includes('?') ? '&' : '?') + '_cache_bust=' + Date.now();
   }, []);
 
   // Debug logs
@@ -295,13 +301,7 @@ export default function Page() {
           onClick={handleForceRefresh}
           className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
         >
-          🔄 Hard Reload
-        </button>
-        <button
-          onClick={() => window.location.reload()}
-          className="bg-gray-500 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-md transition-colors"
-        >
-          Soft Reload
+          Confirm
         </button>
       </div>
     </div>
