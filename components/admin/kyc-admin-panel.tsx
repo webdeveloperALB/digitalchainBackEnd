@@ -30,13 +30,13 @@ import {
   Search,
   UserCheck,
   SkipForward,
+  Loader2,
 } from "lucide-react";
 
 interface KYCRecord {
   id: string;
   user_id: string;
   full_name: string;
-  email?: string;
   status: string;
   submitted_at: string;
   document_type: string;
@@ -63,76 +63,201 @@ interface UserInterface {
 }
 
 export default function KYCAdminPanel() {
+  // Minimal state - only what's needed
   const [kycRecords, setKycRecords] = useState<KYCRecord[]>([]);
-  const [allUsers, setAllUsers] = useState<UserInterface[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [searchResults, setSearchResults] = useState<UserInterface[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [updating, setUpdating] = useState<string | null>(null);
-  const [selectedRecord, setSelectedRecord] = useState<KYCRecord | null>(null);
-  const [activeTab, setActiveTab] = useState("all");
+  const [activeTab, setActiveTab] = useState("pending");
   const [searchTerm, setSearchTerm] = useState("");
+  const [userSearchTerm, setUserSearchTerm] = useState("");
   const [showSkipDialog, setShowSkipDialog] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserInterface | null>(null);
   const [processingError, setProcessingError] = useState<string | null>(null);
+  const [totalStats, setTotalStats] = useState({
+    total: 0,
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+  });
 
+  // Simple stats - calculated from loaded data only
+  const [stats, setStats] = useState({
+    total: 0,
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+  });
+
+  // Load only pending KYC records on startup (much faster)
   useEffect(() => {
-    fetchData();
+    fetchTotalCounts();
+    fetchKYCRecords();
   }, []);
 
-  const fetchData = async () => {
+  // Fetch total counts without loading all data
+  const fetchTotalCounts = async () => {
+    try {
+      console.log("Fetching total counts...");
+
+      // Get total count
+      const { count: totalCount, error: totalError } = await supabase
+        .from("kyc_verifications")
+        .select("*", { count: "exact", head: true });
+
+      // Get pending count
+      const { count: pendingCount, error: pendingError } = await supabase
+        .from("kyc_verifications")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "pending");
+
+      // Get approved count
+      const { count: approvedCount, error: approvedError } = await supabase
+        .from("kyc_verifications")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "approved");
+
+      // Get rejected count
+      const { count: rejectedCount, error: rejectedError } = await supabase
+        .from("kyc_verifications")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "rejected");
+
+      if (!totalError && !pendingError && !approvedError && !rejectedError) {
+        setTotalStats({
+          total: totalCount || 0,
+          pending: pendingCount || 0,
+          approved: approvedCount || 0,
+          rejected: rejectedCount || 0,
+        });
+        console.log("Total stats:", {
+          total: totalCount,
+          pending: pendingCount,
+          approved: approvedCount,
+          rejected: rejectedCount,
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching total counts:", error);
+    }
+  };
+
+  // Search users only when typing (debounced)
+  useEffect(() => {
+    if (userSearchTerm.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    const timeoutId = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const { data, error } = await supabase
+          .from("users")
+          .select("id, email, full_name, kyc_status, created_at")
+          .or(
+            `email.ilike.%${userSearchTerm}%,full_name.ilike.%${userSearchTerm}%`
+          )
+          .neq("kyc_status", "approved")
+          .limit(10)
+          .order("created_at", { ascending: false });
+
+        if (!error && data) {
+          setSearchResults(data);
+        } else {
+          setSearchResults([]);
+        }
+      } catch (error) {
+        console.error("User search failed:", error);
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [userSearchTerm]);
+
+  const fetchKYCRecords = async () => {
     try {
       setLoading(true);
       setError(null);
-      console.log("Fetching KYC records and users...");
+      console.log("Fetching KYC records for search term:", searchTerm);
 
-      // Get all users
-      const { data: userData, error: userError } = await supabase
-        .from("users")
-        .select("id, email, full_name, kyc_status, created_at")
-        .order("created_at", { ascending: false });
+      let kycData = [];
 
-      if (userError) {
-        console.error("Error fetching users:", userError);
-        throw new Error(`Database error: ${userError.message}`);
+      if (searchTerm.length >= 2) {
+        // Search mode - find specific records
+        console.log("Searching KYC records...");
+        let query = supabase
+          .from("kyc_verifications")
+          .select("*")
+          .or(
+            `full_name.ilike.%${searchTerm}%,document_number.ilike.%${searchTerm}%`
+          )
+          .order("submitted_at", { ascending: false })
+          .limit(20);
+
+        // Filter by status if not "all"
+        if (activeTab !== "all") {
+          query = query.eq("status", activeTab);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+        kycData = data || [];
+      } else if (activeTab === "pending") {
+        // Show recent pending records by default
+        console.log("Loading recent pending records...");
+        const { data, error } = await supabase
+          .from("kyc_verifications")
+          .select("*")
+          .eq("status", "pending")
+          .order("submitted_at", { ascending: false })
+          .limit(10);
+
+        if (error) throw error;
+        kycData = data || [];
+      } else {
+        // For other tabs, only load if searching
+        kycData = [];
       }
 
-      setAllUsers(userData || []);
+      setKycRecords(kycData);
 
-      // Get KYC records
-      const { data: kycData, error: kycError } = await supabase
-        .from("kyc_verifications")
-        .select("*")
-        .order("submitted_at", { ascending: false });
+      // Calculate stats from loaded data
+      const loadedStats = {
+        total: kycData.length,
+        pending: kycData.filter((r: any) => r.status === "pending").length,
+        approved: kycData.filter((r: any) => r.status === "approved").length,
+        rejected: kycData.filter((r: any) => r.status === "rejected").length,
+      };
+      setStats(loadedStats);
 
-      if (kycError) {
-        console.error("Error fetching KYC records:", kycError);
-        throw new Error(`Database error: ${kycError.message}`);
-      }
-
-      console.log(`Found ${kycData?.length || 0} KYC records`);
-
-      if (!kycData || kycData.length === 0) {
-        setKycRecords([]);
-        return;
-      }
-
-      // Combine data
-      const combinedData = kycData.map((record) => ({
-        ...record,
-        email:
-          userData?.find((user) => user.id === record.user_id)?.email ||
-          "Email not found",
-      }));
-
-      setKycRecords(combinedData);
-      console.log("Data loaded successfully");
+      console.log(`Loaded ${kycData.length} KYC records`);
     } catch (error: any) {
-      console.error("Error in fetchData:", error);
-      setError(`Failed to load data: ${error.message}`);
+      console.error("Error in fetchKYCRecords:", error);
+      setError(`Failed to load KYC records: ${error.message}`);
     } finally {
       setLoading(false);
     }
   };
+
+  // Refetch when tab changes
+  useEffect(() => {
+    fetchKYCRecords();
+  }, [activeTab]);
+
+  // Refetch when search term changes (debounced)
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      fetchKYCRecords();
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm]);
 
   const updateKYCStatus = async (
     userId: string,
@@ -143,9 +268,7 @@ export default function KYCAdminPanel() {
     try {
       setUpdating(kycId);
       setProcessingError(null);
-      console.log(`Updating KYC ${kycId} to status: ${newStatus}`);
 
-      // Update KYC verification record
       const updateData: any = {
         status: newStatus,
         reviewed_at: new Date().toISOString(),
@@ -160,24 +283,16 @@ export default function KYCAdminPanel() {
         .update(updateData)
         .eq("id", kycId);
 
-      if (kycError) {
-        console.error("Error updating KYC record:", kycError);
-        throw kycError;
-      }
+      if (kycError) throw kycError;
 
-      // Update user's KYC status
       const { error: userError } = await supabase
         .from("users")
         .update({ kyc_status: newStatus })
         .eq("id", userId);
 
-      if (userError) {
-        console.error("Error updating user KYC status:", userError);
-        throw userError;
-      }
+      if (userError) throw userError;
 
-      console.log("KYC status updated successfully");
-      await fetchData();
+      await fetchKYCRecords();
       alert(`KYC ${newStatus} successfully!`);
     } catch (error: any) {
       console.error("Error updating KYC status:", error);
@@ -192,22 +307,17 @@ export default function KYCAdminPanel() {
     try {
       setUpdating(userId);
       setProcessingError(null);
-      console.log(`Skipping KYC for user: ${userId}`);
 
-      // First, check if user already has a KYC record
+      // Check if user already has a KYC record
       const { data: existingKyc, error: checkError } = await supabase
         .from("kyc_verifications")
         .select("id")
         .eq("user_id", userId)
         .maybeSingle();
 
-      if (checkError) {
-        console.error("Error checking existing KYC:", checkError);
-        throw checkError;
-      }
+      if (checkError) throw checkError;
 
       if (existingKyc) {
-        console.log("User already has KYC record, updating status instead");
         await updateKYCStatus(
           userId,
           existingKyc.id,
@@ -226,21 +336,18 @@ export default function KYCAdminPanel() {
         .eq("id", userId)
         .single();
 
-      if (userFetchError) {
-        console.error("Error fetching user:", userFetchError);
-        throw new Error("User not found");
-      }
+      if (userFetchError) throw new Error("User not found");
 
-      // Create a minimal KYC verification record for the skipped user
+      // Create minimal KYC record
       const kycData = {
         user_id: userId,
         full_name: user.full_name || user.email.split("@")[0],
         status: "approved",
         submitted_at: new Date().toISOString(),
         reviewed_at: new Date().toISOString(),
-        document_type: "passport", // Use a valid document type that exists in your constraint
+        document_type: "passport",
         document_number: "ADMIN_SKIP",
-        date_of_birth: "2000-01-01", // Placeholder
+        date_of_birth: "2000-01-01",
         address: "Admin Skip",
         city: "Admin Skip",
         country: "Admin Skip",
@@ -252,32 +359,20 @@ export default function KYCAdminPanel() {
           "KYC SKIPPED BY ADMIN - No verification documents required",
       };
 
-      const { data: kycRecord, error: kycError } = await supabase
+      const { error: kycError } = await supabase
         .from("kyc_verifications")
-        .insert(kycData)
-        .select()
-        .single();
+        .insert(kycData);
 
-      if (kycError) {
-        console.error("Error creating KYC record:", kycError);
-        throw kycError;
-      }
+      if (kycError) throw kycError;
 
-      // Update user's KYC status to 'approved'
       const { error: userError } = await supabase
         .from("users")
-        .update({
-          kyc_status: "approved",
-        })
+        .update({ kyc_status: "approved" })
         .eq("id", userId);
 
-      if (userError) {
-        console.error("Error updating user KYC status:", userError);
-        throw userError;
-      }
+      if (userError) throw userError;
 
-      console.log("KYC skipped successfully");
-      await fetchData();
+      await fetchKYCRecords();
       setShowSkipDialog(false);
       setSelectedUser(null);
       alert("KYC successfully skipped for user!");
@@ -304,169 +399,59 @@ export default function KYCAdminPanel() {
 
   const downloadDocument = async (path: string, filename: string) => {
     try {
-      // Prevent admin skip downloads
       if (path.includes("admin_skip") || path.includes("no_document")) {
-        console.log(
-          "Attempted to download admin-skipped document, blocking request"
-        );
         return;
       }
 
-      console.log("Original path from database:", path);
-
-      // Clean and normalize the path
       let cleanPath = path.trim();
       if (cleanPath.startsWith("/")) {
         cleanPath = cleanPath.substring(1);
       }
 
-      console.log("Cleaned path:", cleanPath);
-
-      // Extract just the filename from the path
       const fileName = cleanPath.split("/").pop();
       if (!fileName) {
-        console.error("Could not extract filename from path:", cleanPath);
         alert("Invalid file path - could not extract filename");
         return;
       }
 
-      console.log("Extracted filename:", fileName);
+      const { data, error } = await supabase.storage
+        .from("kyc-documents")
+        .download(cleanPath);
 
-      // Determine document type from path
-      let documentType = "";
-      if (
-        cleanPath.includes("id-documents") ||
-        cleanPath.includes("id_documents")
-      ) {
-        documentType = "id-documents";
-      } else if (
-        cleanPath.includes("utility-bills") ||
-        cleanPath.includes("utility_bills")
-      ) {
-        documentType = "utility-bills";
-      } else if (cleanPath.includes("selfies")) {
-        documentType = "selfies";
-      } else if (
-        cleanPath.includes("driver-license") ||
-        cleanPath.includes("driver_license")
-      ) {
-        documentType = "driver-license";
-      }
+      if (error) {
+        const { data: signedUrlData, error: urlError } = await supabase.storage
+          .from("kyc-documents")
+          .createSignedUrl(cleanPath, 60);
 
-      console.log("Document type:", documentType);
+        if (urlError) throw urlError;
 
-      // Try different path combinations based on your storage structure
-      const pathsToTry = [
-        cleanPath, // Original path
-        fileName, // Just filename
-        documentType ? `${documentType}/${fileName}` : fileName, // document-type/filename
-        cleanPath.replace(/^[^/]+\//, ""), // Remove first folder (user ID)
-      ].filter(Boolean);
+        if (signedUrlData?.signedUrl) {
+          const response = await fetch(signedUrlData.signedUrl);
+          if (!response.ok) throw new Error("Download failed");
 
-      console.log("Paths to try:", pathsToTry);
-
-      let downloadSuccess = false;
-      let lastError = null;
-
-      for (const tryPath of pathsToTry) {
-        try {
-          console.log(`Attempting download with path: ${tryPath}`);
-
-          // First try direct download
-          const { data, error } = await supabase.storage
-            .from("kyc-documents")
-            .download(tryPath);
-
-          if (error) {
-            console.log(
-              `Direct download failed for ${tryPath}:`,
-              error.message
-            );
-
-            // Try with signed URL
-            const { data: signedUrlData, error: urlError } =
-              await supabase.storage
-                .from("kyc-documents")
-                .createSignedUrl(tryPath, 60);
-
-            if (urlError) {
-              console.log(
-                `Signed URL failed for ${tryPath}:`,
-                urlError.message
-              );
-              lastError = urlError;
-              continue;
-            }
-
-            if (signedUrlData?.signedUrl) {
-              console.log(
-                `Using signed URL for ${tryPath}:`,
-                signedUrlData.signedUrl
-              );
-
-              const response = await fetch(signedUrlData.signedUrl);
-              if (!response.ok) {
-                console.log(`Fetch failed for ${tryPath}: ${response.status}`);
-                continue;
-              }
-
-              const blob = await response.blob();
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = filename;
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              URL.revokeObjectURL(url);
-
-              console.log(
-                `Document downloaded successfully via signed URL: ${tryPath}`
-              );
-              downloadSuccess = true;
-              break;
-            }
-          } else if (data) {
-            console.log(`Direct download successful: ${tryPath}`);
-
-            // Create download link
-            const url = URL.createObjectURL(data);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-
-            console.log("Document downloaded successfully via direct download");
-            downloadSuccess = true;
-            break;
-          }
-        } catch (err: any) {
-          console.log(`Exception with path ${tryPath}:`, err.message);
-          lastError = err;
-          continue;
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
         }
-      }
-
-      if (!downloadSuccess) {
-        console.error("All download attempts failed. Last error:", lastError);
-
-        // Show a more helpful error message
-        alert(`Unable to download document. Tried these paths:
-${pathsToTry.map((p) => `• ${p}`).join("\n")}
-
-This might be due to:
-1. File permissions (RLS policies)
-2. File was moved or deleted
-3. Path mismatch between database and storage
-
-Please check your Supabase RLS policies for the kyc-documents bucket.`);
+      } else if (data) {
+        const url = URL.createObjectURL(data);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
       }
     } catch (error: any) {
-      console.error("Unexpected error downloading document:", error);
-      alert(`Unexpected error: ${error.message || "Unknown error"}`);
+      console.error("Download error:", error);
+      alert(`Download failed: ${error.message}`);
     }
   };
 
@@ -509,50 +494,15 @@ Please check your Supabase RLS policies for the kyc-documents bucket.`);
   };
 
   const filteredRecords = kycRecords.filter((record) => {
-    const matchesTab = activeTab === "all" || record.status === activeTab;
     const matchesSearch =
       searchTerm === "" ||
-      record.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      record.email?.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesTab && matchesSearch;
+      record.full_name.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchesSearch;
   });
 
-  // Get users who haven't submitted KYC yet
-  const usersWithoutKYC = allUsers
-    .filter(
-      (user) =>
-        !kycRecords.some((record) => record.user_id === user.id) &&
-        user.kyc_status !== "approved"
-    )
-    .filter(
-      (user) =>
-        searchTerm === "" ||
-        user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        user.full_name?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-
-  const stats = {
-    total: kycRecords.length,
-    pending: kycRecords.filter((r) => r.status === "pending").length,
-    approved: kycRecords.filter((r) => r.status === "approved").length,
-    rejected: kycRecords.filter((r) => r.status === "rejected").length,
-    noKYC: usersWithoutKYC.length,
-  };
-
-  if (loading) {
-    return (
-      <div className="p-6">
-        <div className="flex items-center justify-center space-x-2">
-          <RefreshCw className="w-5 h-5 animate-spin" />
-          <span>Loading KYC records...</span>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">
             KYC Administration
@@ -561,49 +511,41 @@ Please check your Supabase RLS policies for the kyc-documents bucket.`);
             Review and manage KYC verification submissions
           </p>
         </div>
-        <Button onClick={fetchData} variant="outline">
-          <RefreshCw className="w-4 h-4 mr-2" />
+        <Button onClick={fetchKYCRecords} variant="outline" disabled={loading}>
+          {loading ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <RefreshCw className="w-4 h-4 mr-2" />
+          )}
           Refresh
         </Button>
       </div>
 
       {error && (
-        <Alert variant="destructive" className="mb-6">
+        <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
       {processingError && (
-        <Alert variant="destructive" className="mb-6">
+        <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>{processingError}</AlertDescription>
         </Alert>
       )}
 
-      {/* Search Bar */}
-      <div className="mb-6">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-          <Input
-            placeholder="Search by name or email..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+      {/* Stats Cards - Only show loaded data stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">
-                  Total Submissions
+                  Total Records
                 </p>
-                <p className="text-2xl font-bold">{stats.total}</p>
+                <p className="text-2xl font-bold">{totalStats.total}</p>
+                <p className="text-xs text-gray-500">All KYC submissions</p>
               </div>
               <FileText className="w-8 h-8 text-gray-400" />
             </div>
@@ -617,7 +559,7 @@ Please check your Supabase RLS policies for the kyc-documents bucket.`);
                   Pending Review
                 </p>
                 <p className="text-2xl font-bold text-yellow-600">
-                  {stats.pending}
+                  {totalStats.pending}
                 </p>
               </div>
               <Clock className="w-8 h-8 text-yellow-400" />
@@ -630,7 +572,7 @@ Please check your Supabase RLS policies for the kyc-documents bucket.`);
               <div>
                 <p className="text-sm font-medium text-gray-600">Approved</p>
                 <p className="text-2xl font-bold text-green-600">
-                  {stats.approved}
+                  {totalStats.approved}
                 </p>
               </div>
               <CheckCircle className="w-8 h-8 text-green-400" />
@@ -643,135 +585,144 @@ Please check your Supabase RLS policies for the kyc-documents bucket.`);
               <div>
                 <p className="text-sm font-medium text-gray-600">Rejected</p>
                 <p className="text-2xl font-bold text-red-600">
-                  {stats.rejected}
+                  {totalStats.rejected}
                 </p>
               </div>
               <XCircle className="w-8 h-8 text-red-400" />
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">No KYC</p>
-                <p className="text-2xl font-bold text-blue-600">
-                  {stats.noKYC}
-                </p>
-              </div>
-              <UserCheck className="w-8 h-8 text-blue-400" />
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
-      {/* Tabs for filtering */}
-      <Tabs
-        defaultValue={activeTab}
-        onValueChange={setActiveTab}
-        className="mb-6"
-      >
+      {/* Search Bar */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+        <Input
+          placeholder="Search KYC records by name or document number (type 2+ characters)..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="pl-10"
+        />
+      </div>
+
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
-          <TabsTrigger value="all">All Submissions ({stats.total})</TabsTrigger>
-          <TabsTrigger value="pending">Pending ({stats.pending})</TabsTrigger>
+          <TabsTrigger value="pending">
+            Pending ({totalStats.pending})
+          </TabsTrigger>
           <TabsTrigger value="approved">
-            Approved ({stats.approved})
+            Approved ({totalStats.approved})
           </TabsTrigger>
           <TabsTrigger value="rejected">
-            Rejected ({stats.rejected})
+            Rejected ({totalStats.rejected})
           </TabsTrigger>
-          <TabsTrigger value="no-kyc">No KYC ({stats.noKYC})</TabsTrigger>
+          <TabsTrigger value="all">All ({totalStats.total})</TabsTrigger>
+          <TabsTrigger value="skip-kyc">Skip KYC</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="no-kyc">
-          <div className="mb-8">
-            <h2 className="text-xl font-semibold mb-4">
-              Users Without KYC Submission
-            </h2>
-            {usersWithoutKYC.length === 0 ? (
-              <Card>
-                <CardContent className="text-center py-12">
-                  <UserCheck className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-500 text-lg">
-                    No users without KYC found
-                  </p>
-                  <p className="text-sm text-gray-400 mt-2">
-                    All users have either submitted KYC or have been approved
-                  </p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid gap-4">
-                {usersWithoutKYC.map((user) => (
-                  <Card key={user.id}>
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between">
+        <TabsContent value="skip-kyc" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <SkipForward className="w-5 h-5 mr-2" />
+                Skip KYC for Users
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  Search Users Without KYC
+                </label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <Input
+                    placeholder="Type name or email to find users..."
+                    value={userSearchTerm}
+                    onChange={(e) => setUserSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                  {searching && (
+                    <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 animate-spin text-gray-400" />
+                  )}
+                </div>
+              </div>
+
+              {userSearchTerm.length >= 2 && (
+                <div className="border rounded-lg max-h-64 overflow-y-auto">
+                  {searchResults.length > 0 ? (
+                    searchResults.map((user) => (
+                      <div
+                        key={user.id}
+                        className="p-4 border-b last:border-b-0 flex items-center justify-between hover:bg-gray-50"
+                      >
                         <div className="flex items-center space-x-3">
                           <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
                             <User className="w-5 h-5 text-white" />
                           </div>
                           <div>
-                            <h3 className="font-medium">
-                              {user.full_name || "Name not provided"}
-                            </h3>
-                            <div className="flex items-center space-x-2 mt-1">
-                              <Mail className="w-4 h-4 text-gray-400" />
-                              <span className="text-sm text-gray-600">
-                                {user.email}
-                              </span>
-                            </div>
-                            <p className="text-xs text-gray-500">
-                              Registered:{" "}
-                              {new Date(user.created_at).toLocaleDateString()}
+                            <p className="font-medium">
+                              {user.full_name ||
+                                user.email?.split("@")[0] ||
+                                "Unknown"}
                             </p>
+                            <p className="text-sm text-gray-600">
+                              {user.email}
+                            </p>
+                            <Badge variant="outline" className="text-xs mt-1">
+                              {user.kyc_status || "No KYC"}
+                            </Badge>
                           </div>
                         </div>
-                        <div className="flex items-center space-x-2">
-                          <Badge
-                            variant="secondary"
-                            className="bg-blue-100 text-blue-800"
-                          >
-                            {user.kyc_status || "No KYC"}
-                          </Badge>
-                          <Button
-                            onClick={() => handleSkipKYC(user)}
-                            variant="outline"
-                            size="sm"
-                            disabled={updating === user.id}
-                          >
-                            <SkipForward className="w-4 h-4 mr-1" />
-                            {updating === user.id
-                              ? "Processing..."
-                              : "Skip KYC"}
-                          </Button>
-                        </div>
+                        <Button
+                          onClick={() => handleSkipKYC(user)}
+                          variant="outline"
+                          size="sm"
+                          disabled={updating === user.id}
+                        >
+                          {updating === user.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <>
+                              <SkipForward className="w-4 h-4 mr-1" />
+                              Skip KYC
+                            </>
+                          )}
+                        </Button>
                       </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </div>
+                    ))
+                  ) : !searching ? (
+                    <div className="p-4 text-center text-gray-500">
+                      No users found matching "{userSearchTerm}"
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
+              {userSearchTerm.length > 0 && userSearchTerm.length < 2 && (
+                <p className="text-xs text-gray-500">
+                  Type at least 2 characters to search
+                </p>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
-        <TabsContent value="all">{renderKYCRecords()}</TabsContent>
-
         <TabsContent value="pending">{renderKYCRecords()}</TabsContent>
-
         <TabsContent value="approved">{renderKYCRecords()}</TabsContent>
-
         <TabsContent value="rejected">{renderKYCRecords()}</TabsContent>
+        <TabsContent value="all">{renderKYCRecords()}</TabsContent>
       </Tabs>
 
-      {/* Skip KYC Confirmation Dialog */}
+      {/* Skip KYC Dialog */}
       <Dialog open={showSkipDialog} onOpenChange={setShowSkipDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Skip KYC Verification</DialogTitle>
             <DialogDescription>
               Are you sure you want to skip KYC verification for this user? This
-              will mark their KYC status as approved and allow them to access
-              the dashboard without submitting verification documents.
+              will mark their KYC status as approved without requiring
+              documents.
             </DialogDescription>
           </DialogHeader>
           {selectedUser && (
@@ -782,7 +733,9 @@ Please check your Supabase RLS policies for the kyc-documents bucket.`);
                 </div>
                 <div>
                   <p className="font-medium">
-                    {selectedUser.full_name || "Name not provided"}
+                    {selectedUser.full_name ||
+                      selectedUser.email?.split("@")[0] ||
+                      "Unknown"}
                   </p>
                   <p className="text-sm text-gray-600">{selectedUser.email}</p>
                 </div>
@@ -798,7 +751,14 @@ Please check your Supabase RLS policies for the kyc-documents bucket.`);
               disabled={updating === selectedUser?.id}
               className="bg-blue-600 hover:bg-blue-700"
             >
-              {updating === selectedUser?.id ? "Processing..." : "Skip KYC"}
+              {updating === selectedUser?.id ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                "Skip KYC"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -807,16 +767,39 @@ Please check your Supabase RLS policies for the kyc-documents bucket.`);
   );
 
   function renderKYCRecords() {
-    if (filteredRecords.length === 0) {
+    if (loading) {
+      return (
+        <div className="space-y-4">
+          {[1, 2, 3].map((i) => (
+            <Card key={i} className="animate-pulse">
+              <CardContent className="p-6">
+                <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      );
+    }
+
+    if (kycRecords.length === 0) {
       return (
         <Card>
           <CardContent className="text-center py-12">
             <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-500 text-lg">No KYC records found</p>
+            <p className="text-gray-500 text-lg">
+              {searchTerm.length >= 2
+                ? `No KYC records found matching "${searchTerm}"`
+                : activeTab === "pending"
+                ? "No pending KYC records"
+                : `Type 2+ characters to search ${
+                    totalStats[activeTab as keyof typeof totalStats]
+                  } ${activeTab} records`}
+            </p>
             <p className="text-sm text-gray-400 mt-2">
-              {activeTab === "all"
-                ? "KYC submissions will appear here when users complete their verification"
-                : `No ${activeTab} KYC records found`}
+              {searchTerm.length < 2 && activeTab !== "pending"
+                ? "Use the search box above to find specific records"
+                : "KYC submissions will appear here when users complete verification"}
             </p>
           </CardContent>
         </Card>
@@ -824,8 +807,8 @@ Please check your Supabase RLS policies for the kyc-documents bucket.`);
     }
 
     return (
-      <div className="grid gap-6">
-        {filteredRecords.map((record) => (
+      <div className="space-y-6">
+        {kycRecords.map((record) => (
           <Card key={record.id} className="overflow-hidden">
             <CardHeader className="bg-gray-50">
               <div className="flex justify-between items-start">
@@ -838,9 +821,8 @@ Please check your Supabase RLS policies for the kyc-documents bucket.`);
                       {record.full_name}
                     </CardTitle>
                     <div className="flex items-center space-x-2 mt-1">
-                      <Mail className="w-4 h-4 text-gray-400" />
                       <span className="text-sm text-gray-600">
-                        {record.email}
+                        User ID: {record.user_id.slice(0, 8)}...
                       </span>
                     </div>
                   </div>
@@ -938,14 +920,14 @@ Please check your Supabase RLS policies for the kyc-documents bucket.`);
                     </div>
                   )}
                 </div>
+
                 {/* Documents */}
                 <div className="space-y-4">
                   <h3 className="font-semibold text-lg flex items-center">
                     <FileText className="w-5 h-5 mr-2" />
                     Uploaded Documents
                   </h3>
-                  {record.document_number === "ADMIN_SKIP" ||
-                  record.document_number === "ADMIN_SKIP_NO_DOCUMENT" ? (
+                  {record.document_number === "ADMIN_SKIP" ? (
                     <div className="p-4 bg-blue-50 border border-blue-200 rounded-md text-center">
                       <SkipForward className="w-8 h-8 text-blue-500 mx-auto mb-2" />
                       <p className="text-blue-800 font-medium">
@@ -962,12 +944,12 @@ Please check your Supabase RLS policies for the kyc-documents bucket.`);
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => {
+                          onClick={() =>
                             downloadDocument(
                               record.id_document_path,
                               `${record.full_name}_ID_Document`
-                            );
-                          }}
+                            )
+                          }
                         >
                           <Download className="w-4 h-4 mr-1" />
                           Download
@@ -1031,6 +1013,7 @@ Please check your Supabase RLS policies for the kyc-documents bucket.`);
                   )}
                 </div>
               </div>
+
               {/* Action Buttons */}
               {record.status === "pending" && (
                 <div className="flex justify-end space-x-3 mt-6 pt-4 border-t">
@@ -1039,7 +1022,11 @@ Please check your Supabase RLS policies for the kyc-documents bucket.`);
                     variant="destructive"
                     disabled={updating === record.id}
                   >
-                    {updating === record.id ? "Processing..." : "Reject"}
+                    {updating === record.id ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      "Reject"
+                    )}
                   </Button>
                   <Button
                     onClick={() =>
@@ -1048,7 +1035,11 @@ Please check your Supabase RLS policies for the kyc-documents bucket.`);
                     className="bg-green-600 hover:bg-green-700"
                     disabled={updating === record.id}
                   >
-                    {updating === record.id ? "Processing..." : "Approve"}
+                    {updating === record.id ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      "Approve"
+                    )}
                   </Button>
                 </div>
               )}

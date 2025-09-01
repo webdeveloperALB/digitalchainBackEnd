@@ -30,6 +30,10 @@ import {
   CheckCircle,
   Info,
   AlertTriangle,
+  Search,
+  Loader2,
+  X,
+  CheckCircle2,
 } from "lucide-react";
 
 interface Message {
@@ -44,46 +48,97 @@ interface Message {
 
 interface User {
   id: string;
+  email: string;
   full_name: string | null;
-  email: string | null;
-  client_id: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  created_at: string;
+  kyc_status: string;
 }
 
 export default function MessageManager() {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
+  const [searchResults, setSearchResults] = useState<User[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [alert, setAlert] = useState("");
   const [newMessage, setNewMessage] = useState({
     title: "",
     content: "",
     message_type: "info",
-    target_user: "all",
+    target_type: "all" as "all" | "selected",
   });
   const [userSearch, setUserSearch] = useState("");
+  const [totalUserCount, setTotalUserCount] = useState(0);
 
   useEffect(() => {
     fetchMessages();
-    fetchUsers();
+    fetchTotalUserCount();
   }, []);
 
-  const fetchUsers = async () => {
+  // Fast user search - only when typing
+  useEffect(() => {
+    if (userSearch.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    const timeoutId = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const { data, error } = await supabase
+          .from("users")
+          .select(
+            "id, email, full_name, first_name, last_name, created_at, kyc_status"
+          )
+          .or(`email.ilike.%${userSearch}%,full_name.ilike.%${userSearch}%`)
+          .limit(10)
+          .order("created_at", { ascending: false });
+
+        if (!error && data) {
+          const transformedUsers = data.map((user: any) => ({
+            id: user.id,
+            email: user.email,
+            full_name:
+              user.full_name ||
+              `${user.first_name || ""} ${user.last_name || ""}`.trim() ||
+              user.email?.split("@")[0] ||
+              "Unknown",
+            first_name: user.first_name,
+            last_name: user.last_name,
+            created_at: user.created_at,
+            kyc_status: user.kyc_status,
+          }));
+          setSearchResults(transformedUsers);
+        } else {
+          setSearchResults([]);
+        }
+      } catch (error) {
+        console.error("Search failed:", error);
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [userSearch]);
+
+  const fetchTotalUserCount = async () => {
     try {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, full_name, email, client_id")
-        .order("created_at", { ascending: false });
+      const { count, error } = await supabase
+        .from("users")
+        .select("*", { count: "exact", head: true });
 
       if (error) {
-        console.error("Error fetching users:", error.message || error);
-        setAlert(`Error fetching users: ${error.message || "Unknown error"}`);
+        console.error("Error fetching user count:", error);
         return;
       }
 
-      setUsers(data || []);
+      setTotalUserCount(count || 0);
     } catch (error: any) {
-      console.error("Error fetching users:", error.message || error);
-      setAlert(`Error fetching users: ${error.message || "Unknown error"}`);
+      console.error("Error fetching user count:", error);
     }
   };
 
@@ -110,17 +165,20 @@ export default function MessageManager() {
     }
   };
 
-  const filteredUsers = users.filter((user) => {
-    if (!userSearch.trim()) return true;
-    const searchTerm = userSearch.toLowerCase();
-    const fullName = user.full_name?.toLowerCase() || "";
-    const email = user.email?.toLowerCase() || "";
-    return fullName.includes(searchTerm) || email.includes(searchTerm);
-  });
+  const addSelectedUser = (user: User) => {
+    if (!selectedUsers.find((u) => u.id === user.id)) {
+      setSelectedUsers([...selectedUsers, user]);
+    }
+    setUserSearch("");
+    setSearchResults([]);
+  };
 
-  const getUserName = (userId: string) => {
-    const user = users.find((u) => u.id === userId);
-    return user?.full_name || user?.email || `User ${userId.slice(0, 8)}`;
+  const removeSelectedUser = (userId: string) => {
+    setSelectedUsers(selectedUsers.filter((u) => u.id !== userId));
+  };
+
+  const getUserDisplayName = (user: User) => {
+    return user.full_name || user.email || `User ${user.id.slice(0, 8)}`;
   };
 
   const sendMessage = async () => {
@@ -129,44 +187,89 @@ export default function MessageManager() {
       return;
     }
 
+    if (newMessage.target_type === "selected" && selectedUsers.length === 0) {
+      setAlert("Please select at least one user or choose 'All Users'");
+      return;
+    }
+
     setLoading(true);
     try {
-      if (newMessage.target_user === "all") {
-        // Send to all users
-        const messagePromises = users.map((user) =>
-          supabase.from("user_messages").insert({
-            user_id: user.id,
-            title: newMessage.title,
-            content: newMessage.content,
-            message_type: newMessage.message_type,
-            is_read: false,
-          })
-        );
+      if (newMessage.target_type === "all") {
+        // Get all users and send messages in batches
+        let allUsers: User[] = [];
+        let from = 0;
+        const batchSize = 1000;
 
-        const results = await Promise.all(messagePromises);
-        const errors = results.filter((result) => result.error);
+        // Fetch all users in batches
+        while (true) {
+          const { data, error } = await supabase
+            .from("users")
+            .select(
+              "id, email, full_name, first_name, last_name, created_at, kyc_status"
+            )
+            .range(from, from + batchSize - 1);
 
-        if (errors.length > 0) {
-          console.error("Some messages failed to send:", errors);
-          setAlert(`${errors.length} messages failed to send`);
-        } else {
-          setAlert(`Message sent to all ${users.length} users successfully!`);
+          if (error) throw error;
+          if (!data || data.length === 0) break;
+
+          allUsers = [...allUsers, ...data];
+          if (data.length < batchSize) break;
+          from += batchSize;
         }
-      } else {
-        // Send to specific user
-        const { error } = await supabase.from("user_messages").insert({
-          user_id: newMessage.target_user,
+
+        // Send messages in batches
+        const messageData = allUsers.map((user) => ({
+          user_id: user.id,
           title: newMessage.title,
           content: newMessage.content,
           message_type: newMessage.message_type,
           is_read: false,
-        });
+        }));
+
+        // Insert in batches of 100
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (let i = 0; i < messageData.length; i += 100) {
+          const batch = messageData.slice(i, i + 100);
+          const { error } = await supabase.from("user_messages").insert(batch);
+
+          if (error) {
+            console.error("Batch error:", error);
+            errorCount += batch.length;
+          } else {
+            successCount += batch.length;
+          }
+        }
+
+        if (errorCount > 0) {
+          setAlert(
+            `Message sent to ${successCount} users, ${errorCount} failed`
+          );
+        } else {
+          setAlert(`Message sent to all ${successCount} users successfully!`);
+        }
+      } else {
+        // Send to selected users
+        const messageData = selectedUsers.map((user) => ({
+          user_id: user.id,
+          title: newMessage.title,
+          content: newMessage.content,
+          message_type: newMessage.message_type,
+          is_read: false,
+        }));
+
+        const { error } = await supabase
+          .from("user_messages")
+          .insert(messageData);
 
         if (error) {
           console.error("Error sending message:", error);
           setAlert(`Error sending message: ${error.message}`);
         } else {
-          setAlert("Message sent successfully!");
+          setAlert(
+            `Message sent to ${selectedUsers.length} users successfully!`
+          );
         }
       }
 
@@ -175,8 +278,10 @@ export default function MessageManager() {
         title: "",
         content: "",
         message_type: "info",
-        target_user: "all",
+        target_type: "all",
       });
+      setSelectedUsers([]);
+      setUserSearch("");
 
       // Refresh messages
       fetchMessages();
@@ -246,7 +351,9 @@ export default function MessageManager() {
         </div>
         <div className="flex items-center space-x-2">
           <Users className="h-5 w-5 text-gray-500" />
-          <span className="text-sm text-gray-600">{users.length} users</span>
+          <span className="text-sm text-gray-600">
+            {totalUserCount} total users
+          </span>
         </div>
       </div>
 
@@ -259,6 +366,7 @@ export default function MessageManager() {
             size="sm"
             onClick={() => setAlert("")}
             className="ml-auto"
+            aria-label="Close alert"
           >
             ×
           </Button>
@@ -277,67 +385,147 @@ export default function MessageManager() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm font-medium mb-2 block">
-                Target Audience
-              </label>
-              <div className="space-y-2">
-                <Input
-                  placeholder="Search users by name or email..."
-                  value={userSearch}
-                  onChange={(e) => setUserSearch(e.target.value)}
-                  className="w-full"
-                />
-                <Select
-                  value={newMessage.target_user}
-                  onValueChange={(value) =>
-                    setNewMessage({ ...newMessage, target_user: value })
+          {/* Target Selection */}
+          <div className="space-y-4">
+            <label className="text-sm font-medium">Target Audience</label>
+
+            {/* Target Type Selection */}
+            <div className="flex space-x-4">
+              <label className="flex items-center space-x-2">
+                <input
+                  type="radio"
+                  name="target_type"
+                  value="all"
+                  checked={newMessage.target_type === "all"}
+                  onChange={(e) =>
+                    setNewMessage({
+                      ...newMessage,
+                      target_type: e.target.value as "all" | "selected",
+                    })
                   }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select target" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">
-                      All Users ({users.length})
-                    </SelectItem>
-                    {filteredUsers.map((user) => (
-                      <SelectItem key={user.id} value={user.id}>
-                        {user.full_name || user.email} ({user.client_id})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {userSearch.trim() && (
+                />
+                <span>All Users ({totalUserCount})</span>
+              </label>
+              <label className="flex items-center space-x-2">
+                <input
+                  type="radio"
+                  name="target_type"
+                  value="selected"
+                  checked={newMessage.target_type === "selected"}
+                  onChange={(e) =>
+                    setNewMessage({
+                      ...newMessage,
+                      target_type: e.target.value as "all" | "selected",
+                    })
+                  }
+                />
+                <span>Selected Users ({selectedUsers.length})</span>
+              </label>
+            </div>
+
+            {/* User Search and Selection */}
+            {newMessage.target_type === "selected" && (
+              <div className="space-y-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <Input
+                    placeholder="Search users by name or email..."
+                    value={userSearch}
+                    onChange={(e) => setUserSearch(e.target.value)}
+                    className="pl-10"
+                  />
+                  {searching && (
+                    <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 animate-spin text-gray-400" />
+                  )}
+                </div>
+
+                {/* Search Results */}
+                {userSearch.length >= 2 && (
+                  <div className="border rounded-lg max-h-48 overflow-y-auto">
+                    {searchResults.length > 0 ? (
+                      searchResults.map((user) => (
+                        <div
+                          key={user.id}
+                          className="p-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
+                          onClick={() => addSelectedUser(user)}
+                        >
+                          <div className="flex items-center space-x-2">
+                            <Users className="h-4 w-4 text-gray-400" />
+                            <div>
+                              <p className="font-medium text-sm">
+                                {getUserDisplayName(user)}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                DCB{user.id.slice(0, 6)} • {user.email}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    ) : !searching ? (
+                      <div className="p-4 text-center text-gray-500 text-sm">
+                        No users found matching "{userSearch}"
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+
+                {userSearch.length > 0 && userSearch.length < 2 && (
                   <p className="text-xs text-gray-500">
-                    Showing {filteredUsers.length} of {users.length} users
+                    Type at least 2 characters to search
                   </p>
                 )}
+
+                {/* Selected Users */}
+                {selectedUsers.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Selected Users:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedUsers.map((user) => (
+                        <div
+                          key={user.id}
+                          className="flex items-center space-x-2 bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm"
+                        >
+                          <span>{getUserDisplayName(user)}</span>
+                          <button
+                            onClick={() => removeSelectedUser(user.id)}
+                            className="hover:bg-blue-200 rounded-full p-0.5"
+                            aria-label="Remove user"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-2 block">
-                Message Type
-              </label>
-              <Select
-                value={newMessage.message_type}
-                onValueChange={(value) =>
-                  setNewMessage({ ...newMessage, message_type: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="info">Information</SelectItem>
-                  <SelectItem value="success">Success</SelectItem>
-                  <SelectItem value="warning">Warning</SelectItem>
-                  <SelectItem value="alert">Alert</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            )}
           </div>
+
+          {/* Message Type */}
+          <div>
+            <label className="text-sm font-medium mb-2 block">
+              Message Type
+            </label>
+            <Select
+              value={newMessage.message_type}
+              onValueChange={(value) =>
+                setNewMessage({ ...newMessage, message_type: value })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="info">Information</SelectItem>
+                <SelectItem value="success">Success</SelectItem>
+                <SelectItem value="warning">Warning</SelectItem>
+                <SelectItem value="alert">Alert</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           <div>
             <label className="text-sm font-medium mb-2 block">Title</label>
             <Input
@@ -360,7 +548,14 @@ export default function MessageManager() {
             />
           </div>
           <Button onClick={sendMessage} disabled={loading} className="w-full">
-            {loading ? "Sending..." : "Send Message"}
+            {loading ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Sending...
+              </>
+            ) : (
+              "Send Message"
+            )}
           </Button>
         </CardContent>
       </Card>
@@ -406,7 +601,7 @@ export default function MessageManager() {
                           {message.content}
                         </p>
                         <div className="flex items-center space-x-4 text-xs text-gray-500">
-                          <span>To: {getUserName(message.user_id)}</span>
+                          <span>To: User {message.user_id.slice(0, 8)}...</span>
                           <span>
                             {new Date(message.created_at).toLocaleString()}
                           </span>

@@ -1,15 +1,27 @@
-"use client"
+"use client";
 
-import { useState, useCallback } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Badge } from "@/components/ui/badge"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { useState, useCallback } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Building2,
   DollarSign,
@@ -20,32 +32,33 @@ import {
   AlertTriangle,
   CheckCircle,
   Info,
-} from "lucide-react"
+  FileSignature,
+} from "lucide-react";
 
-type LoansSectionProps = {}
+type LoansSectionProps = {};
 
 interface LoanFormData {
-  loanType: string
-  loanAmount: string
-  loanPurpose: string
-  employmentStatus: string
-  monthlyIncome: string
-  employerName: string
-  employmentDuration: string
-  firstName: string
-  lastName: string
-  email: string
-  phone: string
-  address: string
-  city: string
-  country: string
-  postalCode: string
-  dateOfBirth: string
-  ssn: string
-  creditScore: string
-  existingDebts: string
-  collateral: string
-  additionalInfo: string
+  loanType: string;
+  loanAmount: string;
+  loanPurpose: string;
+  employmentStatus: string;
+  monthlyIncome: string;
+  employerName: string;
+  employmentDuration: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  address: string;
+  city: string;
+  country: string;
+  postalCode: string;
+  dateOfBirth: string;
+  ssn: string;
+  creditScore: string;
+  existingDebts: string;
+  collateral: string;
+  additionalInfo: string;
 }
 
 const initialFormData: LoanFormData = {
@@ -70,7 +83,7 @@ const initialFormData: LoanFormData = {
   existingDebts: "",
   collateral: "",
   additionalInfo: "",
-}
+};
 
 const loanTypes = [
   { value: "personal", label: "Personal Loan" },
@@ -79,7 +92,7 @@ const loanTypes = [
   { value: "auto", label: "Auto Loan" },
   { value: "student", label: "Student Loan" },
   { value: "home-equity", label: "Home Equity Loan" },
-]
+];
 
 const employmentStatuses = [
   { value: "employed", label: "Employed Full-time" },
@@ -88,7 +101,7 @@ const employmentStatuses = [
   { value: "unemployed", label: "Unemployed" },
   { value: "retired", label: "Retired" },
   { value: "student", label: "Student" },
-]
+];
 
 const countries = [
   { value: "us", label: "United States" },
@@ -99,106 +112,120 @@ const countries = [
   { value: "au", label: "Australia" },
   { value: "jp", label: "Japan" },
   { value: "other", label: "Other" },
-]
+];
 
-export default function LoansSection({ }: LoansSectionProps) {
-  const [formData, setFormData] = useState<LoanFormData>(initialFormData)
-  const [currentStep, setCurrentStep] = useState(1)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [showRestrictionDialog, setShowRestrictionDialog] = useState(false)
-  const [errors, setErrors] = useState<Partial<LoanFormData>>({})
+export default function LoansSection({}: LoansSectionProps) {
+  const [formData, setFormData] = useState<LoanFormData>(initialFormData);
+  const [currentStep, setCurrentStep] = useState(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showRestrictionDialog, setShowRestrictionDialog] = useState(false);
+  const [errors, setErrors] = useState<Partial<LoanFormData>>({});
 
-  const totalSteps = 4
+  const totalSteps = 4;
 
   const handleInputChange = useCallback(
     (field: keyof LoanFormData, value: string) => {
-      setFormData((prev) => ({ ...prev, [field]: value }))
+      setFormData((prev) => ({ ...prev, [field]: value }));
       // Clear error when user starts typing
       if (errors[field]) {
-        setErrors((prev) => ({ ...prev, [field]: undefined }))
+        setErrors((prev) => ({ ...prev, [field]: undefined }));
       }
     },
-    [errors],
-  )
+    [errors]
+  );
 
   const validateStep = useCallback(
     (step: number): boolean => {
-      const newErrors: Partial<LoanFormData> = {}
+      const newErrors: Partial<LoanFormData> = {};
 
       switch (step) {
         case 1:
-          if (!formData.loanType) newErrors.loanType = "Please select a loan type"
-          if (!formData.loanAmount) newErrors.loanAmount = "Please enter loan amount"
-          if (!formData.loanPurpose) newErrors.loanPurpose = "Please describe the loan purpose"
-          break
+          if (!formData.loanType)
+            newErrors.loanType = "Please select a loan type";
+          if (!formData.loanAmount)
+            newErrors.loanAmount = "Please enter loan amount";
+          if (!formData.loanPurpose)
+            newErrors.loanPurpose = "Please describe the loan purpose";
+          break;
         case 2:
-          if (!formData.employmentStatus) newErrors.employmentStatus = "Please select employment status"
-          if (!formData.monthlyIncome) newErrors.monthlyIncome = "Please enter monthly income"
-          if (formData.employmentStatus === "employed" || formData.employmentStatus === "part-time") {
-            if (!formData.employerName) newErrors.employerName = "Please enter employer name"
-            if (!formData.employmentDuration) newErrors.employmentDuration = "Please enter employment duration"
+          if (!formData.employmentStatus)
+            newErrors.employmentStatus = "Please select employment status";
+          if (!formData.monthlyIncome)
+            newErrors.monthlyIncome = "Please enter monthly income";
+          if (
+            formData.employmentStatus === "employed" ||
+            formData.employmentStatus === "part-time"
+          ) {
+            if (!formData.employerName)
+              newErrors.employerName = "Please enter employer name";
+            if (!formData.employmentDuration)
+              newErrors.employmentDuration = "Please enter employment duration";
           }
-          break
+          break;
         case 3:
-          if (!formData.firstName) newErrors.firstName = "Please enter first name"
-          if (!formData.lastName) newErrors.lastName = "Please enter last name"
-          if (!formData.email) newErrors.email = "Please enter email"
-          if (!formData.phone) newErrors.phone = "Please enter phone number"
-          if (!formData.address) newErrors.address = "Please enter address"
-          if (!formData.city) newErrors.city = "Please enter city"
-          if (!formData.country) newErrors.country = "Please select country"
-          if (!formData.dateOfBirth) newErrors.dateOfBirth = "Please enter date of birth"
-          break
+          if (!formData.firstName)
+            newErrors.firstName = "Please enter first name";
+          if (!formData.lastName) newErrors.lastName = "Please enter last name";
+          if (!formData.email) newErrors.email = "Please enter email";
+          if (!formData.phone) newErrors.phone = "Please enter phone number";
+          if (!formData.address) newErrors.address = "Please enter address";
+          if (!formData.city) newErrors.city = "Please enter city";
+          if (!formData.country) newErrors.country = "Please select country";
+          if (!formData.dateOfBirth)
+            newErrors.dateOfBirth = "Please enter date of birth";
+          break;
         case 4:
-          if (!formData.ssn) newErrors.ssn = "Please enter SSN/Tax ID"
-          break
+          if (!formData.ssn) newErrors.ssn = "Please enter SSN/Tax ID";
+          break;
       }
 
-      setErrors(newErrors)
-      return Object.keys(newErrors).length === 0
+      setErrors(newErrors);
+      return Object.keys(newErrors).length === 0;
     },
-    [formData],
-  )
+    [formData]
+  );
 
   const handleNext = useCallback(() => {
     if (validateStep(currentStep)) {
-      setCurrentStep((prev) => Math.min(prev + 1, totalSteps))
+      setCurrentStep((prev) => Math.min(prev + 1, totalSteps));
     }
-  }, [currentStep, validateStep])
+  }, [currentStep, validateStep]);
 
   const handlePrevious = useCallback(() => {
-    setCurrentStep((prev) => Math.max(prev - 1, 1))
-  }, [])
+    setCurrentStep((prev) => Math.max(prev - 1, 1));
+  }, []);
 
   const handleSubmit = useCallback(async () => {
-    if (!validateStep(currentStep)) return
+    if (!validateStep(currentStep)) return;
 
-    setIsSubmitting(true)
+    setIsSubmitting(true);
 
     // Simulate processing time
-    await new Promise((resolve) => setTimeout(resolve, 2000))
+    await new Promise((resolve) => setTimeout(resolve, 2000));
 
-    setIsSubmitting(false)
-    setShowRestrictionDialog(true)
-  }, [currentStep, validateStep])
+    setIsSubmitting(false);
+    setShowRestrictionDialog(true);
+  }, [currentStep, validateStep]);
 
   const getCountryLabel = useCallback((countryCode: string) => {
-    const country = countries.find((c) => c.value === countryCode)
-    return country?.label || countryCode
-  }, [])
+    const country = countries.find((c) => c.value === countryCode);
+    return country?.label || countryCode;
+  }, []);
 
   const renderStep1 = () => (
     <div className="space-y-6">
       <div className="text-center mb-8">
-        <DollarSign className="h-12 w-12 text-[#F26623] mx-auto mb-4" />
+        <FileSignature className="h-12 w-12 text-[#F26623] mx-auto mb-4" />
         <h3 className="text-xl font-semibold text-gray-900">Loan Details</h3>
-        <p className="text-gray-600 mt-2">Tell us about the loan you need</p>
       </div>
 
       <div className="space-y-4">
         <div>
           <Label htmlFor="loanType">Loan Type *</Label>
-          <Select value={formData.loanType} onValueChange={(value) => handleInputChange("loanType", value)}>
+          <Select
+            value={formData.loanType}
+            onValueChange={(value) => handleInputChange("loanType", value)}
+          >
             <SelectTrigger className={errors.loanType ? "border-red-500" : ""}>
               <SelectValue placeholder="Select loan type" />
             </SelectTrigger>
@@ -210,7 +237,9 @@ export default function LoansSection({ }: LoansSectionProps) {
               ))}
             </SelectContent>
           </Select>
-          {errors.loanType && <p className="text-red-500 text-sm mt-1">{errors.loanType}</p>}
+          {errors.loanType && (
+            <p className="text-red-500 text-sm mt-1">{errors.loanType}</p>
+          )}
         </div>
 
         <div>
@@ -223,7 +252,9 @@ export default function LoansSection({ }: LoansSectionProps) {
             onChange={(e) => handleInputChange("loanAmount", e.target.value)}
             className={errors.loanAmount ? "border-red-500" : ""}
           />
-          {errors.loanAmount && <p className="text-red-500 text-sm mt-1">{errors.loanAmount}</p>}
+          {errors.loanAmount && (
+            <p className="text-red-500 text-sm mt-1">{errors.loanAmount}</p>
+          )}
         </div>
 
         <div>
@@ -236,18 +267,24 @@ export default function LoansSection({ }: LoansSectionProps) {
             className={errors.loanPurpose ? "border-red-500" : ""}
             rows={4}
           />
-          {errors.loanPurpose && <p className="text-red-500 text-sm mt-1">{errors.loanPurpose}</p>}
+          {errors.loanPurpose && (
+            <p className="text-red-500 text-sm mt-1">{errors.loanPurpose}</p>
+          )}
         </div>
       </div>
     </div>
-  )
+  );
 
   const renderStep2 = () => (
     <div className="space-y-6">
       <div className="text-center mb-8">
         <Briefcase className="h-12 w-12 text-[#F26623] mx-auto mb-4" />
-        <h3 className="text-xl font-semibold text-gray-900">Employment Information</h3>
-        <p className="text-gray-600 mt-2">Help us understand your financial situation</p>
+        <h3 className="text-xl font-semibold text-gray-900">
+          Employment Information
+        </h3>
+        <p className="text-gray-600 mt-2">
+          Help us understand your financial situation
+        </p>
       </div>
 
       <div className="space-y-4">
@@ -255,9 +292,13 @@ export default function LoansSection({ }: LoansSectionProps) {
           <Label htmlFor="employmentStatus">Employment Status *</Label>
           <Select
             value={formData.employmentStatus}
-            onValueChange={(value) => handleInputChange("employmentStatus", value)}
+            onValueChange={(value) =>
+              handleInputChange("employmentStatus", value)
+            }
           >
-            <SelectTrigger className={errors.employmentStatus ? "border-red-500" : ""}>
+            <SelectTrigger
+              className={errors.employmentStatus ? "border-red-500" : ""}
+            >
               <SelectValue placeholder="Select employment status" />
             </SelectTrigger>
             <SelectContent>
@@ -268,7 +309,11 @@ export default function LoansSection({ }: LoansSectionProps) {
               ))}
             </SelectContent>
           </Select>
-          {errors.employmentStatus && <p className="text-red-500 text-sm mt-1">{errors.employmentStatus}</p>}
+          {errors.employmentStatus && (
+            <p className="text-red-500 text-sm mt-1">
+              {errors.employmentStatus}
+            </p>
+          )}
         </div>
 
         <div>
@@ -281,10 +326,13 @@ export default function LoansSection({ }: LoansSectionProps) {
             onChange={(e) => handleInputChange("monthlyIncome", e.target.value)}
             className={errors.monthlyIncome ? "border-red-500" : ""}
           />
-          {errors.monthlyIncome && <p className="text-red-500 text-sm mt-1">{errors.monthlyIncome}</p>}
+          {errors.monthlyIncome && (
+            <p className="text-red-500 text-sm mt-1">{errors.monthlyIncome}</p>
+          )}
         </div>
 
-        {(formData.employmentStatus === "employed" || formData.employmentStatus === "part-time") && (
+        {(formData.employmentStatus === "employed" ||
+          formData.employmentStatus === "part-time") && (
           <>
             <div>
               <Label htmlFor="employerName">Employer Name *</Label>
@@ -292,10 +340,16 @@ export default function LoansSection({ }: LoansSectionProps) {
                 id="employerName"
                 placeholder="Company/Organization name"
                 value={formData.employerName}
-                onChange={(e) => handleInputChange("employerName", e.target.value)}
+                onChange={(e) =>
+                  handleInputChange("employerName", e.target.value)
+                }
                 className={errors.employerName ? "border-red-500" : ""}
               />
-              {errors.employerName && <p className="text-red-500 text-sm mt-1">{errors.employerName}</p>}
+              {errors.employerName && (
+                <p className="text-red-500 text-sm mt-1">
+                  {errors.employerName}
+                </p>
+              )}
             </div>
 
             <div>
@@ -304,23 +358,33 @@ export default function LoansSection({ }: LoansSectionProps) {
                 id="employmentDuration"
                 placeholder="e.g., 2 years 6 months"
                 value={formData.employmentDuration}
-                onChange={(e) => handleInputChange("employmentDuration", e.target.value)}
+                onChange={(e) =>
+                  handleInputChange("employmentDuration", e.target.value)
+                }
                 className={errors.employmentDuration ? "border-red-500" : ""}
               />
-              {errors.employmentDuration && <p className="text-red-500 text-sm mt-1">{errors.employmentDuration}</p>}
+              {errors.employmentDuration && (
+                <p className="text-red-500 text-sm mt-1">
+                  {errors.employmentDuration}
+                </p>
+              )}
             </div>
           </>
         )}
       </div>
     </div>
-  )
+  );
 
   const renderStep3 = () => (
     <div className="space-y-6">
       <div className="text-center mb-8">
         <User className="h-12 w-12 text-[#F26623] mx-auto mb-4" />
-        <h3 className="text-xl font-semibold text-gray-900">Personal Information</h3>
-        <p className="text-gray-600 mt-2">We need your personal details for verification</p>
+        <h3 className="text-xl font-semibold text-gray-900">
+          Personal Information
+        </h3>
+        <p className="text-gray-600 mt-2">
+          We need your personal details for verification
+        </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -333,7 +397,9 @@ export default function LoansSection({ }: LoansSectionProps) {
             onChange={(e) => handleInputChange("firstName", e.target.value)}
             className={errors.firstName ? "border-red-500" : ""}
           />
-          {errors.firstName && <p className="text-red-500 text-sm mt-1">{errors.firstName}</p>}
+          {errors.firstName && (
+            <p className="text-red-500 text-sm mt-1">{errors.firstName}</p>
+          )}
         </div>
 
         <div>
@@ -345,7 +411,9 @@ export default function LoansSection({ }: LoansSectionProps) {
             onChange={(e) => handleInputChange("lastName", e.target.value)}
             className={errors.lastName ? "border-red-500" : ""}
           />
-          {errors.lastName && <p className="text-red-500 text-sm mt-1">{errors.lastName}</p>}
+          {errors.lastName && (
+            <p className="text-red-500 text-sm mt-1">{errors.lastName}</p>
+          )}
         </div>
 
         <div>
@@ -358,7 +426,9 @@ export default function LoansSection({ }: LoansSectionProps) {
             onChange={(e) => handleInputChange("email", e.target.value)}
             className={errors.email ? "border-red-500" : ""}
           />
-          {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
+          {errors.email && (
+            <p className="text-red-500 text-sm mt-1">{errors.email}</p>
+          )}
         </div>
 
         <div>
@@ -370,7 +440,9 @@ export default function LoansSection({ }: LoansSectionProps) {
             onChange={(e) => handleInputChange("phone", e.target.value)}
             className={errors.phone ? "border-red-500" : ""}
           />
-          {errors.phone && <p className="text-red-500 text-sm mt-1">{errors.phone}</p>}
+          {errors.phone && (
+            <p className="text-red-500 text-sm mt-1">{errors.phone}</p>
+          )}
         </div>
 
         <div className="md:col-span-2">
@@ -382,7 +454,9 @@ export default function LoansSection({ }: LoansSectionProps) {
             onChange={(e) => handleInputChange("address", e.target.value)}
             className={errors.address ? "border-red-500" : ""}
           />
-          {errors.address && <p className="text-red-500 text-sm mt-1">{errors.address}</p>}
+          {errors.address && (
+            <p className="text-red-500 text-sm mt-1">{errors.address}</p>
+          )}
         </div>
 
         <div>
@@ -394,12 +468,17 @@ export default function LoansSection({ }: LoansSectionProps) {
             onChange={(e) => handleInputChange("city", e.target.value)}
             className={errors.city ? "border-red-500" : ""}
           />
-          {errors.city && <p className="text-red-500 text-sm mt-1">{errors.city}</p>}
+          {errors.city && (
+            <p className="text-red-500 text-sm mt-1">{errors.city}</p>
+          )}
         </div>
 
         <div>
           <Label htmlFor="country">Country *</Label>
-          <Select value={formData.country} onValueChange={(value) => handleInputChange("country", value)}>
+          <Select
+            value={formData.country}
+            onValueChange={(value) => handleInputChange("country", value)}
+          >
             <SelectTrigger className={errors.country ? "border-red-500" : ""}>
               <SelectValue placeholder="Select country" />
             </SelectTrigger>
@@ -411,7 +490,9 @@ export default function LoansSection({ }: LoansSectionProps) {
               ))}
             </SelectContent>
           </Select>
-          {errors.country && <p className="text-red-500 text-sm mt-1">{errors.country}</p>}
+          {errors.country && (
+            <p className="text-red-500 text-sm mt-1">{errors.country}</p>
+          )}
         </div>
 
         <div>
@@ -433,18 +514,24 @@ export default function LoansSection({ }: LoansSectionProps) {
             onChange={(e) => handleInputChange("dateOfBirth", e.target.value)}
             className={errors.dateOfBirth ? "border-red-500" : ""}
           />
-          {errors.dateOfBirth && <p className="text-red-500 text-sm mt-1">{errors.dateOfBirth}</p>}
+          {errors.dateOfBirth && (
+            <p className="text-red-500 text-sm mt-1">{errors.dateOfBirth}</p>
+          )}
         </div>
       </div>
     </div>
-  )
+  );
 
   const renderStep4 = () => (
     <div className="space-y-6">
       <div className="text-center mb-8">
         <FileText className="h-12 w-12 text-[#F26623] mx-auto mb-4" />
-        <h3 className="text-xl font-semibold text-gray-900">Financial Information</h3>
-        <p className="text-gray-600 mt-2">Final details to complete your application</p>
+        <h3 className="text-xl font-semibold text-gray-900">
+          Financial Information
+        </h3>
+        <p className="text-gray-600 mt-2">
+          Final details to complete your application
+        </p>
       </div>
 
       <div className="space-y-4">
@@ -457,7 +544,9 @@ export default function LoansSection({ }: LoansSectionProps) {
             onChange={(e) => handleInputChange("ssn", e.target.value)}
             className={errors.ssn ? "border-red-500" : ""}
           />
-          {errors.ssn && <p className="text-red-500 text-sm mt-1">{errors.ssn}</p>}
+          {errors.ssn && (
+            <p className="text-red-500 text-sm mt-1">{errors.ssn}</p>
+          )}
         </div>
 
         <div>
@@ -499,36 +588,41 @@ export default function LoansSection({ }: LoansSectionProps) {
             id="additionalInfo"
             placeholder="Any additional information that might help with your application..."
             value={formData.additionalInfo}
-            onChange={(e) => handleInputChange("additionalInfo", e.target.value)}
+            onChange={(e) =>
+              handleInputChange("additionalInfo", e.target.value)
+            }
             rows={3}
           />
         </div>
       </div>
     </div>
-  )
+  );
 
   const renderStepContent = () => {
     switch (currentStep) {
       case 1:
-        return renderStep1()
+        return renderStep1();
       case 2:
-        return renderStep2()
+        return renderStep2();
       case 3:
-        return renderStep3()
+        return renderStep3();
       case 4:
-        return renderStep4()
+        return renderStep4();
       default:
-        return renderStep1()
+        return renderStep1();
     }
-  }
+  };
 
   return (
     <div className="flex-1 p-4 sm:p-6 lg:p-8 bg-gray-50 overflow-auto pt-xs-16">
       <div className="max-w-4xl mx-auto">
         <div className="mb-6 sm:mb-8">
-          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 leading-tight">Loan Application</h1>
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 leading-tight">
+            Loan Application
+          </h1>
           <p className="text-sm sm:text-base text-gray-600 mt-1">
-            Apply for a loan with Digital Chain Bank - Fast, secure, and reliable
+            Apply for a loan with Digital Chain Bank - Fast, secure, and
+            reliable
           </p>
         </div>
 
@@ -538,14 +632,23 @@ export default function LoansSection({ }: LoansSectionProps) {
             {Array.from({ length: totalSteps }, (_, i) => i + 1).map((step) => (
               <div key={step} className="flex items-center">
                 <div
-                  className={`w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs sm:text-sm font-medium ${step <= currentStep ? "bg-[#F26623] text-white" : "bg-gray-200 text-gray-600"
-                    }`}
+                  className={`w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs sm:text-sm font-medium ${
+                    step <= currentStep
+                      ? "bg-[#F26623] text-white"
+                      : "bg-gray-200 text-gray-600"
+                  }`}
                 >
-                  {step < currentStep ? <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4" /> : step}
+                  {step < currentStep ? (
+                    <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4" />
+                  ) : (
+                    step
+                  )}
                 </div>
                 {step < totalSteps && (
                   <div
-                    className={`w-8 sm:w-16 h-1 mx-1 sm:mx-2 ${step < currentStep ? "bg-[#F26623]" : "bg-gray-200"}`}
+                    className={`w-8 sm:w-16 h-1 mx-1 sm:mx-2 ${
+                      step < currentStep ? "bg-[#F26623]" : "bg-gray-200"
+                    }`}
                   />
                 )}
               </div>
@@ -582,7 +685,10 @@ export default function LoansSection({ }: LoansSectionProps) {
               </Button>
 
               {currentStep < totalSteps ? (
-                <Button onClick={handleNext} className="bg-[#F26623] hover:bg-[#E55A1F] text-white order-1 sm:order-2">
+                <Button
+                  onClick={handleNext}
+                  className="bg-[#F26623] hover:bg-[#E55A1F] text-white order-1 sm:order-2"
+                >
                   Next Step
                 </Button>
               ) : (
@@ -603,9 +709,12 @@ export default function LoansSection({ }: LoansSectionProps) {
           <Card>
             <CardContent className="p-4 sm:p-6 text-center">
               <CheckCircle className="h-10 w-10 sm:h-12 sm:w-12 text-[#F26623] mx-auto mb-3 sm:mb-4" />
-              <h3 className="font-semibold text-gray-900 mb-2">Quick Approval</h3>
+              <h3 className="font-semibold text-gray-900 mb-2">
+                Quick Approval
+              </h3>
               <p className="text-sm text-gray-600">
-                Get approved in as little as 24 hours with our streamlined process
+                Get approved in as little as 24 hours with our streamlined
+                process
               </p>
             </CardContent>
           </Card>
@@ -613,22 +722,33 @@ export default function LoansSection({ }: LoansSectionProps) {
           <Card>
             <CardContent className="p-4 sm:p-6 text-center">
               <CreditCard className="h-10 w-10 sm:h-12 sm:w-12 text-[#F26623] mx-auto mb-3 sm:mb-4" />
-              <h3 className="font-semibold text-gray-900 mb-2">Competitive Rates</h3>
-              <p className="text-sm text-gray-600">Enjoy competitive interest rates starting from 3.99% APR</p>
+              <h3 className="font-semibold text-gray-900 mb-2">
+                Competitive Rates
+              </h3>
+              <p className="text-sm text-gray-600">
+                Enjoy competitive interest rates starting from 3.99% APR
+              </p>
             </CardContent>
           </Card>
 
           <Card>
             <CardContent className="p-4 sm:p-6 text-center">
               <Info className="h-10 w-10 sm:h-12 sm:w-12 text-[#F26623] mx-auto mb-3 sm:mb-4" />
-              <h3 className="font-semibold text-gray-900 mb-2">No Hidden Fees</h3>
-              <p className="text-sm text-gray-600">Transparent pricing with no hidden fees or prepayment penalties</p>
+              <h3 className="font-semibold text-gray-900 mb-2">
+                No Hidden Fees
+              </h3>
+              <p className="text-sm text-gray-600">
+                Transparent pricing with no hidden fees or prepayment penalties
+              </p>
             </CardContent>
           </Card>
         </div>
 
         {/* Country Restriction Dialog */}
-        <Dialog open={showRestrictionDialog} onOpenChange={setShowRestrictionDialog}>
+        <Dialog
+          open={showRestrictionDialog}
+          onOpenChange={setShowRestrictionDialog}
+        >
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <div className="flex items-center justify-center w-12 h-12 mx-auto mb-4 bg-red-100 rounded-full">
@@ -638,21 +758,23 @@ export default function LoansSection({ }: LoansSectionProps) {
                 Application Not Available
               </DialogTitle>
               <DialogDescription className="text-center text-gray-600 mt-4">
-                We appreciate your interest in Digital Chain Bank's loan services. Unfortunately, our loan products are
-                currently available exclusively to citizens and permanent residents of Panama.
+                Thank you for your application. Based on the information
+                provided, we’re unable to proceed, as our lending products are
+                currently available only to citizens or permanent residents of
+                Panama.
                 <br />
                 <br />
-                As part of our regulatory compliance and risk management framework, we are required to limit loan
-                services to Panamanian residents at this time.
+                This restriction is required under our regulatory obligations.
+                If your residency status changes, you’re welcome to reapply. For
+                assistance, please contact our support team.
               </DialogDescription>
             </DialogHeader>
             <div className="mt-6">
               <Alert className="border-amber-200 bg-amber-50">
                 <Info className="h-4 w-4 text-amber-600" />
                 <AlertDescription className="text-amber-800">
-                  Our lending services comply with Panamanian banking regulations and are currently restricted to local
-                  residents. We appreciate your understanding and encourage you to explore our other banking services
-                  available to international clients.
+                  Ineligible due to residency. We can’t proceed with this loan
+                  application.
                 </AlertDescription>
               </Alert>
             </div>
@@ -668,5 +790,5 @@ export default function LoansSection({ }: LoansSectionProps) {
         </Dialog>
       </div>
     </div>
-  )
+  );
 }

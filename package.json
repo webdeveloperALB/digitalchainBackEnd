@@ -37,11 +37,12 @@
     "@radix-ui/react-toggle": "1.1.1",
     "@radix-ui/react-toggle-group": "1.1.1",
     "@radix-ui/react-tooltip": "1.1.6",
-    "@supabase/supabase-js": "latest",
+    "@supabase/supabase-js": "^2.56.0",
     "autoprefixer": "^10.4.20",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "1.0.4",
+    "csv-parse": "^6.1.0",
     "date-fns": "4.1.0",
     "embla-carousel-react": "8.5.1",
     "input-otp": "1.4.1",
@@ -67,5 +68,22 @@
     "postcss": "^8.5",
     "tailwindcss": "^3.4.17",
     "typescript": "^5"
-  }
+  },
+  "description": "��#\u0000 \u0000d\u0000i\u0000g\u0000i\u0000t\u0000a\u0000l\u0000c\u0000h\u0000a\u0000i\u0000n\u0000B\u0000a\u0000c\u0000k\u0000E\u0000n\u0000d\u0000\r\u0000 \u0000\r\u0000 \u0000\r\u0000 \u0000T\u0000o\u0000 \u0000U\u0000s\u0000e\u0000 \u0000t\u0000h\u0000e\u0000 \u0000D\u0000e\u0000b\u0000u\u0000g\u0000 \u0000H\u0000e\u0000l\u0000p\u0000e\u0000r\u0000:\u0000\r\u0000 \u0000\r\u0000 \u0000A\u0000d\u0000d\u0000 \u0000i\u0000t\u0000 \u0000t\u0000o\u0000 \u0000a\u0000 \u0000t\u0000e\u0000s\u0000t\u0000 \u0000p\u0000a\u0000g\u0000e\u0000 \u0000o\u0000r\u0000 \u0000c\u0000o\u0000m\u0000p\u0000o\u0000n\u0000e\u0000n\u0000t\u0000:\u0000\r\u0000 \u0000\r\u0000 \u0000i\u0000m\u0000p\u0000o\u0000r\u0000t\u0000 \u0000S\u0000u\u0000p\u0000a\u0000b\u0000a\u0000s\u0000e\u0000D\u0000e\u0000b\u0000u\u0000g\u0000H\u0000e\u0000l\u0000p\u0000e\u0000r\u0000 \u0000f\u0000r\u0000o\u0000m\u0000 \u0000'\u0000.\u0000/\u0000c\u0000o\u0000m\u0000p\u0000o\u0000n\u0000e\u0000n\u0000t\u0000s\u0000/\u0000d\u0000e\u0000b\u0000u\u0000g\u0000/\u0000S\u0000u\u0000p\u0000a\u0000b\u0000a\u0000s\u0000e\u0000D\u0000e\u0000b\u0000u\u0000g\u0000H\u0000e\u0000l\u0000p\u0000e\u0000r\u0000'\u0000;\u0000\r\u0000 \u0000\r\u0000 \u0000/\u0000/\u0000 \u0000I\u0000n\u0000 \u0000c\u0000o\u0000m\u0000p\u0000o\u0000n\u0000e\u0000n\u0000t\u0000\r\u0000 \u0000<\u0000S\u0000u\u0000p\u0000a\u0000b\u0000a\u0000s\u0000e\u0000D\u0000e\u0000b\u0000u\u0000g\u0000H\u0000e\u0000l\u0000p\u0000e\u0000r\u0000 \u0000/\u0000>\u0000\r\u0000 \u0000\r\u0000 \u0000R\u0000u\u0000n\u0000 \u0000t\u0000h\u0000e\u0000 \u0000d\u0000i\u0000a\u0000g\u0000n\u0000o\u0000s\u0000t\u0000i\u0000c\u0000s\u0000 \u0000t\u0000o\u0000 \u0000s\u0000e\u0000e\u0000 \u0000e\u0000x\u0000a\u0000c\u0000t\u0000l\u0000y\u0000 \u0000w\u0000h\u0000a\u0000t\u0000'\u0000s\u0000 \u0000f\u0000a\u0000i\u0000l\u0000i\u0000n\u0000g\u0000\r\u0000 \u0000\r\u0000 \u0000\r\u0000 \u0000\r\u0000 \u0000\r\u0000 \u0000D\u0000R\u0000O\u0000P\u0000 \u0000T\u0000R\u0000I\u0000G\u0000G\u0000E\u0000R\u0000 \u0000I\u0000F\u0000 \u0000E\u0000X\u0000I\u0000S\u0000T\u0000S\u0000 \u0000o\u0000n\u0000_\u0000a\u0000u\u0000t\u0000h\u0000_\u0000u\u0000s\u0000e\u0000r\u0000_\u0000c\u0000r\u0000e\u0000a\u0000t\u0000e\u0000d\u0000_\u0000a\u0000c\u0000c\u0000o\u0000u\u0000n\u0000t\u0000\r\u0000 \u0000 \u0000 \u0000O\u0000N\u0000 \u0000a\u0000u\u0000t\u0000h\u0000.\u0000u\u0000s\u0000e\u0000r\u0000s\u0000;\u0000\r\u0000 \u0000\r\u0000 \u0000\r\u0000 \u0000",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/webdeveloperALB/digitalchainBackEnd.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/webdeveloperALB/digitalchainBackEnd/issues"
+  },
+  "homepage": "https://github.com/webdeveloperALB/digitalchainBackEnd#readme"
 }

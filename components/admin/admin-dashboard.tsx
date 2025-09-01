@@ -92,6 +92,7 @@ export default function EnhancedAdminDashboard({
   });
   const [systemStats, setSystemStats] = useState({
     totalUsers: 0,
+    totalProfiles: 0,
     totalDeposits: 0,
     pendingDeposits: 0,
     totalVolume: 0,
@@ -341,6 +342,28 @@ export default function EnhancedAdminDashboard({
         {
           event: "*",
           schema: "public",
+          table: "users",
+        },
+        () => {
+          fetchSystemStats();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "users",
+        },
+        () => {
+          fetchSystemStats();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
           table: "deposits",
         },
         () => {
@@ -366,15 +389,167 @@ export default function EnhancedAdminDashboard({
 
   const fetchSystemStats = async () => {
     try {
-      // Get total users
-      const { count: userCount } = await supabase
+      console.log("Fetching system stats...");
+
+      // Method 1: Try to get total users count from users table with RLS bypass
+      console.log("Attempting Method 1: Count query with exact count...");
+      const { count: userCountExact, error: userErrorExact } = await supabase
+        .from("users")
+        .select("*", { count: "exact", head: true });
+
+      console.log("Method 1 result:", { userCountExact, userErrorExact });
+
+      // Method 2: Try estimated count (faster, bypasses some RLS issues)
+      console.log("Attempting Method 2: Estimated count...");
+      const { count: userCountEstimated, error: userErrorEstimated } =
+        await supabase
+          .from("users")
+          .select("*", { count: "estimated", head: true });
+
+      console.log("Method 2 result:", {
+        userCountEstimated,
+        userErrorEstimated,
+      });
+
+      // Method 3: Try planned count
+      console.log("Attempting Method 3: Planned count...");
+      const { count: userCountPlanned, error: userErrorPlanned } =
+        await supabase
+          .from("users")
+          .select("*", { count: "planned", head: true });
+
+      console.log("Method 3 result:", { userCountPlanned, userErrorPlanned });
+
+      // Method 4: Try to get actual users by fetching with limit to test RLS
+      console.log("Attempting Method 4: Fetch with high limit...");
+      const {
+        data: usersLimited,
+        error: usersLimitedError,
+        count: usersLimitedCount,
+      } = await supabase
+        .from("users")
+        .select("id", { count: "exact" })
+        .limit(5000); // High limit to test if we can get more
+
+      console.log("Method 4 result:", {
+        count: usersLimited?.length,
+        actualCount: usersLimitedCount,
+        error: usersLimitedError,
+      });
+
+      // Method 5: Try to get all users by fetching all (might be slow but accurate)
+      console.log("Attempting Method 5: Fetch all users...");
+      const { data: allUsers, error: allUsersError } = await supabase
+        .from("users")
+        .select("id");
+
+      console.log("Method 5 result:", {
+        count: allUsers?.length,
+        error: allUsersError,
+      });
+
+      // Method 6: Try using a function call if available (bypasses RLS)
+      console.log("Attempting Method 6: RPC function call...");
+      try {
+        const { data: rpcCount, error: rpcError } = await supabase.rpc(
+          "get_user_count"
+        ); // This would need to be created as a database function
+        console.log("Method 6 result:", { rpcCount, rpcError });
+      } catch (rpcErr) {
+        console.log(
+          "Method 6 not available (RPC function doesn't exist):",
+          rpcErr
+        );
+      }
+
+      // Get profiles count for comparison
+      const { count: profileCount, error: profileError } = await supabase
         .from("profiles")
         .select("*", { count: "exact", head: true });
 
+      console.log("Profile count result:", { profileCount, profileError });
+
+      // Determine final user count using the best available method
+      let finalUserCount = 0;
+      let countMethod = "unknown";
+
+      // Priority order: exact count > estimated > planned > fetched data > limited fetch
+      if (userCountExact !== null && !userErrorExact) {
+        finalUserCount = userCountExact;
+        countMethod = "exact count query";
+        console.log("Using exact count query result:", finalUserCount);
+      } else if (userCountEstimated !== null && !userErrorEstimated) {
+        finalUserCount = userCountEstimated;
+        countMethod = "estimated count query";
+        console.log("Using estimated count query result:", finalUserCount);
+      } else if (userCountPlanned !== null && !userErrorPlanned) {
+        finalUserCount = userCountPlanned;
+        countMethod = "planned count query";
+        console.log("Using planned count query result:", finalUserCount);
+      } else if (allUsers && !allUsersError) {
+        finalUserCount = allUsers.length;
+        countMethod = "full data fetch";
+        console.log("Using full data fetch result:", finalUserCount);
+      } else if (usersLimited && !usersLimitedError) {
+        finalUserCount = usersLimited.length;
+        countMethod = "limited fetch (may be incomplete)";
+        console.log("Using limited fetch result:", finalUserCount);
+        if (usersLimited.length === 5000) {
+          console.warn(
+            "WARNING: Hit limit of 5000, actual count may be higher!"
+          );
+          countMethod += " - INCOMPLETE (5000+ users)";
+        }
+      } else {
+        console.error("All user count methods failed:", {
+          userErrorExact,
+          userErrorEstimated,
+          userErrorPlanned,
+          allUsersError,
+          usersLimitedError,
+        });
+
+        // Try one more fallback - get from user_balances or any other user-related table
+        console.log("Attempting final fallback: user_balances count...");
+        const { count: balanceCount } = await supabase
+          .from("user_balances")
+          .select("*", { count: "exact", head: true });
+
+        if (balanceCount !== null) {
+          finalUserCount = balanceCount;
+          countMethod = "user_balances fallback";
+          console.log("Using balance count as fallback:", finalUserCount);
+        }
+      }
+
+      // Check if we might have RLS issues
+      if (finalUserCount < 4000 && finalUserCount > 0) {
+        console.warn(`
+          ⚠️  USER COUNT WARNING ⚠️
+          Expected 4000+ users but got ${finalUserCount}
+          This might indicate:
+          1. Row Level Security (RLS) is limiting results
+          2. Admin user doesn't have proper permissions
+          3. Database connection issues
+          
+          Method used: ${countMethod}
+          
+          To fix this, you may need to:
+          - Disable RLS on users table for admin queries
+          - Create a database function that bypasses RLS
+          - Grant proper permissions to admin user
+        `);
+      }
+
       // Get deposit stats
-      const { data: deposits } = await supabase
+      const { data: deposits, error: depositsError } = await supabase
         .from("deposits")
         .select("amount, status");
+
+      console.log("Deposits result:", {
+        count: deposits?.length,
+        error: depositsError,
+      });
 
       const totalDeposits = deposits?.length || 0;
       const pendingDeposits =
@@ -382,14 +557,26 @@ export default function EnhancedAdminDashboard({
       const totalVolume =
         deposits?.reduce((sum, d) => sum + (d.amount || 0), 0) || 0;
 
-      setSystemStats({
-        totalUsers: userCount || 0,
+      const newStats = {
+        totalUsers: finalUserCount,
+        totalProfiles: profileCount || 0,
         totalDeposits,
         pendingDeposits,
         totalVolume,
-      });
+      };
+
+      console.log("Final system stats:", newStats);
+      console.log("Count method used:", countMethod);
+      setSystemStats(newStats);
     } catch (error) {
       console.error("Error fetching system stats:", error);
+
+      // Set fallback values
+      setSystemStats((prev) => ({
+        ...prev,
+        totalUsers: 0,
+        totalProfiles: 0,
+      }));
     }
   };
 
@@ -545,7 +732,7 @@ export default function EnhancedAdminDashboard({
                     {systemStats.totalUsers}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Registered accounts
+                    {systemStats.totalProfiles} with profiles
                   </p>
                 </CardContent>
               </Card>
@@ -598,6 +785,78 @@ export default function EnhancedAdminDashboard({
                 </CardContent>
               </Card>
             </div>
+
+            {/* Debug Information Card */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <Database className="w-5 h-5 mr-2" />
+                  Database Query Debug Information
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="p-3 bg-blue-50 rounded-lg">
+                    <h4 className="font-medium text-blue-900">Total Users</h4>
+                    <p className="text-2xl font-bold text-blue-600">
+                      {systemStats.totalUsers}
+                    </p>
+                    <p className="text-xs text-blue-700">From users table</p>
+                  </div>
+                  <div className="p-3 bg-green-50 rounded-lg">
+                    <h4 className="font-medium text-green-900">
+                      Total Profiles
+                    </h4>
+                    <p className="text-2xl font-bold text-green-600">
+                      {systemStats.totalProfiles}
+                    </p>
+                    <p className="text-xs text-green-700">
+                      From profiles table
+                    </p>
+                  </div>
+                  <div className="p-3 bg-purple-50 rounded-lg">
+                    <h4 className="font-medium text-purple-900">Deposits</h4>
+                    <p className="text-2xl font-bold text-purple-600">
+                      {systemStats.totalDeposits}
+                    </p>
+                    <p className="text-xs text-purple-700">
+                      Total deposit records
+                    </p>
+                  </div>
+                </div>
+
+                {systemStats.totalUsers < 4000 &&
+                  systemStats.totalUsers > 0 && (
+                    <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                      <h4 className="font-medium text-yellow-800 mb-2">
+                        ⚠️ Potential Issue Detected
+                      </h4>
+                      <p className="text-sm text-yellow-700 mb-2">
+                        Expected 4000+ users but showing{" "}
+                        {systemStats.totalUsers}. This might indicate:
+                      </p>
+                      <ul className="text-xs text-yellow-600 space-y-1 ml-4">
+                        <li>
+                          • Row Level Security (RLS) is limiting query results
+                        </li>
+                        <li>• Admin user lacks proper database permissions</li>
+                        <li>• Database connection or query issues</li>
+                      </ul>
+                      <p className="text-xs text-yellow-600 mt-2">
+                        Check browser console for detailed query logs.
+                      </p>
+                    </div>
+                  )}
+
+                <div className="text-xs text-gray-500 mt-4">
+                  <p>Last updated: {new Date().toLocaleTimeString()}</p>
+                  <p>
+                    Note: Multiple query methods attempted to ensure accurate
+                    count. Check console for detailed logs.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
 
             {/* Your Current Session Info */}
             <Card>

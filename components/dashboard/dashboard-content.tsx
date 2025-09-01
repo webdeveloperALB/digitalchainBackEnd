@@ -119,6 +119,13 @@ interface WelcomeMessage {
   is_welcome: boolean;
 }
 
+interface UserData {
+  first_name: string | null;
+  last_name: string | null;
+  full_name: string | null;
+  email: string | null;
+}
+
 // Real cryptocurrency configurations - memoized
 const cryptoConfigs = {
   BTC: {
@@ -283,6 +290,8 @@ function DashboardContent({
     ETH: 0,
     USDT: 0,
   });
+  // Add state for user data from users table
+  const [userData, setUserData] = useState<UserData | null>(null);
 
   // Memoized functions for better performance
   const formatCurrency = useCallback((amount: number, currency: string) => {
@@ -627,6 +636,57 @@ function DashboardContent({
     [setActiveTab]
   );
 
+  // Fetch user data from users table
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser();
+
+        if (authError || !user) {
+          console.log("No authenticated user found:", authError);
+          return;
+        }
+
+        console.log("Fetching user data for user:", user.id);
+
+        const { data, error } = await supabase
+          .from("users")
+          .select("first_name, last_name, full_name, email")
+          .eq("id", user.id)
+          .single();
+
+        if (error) {
+          console.error("Error fetching user data:", error);
+          // Fallback to auth user email
+          setUserData({
+            first_name: null,
+            last_name: null,
+            full_name: null,
+            email: user.email || null,
+          });
+          return;
+        }
+
+        console.log("User data fetched:", data);
+        setUserData(data);
+      } catch (error) {
+        console.error("Error in fetchUserData:", error);
+        // Set fallback data
+        setUserData({
+          first_name: null,
+          last_name: null,
+          full_name: null,
+          email: null,
+        });
+      }
+    };
+
+    fetchUserData();
+  }, []);
+
   // Fetch crypto balances from the correct table (newcrypto_balances)
   useEffect(() => {
     const fetchCryptoBalances = async () => {
@@ -869,13 +929,23 @@ function DashboardContent({
 
         if (shouldShowWelcome) {
           setIsNewUser(true);
+
+          // Get the display name for welcome message
+          const displayNameForWelcome = userData
+            ? userData.first_name && userData.last_name
+              ? `${userData.first_name} ${userData.last_name}`.trim()
+              : userData.full_name ||
+                userData.email?.split("@")[0] ||
+                "Valued Customer"
+            : userProfile.full_name ||
+              userProfile.email?.split("@")[0] ||
+              "Valued Customer";
+
           // Create welcome message in database
           const welcomeData = {
             client_id: userProfile.client_id,
             title: "Welcome to Digital Chain Bank! 🎉",
-            content: `Dear ${
-              userProfile.full_name || "Valued Customer"
-            }, welcome to Digital Chain Bank - your trusted partner in digital banking excellence. We're thrilled to have you join our growing family of satisfied customers. Your account is now active and ready for secure, fast, and reliable financial transactions. Explore our comprehensive banking services including multi-currency transfers, cryptocurrency management, and 24/7 customer support. Thank you for choosing Digital Chain Bank for your financial journey.`,
+            content: `Dear ${displayNameForWelcome}, welcome to Digital Chain Bank - your trusted partner in digital banking excellence. We're thrilled to have you join our growing family of satisfied customers. Your account is now active and ready for secure, fast, and reliable financial transactions. Explore our comprehensive banking services including multi-currency transfers, cryptocurrency management, and 24/7 customer support. Thank you for choosing Digital Chain Bank for your financial journey.`,
             message_type: "welcome",
             is_read: false,
             created_at: new Date().toISOString(),
@@ -902,9 +972,7 @@ function DashboardContent({
             const localWelcomeMessage = {
               id: "welcome-local",
               title: "Welcome to Digital Chain Bank! 🎉",
-              content: `Dear ${
-                userProfile.full_name || "Valued Customer"
-              }, welcome to Digital Chain Bank - your trusted partner in digital banking excellence. We're thrilled to have you join our growing family of satisfied customers.`,
+              content: `Dear ${displayNameForWelcome}, welcome to Digital Chain Bank - your trusted partner in digital banking excellence. We're thrilled to have you join our growing family of satisfied customers.`,
               message_type: "welcome",
               is_read: false,
               created_at: new Date().toISOString(),
@@ -923,7 +991,7 @@ function DashboardContent({
     };
 
     checkNewUserAndCreateWelcome();
-  }, [userProfile, hasCheckedWelcome]);
+  }, [userProfile, hasCheckedWelcome, userData]);
 
   // Handle regular messages
   useEffect(() => {
@@ -1241,11 +1309,33 @@ function DashboardContent({
     checkForNewAdminMessages();
   }, [welcomeMessage, userProfile, latestMessage]);
 
-  // Memoized display name
-  const displayName = useMemo(
-    () => userProfile?.full_name || userProfile?.email || "User",
-    [userProfile?.full_name, userProfile?.email]
-  );
+  // Memoized display name - now uses userData from users table
+  const displayName = useMemo(() => {
+    if (userData) {
+      // Priority 1: first_name + last_name
+      if (userData.first_name && userData.last_name) {
+        return `${userData.first_name} ${userData.last_name}`.trim();
+      }
+      // Priority 2: full_name
+      if (userData.full_name) {
+        return userData.full_name;
+      }
+      // Priority 3: email username
+      if (userData.email) {
+        return userData.email.split("@")[0];
+      }
+    }
+
+    // Fallback to userProfile data
+    if (userProfile?.full_name) {
+      return userProfile.full_name;
+    }
+    if (userProfile?.email) {
+      return userProfile.email.split("@")[0];
+    }
+
+    return "User";
+  }, [userData, userProfile?.full_name, userProfile?.email]);
 
   // Memoized balance cards
   const traditionalBalanceCards = useMemo(() => {

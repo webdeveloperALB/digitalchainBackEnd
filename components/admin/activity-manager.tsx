@@ -16,7 +16,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/lib/supabase";
 import {
   Activity,
@@ -26,8 +25,6 @@ import {
   Info,
   Loader2,
   Trash2,
-  ArrowDownLeft,
-  ArrowUpRight,
   TrendingUp,
   TrendingDown,
   Bell,
@@ -55,6 +52,8 @@ import {
   CreditCardIcon,
   Smartphone,
   Globe,
+  ArrowDownLeft,
+  ArrowUpRight,
 } from "lucide-react";
 
 interface User {
@@ -62,7 +61,6 @@ interface User {
   client_id: string;
   full_name: string | null;
   email: string | null;
-  created_at: string;
 }
 
 interface ActivityEntry {
@@ -86,44 +84,29 @@ interface ActivityEntry {
   user_name?: string;
 }
 
-interface ActivityTemplate {
-  id: string;
-  name: string;
-  activity_type: string;
-  title: string;
-  description: string;
-  currency: string;
-  display_amount: number;
-  priority: string;
-}
-
 export default function EnhancedActivityManager() {
-  const [users, setUsers] = useState<User[]>([]);
-  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+  // Core state
+  const [searchResults, setSearchResults] = useState<User[]>([]);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [userSearch, setUserSearch] = useState("");
+  const [searching, setSearching] = useState(false);
+
+  // Form state
   const [activityType, setActivityType] = useState<string>("");
   const [activityTitle, setActivityTitle] = useState<string>("");
   const [activityDescription, setActivityDescription] = useState<string>("");
-  const [currency, setCurrency] = useState<string>("usd");
+  const [currency, setCurrency] = useState<string>("USD");
   const [amount, setAmount] = useState<string>("");
   const [priority, setPriority] = useState<string>("normal");
   const [expiresAt, setExpiresAt] = useState<string>("");
-  const [scheduleFor, setScheduleFor] = useState<string>("");
+
+  // UI state
   const [loading, setLoading] = useState(false);
-  const [usersLoading, setUsersLoading] = useState(true);
   const [message, setMessage] = useState<{ type: string; text: string } | null>(
     null
   );
   const [recentActivities, setRecentActivities] = useState<ActivityEntry[]>([]);
   const [activitiesLoading, setActivitiesLoading] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterType, setFilterType] = useState("all");
-  const [filterPriority, setFilterPriority] = useState("all");
-  const [bulkMode, setBulkMode] = useState(false);
-  const [templates, setTemplates] = useState<ActivityTemplate[]>([]);
-  const [selectedTemplate, setSelectedTemplate] = useState<string>("");
-  const [previewMode, setPreviewMode] = useState(false);
-  const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
-  const [userSearchTerm, setUserSearchTerm] = useState("");
 
   const activityTypes = [
     // Banking Operations
@@ -302,12 +285,12 @@ export default function EnhancedActivityManager() {
   ];
 
   const currencies = [
-    { value: "usd", label: "USD ($)", symbol: "$" },
-    { value: "euro", label: "EUR (€)", symbol: "€" },
-    { value: "cad", label: "CAD (C$)", symbol: "C$" },
-    { value: "gbp", label: "GBP (£)", symbol: "£" },
-    { value: "jpy", label: "JPY (¥)", symbol: "¥" },
-    { value: "crypto", label: "Crypto (₿)", symbol: "₿" },
+    { value: "USD", label: "USD ($)", symbol: "$" },
+    { value: "EUR", label: "EUR (€)", symbol: "€" },
+    { value: "CAD", label: "CAD (C$)", symbol: "C$" },
+    { value: "GBP", label: "GBP (£)", symbol: "£" },
+    { value: "JPY", label: "JPY (¥)", symbol: "¥" },
+    { value: "BTC", label: "Bitcoin (₿)", symbol: "₿" },
   ];
 
   const priorities = [
@@ -329,7 +312,72 @@ export default function EnhancedActivityManager() {
     },
   ];
 
-  // Enhanced templates with more professional banking messages
+  // Ultra-fast user search (only when needed)
+  useEffect(() => {
+    if (userSearch.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    const timeoutId = setTimeout(async () => {
+      setSearching(true);
+      try {
+        // Ultra-fast query with minimal data
+        const { data, error } = await supabase
+          .from("users")
+          .select("id, email, full_name")
+          .or(`email.ilike.%${userSearch}%,full_name.ilike.%${userSearch}%`)
+          .limit(8)
+          .order("created_at", { ascending: false });
+
+        if (!error && data) {
+          const transformedUsers = data.map((user: any) => ({
+            id: user.id,
+            client_id: `DCB${user.id.slice(0, 6)}`,
+            full_name: user.full_name || user.email?.split("@")[0] || "Unknown",
+            email: user.email,
+          }));
+          setSearchResults(transformedUsers);
+        } else {
+          setSearchResults([]);
+        }
+      } catch (error) {
+        console.error("Search failed:", error);
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [userSearch]);
+
+  // Load recent activities (lightweight)
+  useEffect(() => {
+    fetchRecentActivities();
+  }, []);
+
+  const fetchRecentActivities = async () => {
+    setActivitiesLoading(true);
+    try {
+      // Simple query without JOINs to avoid RLS issues
+      const { data, error } = await supabase
+        .from("account_activities")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(10);
+
+      if (!error && data) {
+        setRecentActivities(data);
+      }
+    } catch (error) {
+      console.error("Error fetching activities:", error);
+    } finally {
+      setActivitiesLoading(false);
+    }
+  };
+
+  // Enhanced templates with professional banking messages
   const getAdvancedTemplate = (
     type: string,
     amount: string,
@@ -398,315 +446,83 @@ export default function EnhancedActivityManager() {
     );
   };
 
-  useEffect(() => {
-    fetchUsers();
-    fetchRecentActivities();
-    loadTemplates();
-  }, []);
-
-  const fetchUsers = async () => {
-    try {
-      let data = null;
-      const usersResult = await supabase
-        .from("users")
-        .select("id, email, first_name, last_name, full_name, created_at")
-        .order("created_at", { ascending: false });
-
-      if (!usersResult.error && usersResult.data) {
-        data = usersResult.data.map((user) => ({
-          id: user.id,
-          client_id: `DCB${user.id.slice(0, 6)}`,
-          full_name:
-            user.full_name ||
-            `${user.first_name || ""} ${user.last_name || ""}`.trim() ||
-            null,
-          email: user.email,
-          created_at: user.created_at,
-        }));
-      }
-
-      setUsers(data || []);
-    } catch (error) {
-      console.error("Error fetching users:", error);
-      setMessage({
-        type: "error",
-        text: "Failed to load users. Check console for details.",
-      });
-    } finally {
-      setUsersLoading(false);
-    }
-  };
-
-  const fetchRecentActivities = async () => {
-    setActivitiesLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from("account_activities")
-        .select("*")
-        .eq("status", "active")
-        .order("created_at", { ascending: false })
-        .limit(50);
-
-      if (error) throw error;
-
-      const activitiesWithUserInfo = await Promise.all(
-        (data || []).map(async (activity) => {
-          const user = users.find((u) => u.id === activity.user_id);
-          if (user) {
-            return {
-              ...activity,
-              user_email: user.email,
-              user_name: user.full_name,
-            };
-          }
-
-          const { data: userData } = await supabase
-            .from("users")
-            .select("email, first_name, last_name, full_name")
-            .eq("id", activity.user_id)
-            .single();
-
-          return {
-            ...activity,
-            user_email: userData?.email,
-            user_name:
-              userData?.full_name ||
-              `${userData?.first_name || ""} ${
-                userData?.last_name || ""
-              }`.trim(),
-          };
-        })
-      );
-
-      setRecentActivities(activitiesWithUserInfo);
-    } catch (error) {
-      console.error("Error fetching recent activities:", error);
-    } finally {
-      setActivitiesLoading(false);
-    }
-  };
-
-  const loadTemplates = () => {
-    // Load saved templates from localStorage or database
-    const savedTemplates = localStorage.getItem("activity_templates");
-    if (savedTemplates) {
-      setTemplates(JSON.parse(savedTemplates));
-    }
-  };
-
-  // Fixed user selection handler
-  const handleUserSelection = (userId: string, checked: boolean) => {
-    if (bulkMode) {
-      // Bulk mode: allow multiple selections
-      setSelectedUsers((prev) =>
-        checked ? [...prev, userId] : prev.filter((id) => id !== userId)
-      );
-    } else {
-      // Single mode: only one selection at a time
-      setSelectedUsers(checked ? [userId] : []);
-    }
-  };
-
-  const validateActivityType = (type: string) => {
-    const validTypes = [
-      "admin_notification",
-      "system_update",
-      "security_alert",
-      "account_notice",
-      "service_announcement",
-      "maintenance_notice",
-      "policy_update",
-      "feature_announcement",
-      "account_credit",
-      "account_debit",
-      "transfer_notification",
-      "deposit_notification",
-      "withdrawal_notification",
-      "payment_notification",
-      "balance_inquiry",
-      "transaction_alert",
-      "receipt_notification",
-      "wire_transfer",
-      "ach_transfer",
-      "check_deposit",
-      "card_transaction",
-      "mobile_payment",
-      "online_banking",
-      "account_opening",
-      "account_closure",
-      "account_freeze",
-      "account_unfreeze",
-      "limit_change",
-      "fraud_alert",
-      "kyc_update",
-      "compliance_notice",
-      "statement_ready",
-      "promotional_offer",
-      "service_update",
-      "support_response",
-      "appointment_reminder",
-      "document_request",
-    ];
-    return validTypes.includes(type);
-  };
-
-  // Enhanced submit handler with better error handling and loading state management
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Clear any existing messages
-    setMessage(null);
-
-    // Validation
-    if (!selectedUsers.length) {
-      setMessage({ type: "error", text: "Please select at least one user" });
+    if (!selectedUser) {
+      setMessage({ type: "error", text: "Please select a user" });
       return;
     }
 
-    if (!activityType) {
-      setMessage({ type: "error", text: "Please select an activity type" });
-      return;
-    }
-
-    if (!activityTitle.trim()) {
-      setMessage({ type: "error", text: "Please enter an activity title" });
+    if (!activityType || !activityTitle.trim()) {
+      setMessage({ type: "error", text: "Please fill in all required fields" });
       return;
     }
 
     setLoading(true);
+    setMessage(null);
 
     try {
       const {
         data: { user: currentUser },
       } = await supabase.auth.getUser();
 
-      const activities = [];
+      const activityData = {
+        user_id: selectedUser.id,
+        client_id: selectedUser.client_id,
+        activity_type: activityType,
+        title: activityTitle.trim(),
+        description: activityDescription.trim() || null,
+        currency: currency,
+        display_amount: amount ? Number.parseFloat(amount) : 0,
+        priority: priority,
+        status: "active",
+        is_read: false,
+        expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
+        created_by: currentUser?.id || null,
+        metadata: {
+          admin_email: currentUser?.email || "System Admin",
+          created_from: "enhanced_admin_panel",
+          target_user_name: selectedUser.full_name,
+          target_user_email: selectedUser.email,
+          created_at: new Date().toISOString(),
+        },
+      };
 
-      for (const userId of selectedUsers) {
-        const selectedUserData = users.find((u) => u.id === userId);
-        if (!selectedUserData) {
-          console.warn(`User not found: ${userId}`);
-          continue;
-        }
-
-        const activityData = {
-          user_id: userId,
-          client_id: selectedUserData.client_id,
-          activity_type: activityType,
-          title: activityTitle.trim(),
-          description: activityDescription.trim() || null,
-          currency: currency,
-          display_amount: amount ? Number.parseFloat(amount) : 0,
-          priority: priority,
-          status: "active",
-          is_read: false,
-          expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
-          created_by: currentUser?.id || null,
-          metadata: {
-            admin_email: currentUser?.email || "System Admin",
-            created_from: "enhanced_admin_panel",
-            target_user_name: selectedUserData.full_name,
-            target_user_email: selectedUserData.email,
-            is_balance_affecting: false,
-            scheduled_for: scheduleFor
-              ? new Date(scheduleFor).toISOString()
-              : null,
-            bulk_operation: bulkMode,
-            created_at: new Date().toISOString(),
-          },
-        };
-
-        activities.push(activityData);
-      }
-
-      if (activities.length === 0) {
-        throw new Error("No valid activities to create");
-      }
-
-      console.log("Creating activities:", activities);
-
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from("account_activities")
-        .insert(activities)
-        .select();
+        .insert([activityData]);
 
-      if (error) {
-        console.error("Supabase error:", error);
-        throw new Error(`Database error: ${error.message}`);
-      }
-
-      console.log("Successfully created activities:", data);
+      if (error) throw error;
 
       setMessage({
         type: "success",
-        text: `Successfully created ${activities.length} activity ${
-          activities.length === 1 ? "entry" : "entries"
+        text: `Activity created successfully for ${
+          selectedUser.full_name || selectedUser.email
         }`,
       });
 
       // Reset form
-      setSelectedUsers([]);
+      setSelectedUser(null);
+      setUserSearch("");
       setActivityType("");
       setActivityTitle("");
       setActivityDescription("");
       setAmount("");
       setPriority("normal");
       setExpiresAt("");
-      setScheduleFor("");
 
-      // Refresh activities list
-      await fetchRecentActivities();
-    } catch (error) {
+      // Refresh activities
+      fetchRecentActivities();
+    } catch (error: any) {
       console.error("Error creating activity:", error);
-
-      let errorMessage = "An unexpected error occurred";
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      }
-
       setMessage({
         type: "error",
-        text: `Failed to create activity: ${errorMessage}`,
+        text: `Error: ${error.message || "Unknown error occurred"}`,
       });
     } finally {
-      // Always reset loading state
       setLoading(false);
     }
-  };
-
-  const handleTemplateSelect = (templateId: string) => {
-    const template = templates.find((t) => t.id === templateId);
-    if (template) {
-      setActivityType(template.activity_type);
-      setActivityTitle(template.title);
-      setActivityDescription(template.description);
-      setCurrency(template.currency);
-      setAmount(template.display_amount.toString());
-      setPriority(template.priority);
-    }
-  };
-
-  const saveAsTemplate = () => {
-    if (!activityType || !activityTitle) return;
-
-    const newTemplate: ActivityTemplate = {
-      id: Date.now().toString(),
-      name: `${activityTitle} Template`,
-      activity_type: activityType,
-      title: activityTitle,
-      description: activityDescription,
-      currency: currency,
-      display_amount: amount ? Number.parseFloat(amount) : 0,
-      priority: priority,
-    };
-
-    const updatedTemplates = [...templates, newTemplate];
-    setTemplates(updatedTemplates);
-    localStorage.setItem(
-      "activity_templates",
-      JSON.stringify(updatedTemplates)
-    );
-    setMessage({ type: "success", text: "Template saved successfully" });
   };
 
   const handleQuickFill = () => {
@@ -718,15 +534,7 @@ export default function EnhancedActivityManager() {
   };
 
   const handleDeleteActivity = async (activityId: string) => {
-    if (
-      !confirm(
-        "Are you sure you want to delete this activity? This action cannot be undone."
-      )
-    ) {
-      return;
-    }
-
-    setDeleteLoading(activityId);
+    if (!confirm("Are you sure you want to delete this activity?")) return;
 
     try {
       const { error } = await supabase
@@ -734,27 +542,12 @@ export default function EnhancedActivityManager() {
         .delete()
         .eq("id", activityId);
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
-      setMessage({
-        type: "success",
-        text: "Activity deleted successfully",
-      });
-
-      // Refresh the activities list
-      await fetchRecentActivities();
-    } catch (error) {
-      console.error("Error deleting activity:", error);
-      setMessage({
-        type: "error",
-        text: `Failed to delete activity: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-      });
-    } finally {
-      setDeleteLoading(null);
+      setMessage({ type: "success", text: "Activity deleted successfully" });
+      fetchRecentActivities();
+    } catch (error: any) {
+      setMessage({ type: "error", text: `Error: ${error.message}` });
     }
   };
 
@@ -784,18 +577,6 @@ export default function EnhancedActivityManager() {
     );
   };
 
-  const filteredActivities = recentActivities.filter((activity) => {
-    const matchesSearch =
-      activity.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      activity.user_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      activity.user_email?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesType =
-      filterType === "all" || activity.activity_type === filterType;
-    const matchesPriority =
-      filterPriority === "all" || activity.priority === filterPriority;
-    return matchesSearch && matchesType && matchesPriority;
-  });
-
   const groupedActivityTypes = activityTypes.reduce((acc, type) => {
     if (!acc[type.category]) {
       acc[type.category] = [];
@@ -806,62 +587,259 @@ export default function EnhancedActivityManager() {
 
   return (
     <div className="space-y-6">
+      {message && (
+        <Alert
+          className={
+            message.type === "error"
+              ? "border-red-500 bg-red-50"
+              : "border-green-500 bg-green-50"
+          }
+        >
+          <AlertDescription
+            className={
+              message.type === "error" ? "text-red-700" : "text-green-700"
+            }
+          >
+            {message.text}
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Card className="border-2 border-[#F26623]/20">
         <CardHeader className="bg-gradient-to-r from-[#F26623]/5 to-orange-50">
-          <CardTitle className="flex items-center justify-between">
-            <div className="flex items-center">
-              <Activity className="h-6 w-6 mr-3 text-[#F26623]" />
-              Enhanced Activity Manager
-              <Badge
-                variant="outline"
-                className="ml-3 text-xs bg-[#F26623] text-white"
-              >
-                Professional
-              </Badge>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setBulkMode(!bulkMode);
-                  setSelectedUsers([]); // Clear selections when switching modes
-                }}
-              >
-                <Users className="h-4 w-4 mr-1" />
-                {bulkMode ? "Single Mode" : "Bulk Mode"}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPreviewMode(!previewMode)}
-              >
-                {previewMode ? (
-                  <EyeOff className="h-4 w-4" />
-                ) : (
-                  <Eye className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
+          <CardTitle className="flex items-center">
+            <Activity className="h-6 w-6 mr-3 text-[#F26623]" />
+            Enhanced Activity Manager
+            <Badge
+              variant="outline"
+              className="ml-3 text-xs bg-[#F26623] text-white"
+            >
+              Professional
+            </Badge>
           </CardTitle>
         </CardHeader>
         <CardContent className="p-6">
-          <Tabs defaultValue="create" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="create">Create Activity</TabsTrigger>
-              <TabsTrigger value="templates">Templates</TabsTrigger>
-              <TabsTrigger value="analytics">Analytics</TabsTrigger>
-            </TabsList>
-            <TabsContent value="create" className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* Enhanced Create Form */}
-                <div className="space-y-6">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xl font-semibold text-gray-900">
-                      Create Activity Entry
-                    </h3>
-                    <div className="flex space-x-2">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Create Form */}
+            <div className="space-y-6">
+              <h3 className="text-xl font-semibold text-gray-900">
+                Create Activity Entry
+              </h3>
+
+              <form onSubmit={handleSubmit} className="space-y-6">
+                {/* User Selection */}
+                <div className="space-y-3">
+                  <Label className="text-sm font-semibold">Select User *</Label>
+
+                  {selectedUser ? (
+                    <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <CheckCircle2 className="w-5 h-5 text-green-600" />
+                        <div>
+                          <p className="font-medium text-green-800">
+                            {selectedUser.full_name || selectedUser.email}
+                          </p>
+                          <p className="text-sm text-green-600">
+                            {selectedUser.client_id} • {selectedUser.email}
+                          </p>
+                        </div>
+                      </div>
                       <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setSelectedUser(null);
+                          setUserSearch("");
+                        }}
+                      >
+                        <XCircle className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                        <Input
+                          placeholder="Type name or email to search users..."
+                          value={userSearch}
+                          onChange={(e) => setUserSearch(e.target.value)}
+                          className="pl-10"
+                        />
+                        {searching && (
+                          <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 animate-spin text-gray-400" />
+                        )}
+                      </div>
+
+                      {userSearch.length >= 2 && (
+                        <div className="border rounded-lg max-h-48 overflow-y-auto">
+                          {searchResults.length > 0 ? (
+                            searchResults.map((user) => (
+                              <div
+                                key={user.id}
+                                className="p-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
+                                onClick={() => {
+                                  setSelectedUser(user);
+                                  setUserSearch("");
+                                  setSearchResults([]);
+                                }}
+                              >
+                                <div className="flex items-center space-x-2">
+                                  <Users className="h-4 w-4 text-gray-400" />
+                                  <div>
+                                    <p className="font-medium text-sm">
+                                      {user.full_name ||
+                                        user.email?.split("@")[0] ||
+                                        "Unknown User"}
+                                    </p>
+                                    <p className="text-xs text-gray-500">
+                                      {user.client_id} • {user.email}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            ))
+                          ) : !searching ? (
+                            <div className="p-4 text-center text-gray-500 text-sm">
+                              No users found matching "{userSearch}"
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
+
+                      {userSearch.length > 0 && userSearch.length < 2 && (
+                        <p className="text-xs text-gray-500">
+                          Type at least 2 characters to search
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Activity Type */}
+                <div className="space-y-3">
+                  <Label className="text-sm font-semibold">
+                    Activity Type *
+                  </Label>
+                  <Select value={activityType} onValueChange={setActivityType}>
+                    <SelectTrigger className="h-12">
+                      <SelectValue placeholder="Select activity type" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-80">
+                      {Object.entries(groupedActivityTypes).map(
+                        ([category, types]) => (
+                          <div key={category}>
+                            <div className="px-3 py-2 text-xs font-bold text-gray-500 uppercase tracking-wide bg-gray-100">
+                              {category}
+                            </div>
+                            {types.map((type) => (
+                              <SelectItem
+                                key={type.value}
+                                value={type.value}
+                                className="py-3"
+                              >
+                                <div className="flex items-center space-x-3">
+                                  <type.icon className="h-5 w-5 text-[#F26623]" />
+                                  <div>
+                                    <div className="font-medium">
+                                      {type.label}
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                      {type.description}
+                                    </div>
+                                  </div>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </div>
+                        )
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Amount and Currency */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold">Currency</Label>
+                    <Select value={currency} onValueChange={setCurrency}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {currencies.map((curr) => (
+                          <SelectItem key={curr.value} value={curr.value}>
+                            <div className="flex items-center space-x-2">
+                              <span className="font-mono text-lg">
+                                {curr.symbol}
+                              </span>
+                              <span>{curr.label}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold">Amount</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      placeholder="0.00"
+                      className="font-mono text-lg"
+                    />
+                  </div>
+                </div>
+
+                {/* Priority and Expiry */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold">
+                      Priority Level
+                    </Label>
+                    <Select value={priority} onValueChange={setPriority}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {priorities.map((p) => (
+                          <SelectItem key={p.value} value={p.value}>
+                            <div className="flex items-center space-x-2">
+                              <div
+                                className={`w-3 h-3 rounded-full ${
+                                  p.color.split(" ")[0]
+                                }`}
+                              ></div>
+                              <span>{p.label}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold">
+                      Expires At (Optional)
+                    </Label>
+                    <Input
+                      type="datetime-local"
+                      value={expiresAt}
+                      onChange={(e) => setExpiresAt(e.target.value)}
+                      className="text-sm"
+                    />
+                  </div>
+                </div>
+
+                {/* Title and Description */}
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm font-semibold">
+                        Activity Title *
+                      </Label>
+                      <Button
+                        type="button"
                         variant="outline"
                         size="sm"
                         onClick={handleQuickFill}
@@ -870,508 +848,210 @@ export default function EnhancedActivityManager() {
                         <Zap className="h-4 w-4 mr-1" />
                         Auto-fill
                       </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={saveAsTemplate}
-                        disabled={!activityTitle}
-                      >
-                        <Star className="h-4 w-4 mr-1" />
-                        Save Template
-                      </Button>
                     </div>
+                    <Input
+                      value={activityTitle}
+                      onChange={(e) => setActivityTitle(e.target.value)}
+                      placeholder="Enter professional activity title"
+                      className="text-lg font-medium"
+                      required
+                    />
                   </div>
-
-                  {message && (
-                    <Alert
-                      className={
-                        message.type === "error"
-                          ? "border-red-500 bg-red-50"
-                          : "border-green-500 bg-green-50 border-2"
-                      }
-                    >
-                      <AlertDescription
-                        className={
-                          message.type === "error"
-                            ? "text-red-700"
-                            : "text-green-700"
-                        }
-                      >
-                        {message.text}
-                      </AlertDescription>
-                    </Alert>
-                  )}
-
-                  <form onSubmit={handleSubmit} className="space-y-6">
-                    {/* User Selection */}
-                    <div className="space-y-3">
-                      <Label className="text-sm font-semibold">
-                        {bulkMode ? "Select Users *" : "Select User *"}
-                        <Badge variant="outline" className="ml-2 text-xs">
-                          {selectedUsers.length} selected
-                        </Badge>
-                      </Label>
-
-                      {/* Search Input */}
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                        <Input
-                          placeholder="Search users by name or email..."
-                          value={userSearchTerm}
-                          onChange={(e) => setUserSearchTerm(e.target.value)}
-                          className="pl-10"
-                        />
-                      </div>
-
-                      <div className="border rounded-lg p-4 max-h-48 overflow-y-auto bg-gray-50">
-                        {usersLoading ? (
-                          <div className="text-center py-4">
-                            Loading users...
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            {users
-                              .filter((user) => {
-                                if (!userSearchTerm) return true;
-                                const searchLower =
-                                  userSearchTerm.toLowerCase();
-                                const nameMatch = user.full_name
-                                  ?.toLowerCase()
-                                  .includes(searchLower);
-                                const emailMatch = user.email
-                                  ?.toLowerCase()
-                                  .includes(searchLower);
-                                return nameMatch || emailMatch;
-                              })
-                              .map((user) => (
-                                <div
-                                  key={user.id}
-                                  className="flex items-center space-x-3 p-2 hover:bg-white rounded"
-                                >
-                                  <Checkbox
-                                    checked={selectedUsers.includes(user.id)}
-                                    onCheckedChange={(checked) =>
-                                      handleUserSelection(
-                                        user.id,
-                                        checked as boolean
-                                      )
-                                    }
-                                  />
-                                  <Users className="h-4 w-4 text-gray-500" />
-                                  <div className="flex-1">
-                                    <span className="font-medium text-sm">
-                                      {user.full_name || user.email}
-                                    </span>
-                                    <Badge
-                                      variant="outline"
-                                      className="ml-2 text-xs"
-                                    >
-                                      {user.client_id}
-                                    </Badge>
-                                  </div>
-                                </div>
-                              ))}
-                            {users.filter((user) => {
-                              if (!userSearchTerm) return true;
-                              const searchLower = userSearchTerm.toLowerCase();
-                              const nameMatch = user.full_name
-                                ?.toLowerCase()
-                                .includes(searchLower);
-                              const emailMatch = user.email
-                                ?.toLowerCase()
-                                .includes(searchLower);
-                              return nameMatch || emailMatch;
-                            }).length === 0 &&
-                              userSearchTerm && (
-                                <div className="text-center py-4 text-gray-500">
-                                  <Users className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                                  <p className="text-sm">
-                                    No users found matching "{userSearchTerm}"
-                                  </p>
-                                </div>
-                              )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Activity Type */}
-                    <div className="space-y-3">
-                      <Label className="text-sm font-semibold">
-                        Activity Type *
-                      </Label>
-                      <Select
-                        value={activityType}
-                        onValueChange={setActivityType}
-                      >
-                        <SelectTrigger className="h-12">
-                          <SelectValue placeholder="Select activity type" />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-80">
-                          {Object.entries(groupedActivityTypes).map(
-                            ([category, types]) => (
-                              <div key={category}>
-                                <div className="px-3 py-2 text-xs font-bold text-gray-500 uppercase tracking-wide bg-gray-100">
-                                  {category}
-                                </div>
-                                {types.map((type) => (
-                                  <SelectItem
-                                    key={type.value}
-                                    value={type.value}
-                                    className="py-3"
-                                  >
-                                    <div className="flex items-center space-x-3">
-                                      <type.icon className="h-5 w-5 text-[#F26623]" />
-                                      <div>
-                                        <div className="font-medium">
-                                          {type.label}
-                                        </div>
-                                        <div className="text-xs text-gray-500">
-                                          {type.description}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </SelectItem>
-                                ))}
-                              </div>
-                            )
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {/* Amount and Currency */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label className="text-sm font-semibold">
-                          Currency
-                        </Label>
-                        <Select value={currency} onValueChange={setCurrency}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {currencies.map((curr) => (
-                              <SelectItem key={curr.value} value={curr.value}>
-                                <div className="flex items-center space-x-2">
-                                  <span className="font-mono text-lg">
-                                    {curr.symbol}
-                                  </span>
-                                  <span>{curr.label}</span>
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-sm font-semibold">Amount</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={amount}
-                          onChange={(e) => setAmount(e.target.value)}
-                          placeholder="0.00"
-                          className="font-mono text-lg"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Priority and Advanced Options */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label className="text-sm font-semibold">
-                          Priority Level
-                        </Label>
-                        <Select value={priority} onValueChange={setPriority}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {priorities.map((p) => (
-                              <SelectItem key={p.value} value={p.value}>
-                                <div className="flex items-center space-x-2">
-                                  <div
-                                    className={`w-3 h-3 rounded-full ${
-                                      p.color.split(" ")[0]
-                                    }`}
-                                  ></div>
-                                  <span>{p.label}</span>
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-sm font-semibold">
-                          Expires At (Optional)
-                        </Label>
-                        <Input
-                          type="datetime-local"
-                          value={expiresAt}
-                          onChange={(e) => setExpiresAt(e.target.value)}
-                          className="text-sm"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Title and Description */}
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label className="text-sm font-semibold">
-                          Activity Title *
-                        </Label>
-                        <Input
-                          value={activityTitle}
-                          onChange={(e) => setActivityTitle(e.target.value)}
-                          placeholder="Enter professional activity title"
-                          className="text-lg font-medium"
-                          required
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-sm font-semibold">
-                          Description
-                        </Label>
-                        <Textarea
-                          value={activityDescription}
-                          onChange={(e) =>
-                            setActivityDescription(e.target.value)
-                          }
-                          placeholder="Enter detailed activity description"
-                          rows={6}
-                          className="text-sm leading-relaxed"
-                        />
-                      </div>
-                    </div>
-
-                    <Button
-                      type="submit"
-                      disabled={
-                        loading ||
-                        !selectedUsers.length ||
-                        !activityType ||
-                        !activityTitle.trim()
-                      }
-                      className="w-full h-12 bg-[#F26623] hover:bg-[#E55A1F] text-white font-semibold text-lg"
-                    >
-                      {loading ? (
-                        <>
-                          <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                          Creating {bulkMode ? "Activities" : "Activity"}...
-                        </>
-                      ) : (
-                        <>
-                          <Send className="h-5 w-5 mr-2" />
-                          Create{" "}
-                          {bulkMode
-                            ? `${selectedUsers.length} Activities`
-                            : "Activity Entry"}
-                        </>
-                      )}
-                    </Button>
-                  </form>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold">Description</Label>
+                    <Textarea
+                      value={activityDescription}
+                      onChange={(e) => setActivityDescription(e.target.value)}
+                      placeholder="Enter detailed activity description"
+                      rows={6}
+                      className="text-sm leading-relaxed"
+                    />
+                  </div>
                 </div>
 
-                {/* Enhanced Recent Activities */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xl font-semibold text-gray-900">
-                      Recent Activities
-                    </h3>
-                    <div className="flex space-x-2">
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                        <Input
-                          placeholder="Search activities..."
-                          value={searchTerm}
-                          onChange={(e) => setSearchTerm(e.target.value)}
-                          className="pl-10 w-48"
-                        />
+                <Button
+                  type="submit"
+                  disabled={
+                    loading ||
+                    !selectedUser ||
+                    !activityType ||
+                    !activityTitle.trim()
+                  }
+                  className="w-full h-12 bg-[#F26623] hover:bg-[#E55A1F] text-white font-semibold text-lg"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                      Creating Activity...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="h-5 w-5 mr-2" />
+                      Create Activity Entry
+                    </>
+                  )}
+                </Button>
+              </form>
+            </div>
+
+            {/* Recent Activities */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-semibold text-gray-900">
+                  Recent Activities
+                </h3>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={fetchRecentActivities}
+                  disabled={activitiesLoading}
+                >
+                  {activitiesLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Activity className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+
+              <div className="space-y-3 max-h-[600px] overflow-y-auto border rounded-lg bg-gray-50 p-4">
+                {activitiesLoading ? (
+                  <div className="space-y-3">
+                    {[1, 2, 3].map((i) => (
+                      <div
+                        key={i}
+                        className="p-4 border rounded-lg animate-pulse bg-white"
+                      >
+                        <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                        <div className="h-3 bg-gray-200 rounded w-1/2"></div>
                       </div>
-                      <Select value={filterType} onValueChange={setFilterType}>
-                        <SelectTrigger className="w-40">
-                          <SelectValue placeholder="Filter type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All Types</SelectItem>
-                          {activityTypes.map((type) => (
-                            <SelectItem key={type.value} value={type.value}>
-                              {type.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    ))}
                   </div>
-                  <div className="space-y-3 max-h-[600px] overflow-y-auto border rounded-lg bg-gray-50 p-4">
-                    {activitiesLoading ? (
-                      <div className="space-y-3">
-                        {[1, 2, 3].map((i) => (
-                          <div
-                            key={i}
-                            className="p-4 border rounded-lg animate-pulse bg-white"
-                          >
-                            <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-                            <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                ) : recentActivities.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500">
+                    <Activity className="h-16 w-16 mx-auto mb-4 opacity-30" />
+                    <p className="text-lg font-medium">No activities found</p>
+                    <p className="text-sm">
+                      Create your first activity entry to get started
+                    </p>
+                  </div>
+                ) : (
+                  recentActivities.map((activity) => (
+                    <div
+                      key={activity.id}
+                      className={`p-4 border-2 rounded-xl bg-white shadow-sm hover:shadow-md transition-all ${getActivityColor(
+                        activity.activity_type
+                      )}`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-start space-x-3">
+                          <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center shadow-sm">
+                            {getActivityIcon(activity.activity_type)}
                           </div>
-                        ))}
-                      </div>
-                    ) : filteredActivities.length === 0 ? (
-                      <div className="text-center py-12 text-gray-500">
-                        <Activity className="h-16 w-16 mx-auto mb-4 opacity-30" />
-                        <p className="text-lg font-medium">
-                          No activities found
-                        </p>
-                        <p className="text-sm">
-                          Create your first activity entry to get started
-                        </p>
-                      </div>
-                    ) : (
-                      filteredActivities.map((activity) => (
-                        <div
-                          key={activity.id}
-                          className={`p-4 border-2 rounded-xl bg-white shadow-sm hover:shadow-md transition-all ${getActivityColor(
-                            activity.activity_type
-                          )}`}
-                        >
-                          <div className="flex items-start justify-between">
-                            <div className="flex items-start space-x-3">
-                              <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center shadow-sm">
-                                {getActivityIcon(activity.activity_type)}
-                              </div>
-                              <div className="flex-1">
-                                <div className="flex items-center space-x-2 mb-2">
-                                  <span className="font-semibold text-sm">
-                                    {activity.user_name || activity.user_email}
-                                  </span>
-                                  <Badge
-                                    variant="outline"
-                                    className="text-xs font-medium"
-                                  >
-                                    {activity.activity_type
-                                      .replace("_", " ")
-                                      .toUpperCase()}
-                                  </Badge>
-                                  <Badge
-                                    className={
-                                      priorities.find(
-                                        (p) => p.value === activity.priority
-                                      )?.color
-                                    }
-                                  >
-                                    {activity.priority.toUpperCase()}
-                                  </Badge>
-                                </div>
-                                <h4 className="font-bold text-base mb-2 text-gray-900">
-                                  {activity.title}
-                                </h4>
-                                {activity.description && (
-                                  <p className="text-sm text-gray-700 mb-3 leading-relaxed line-clamp-3">
-                                    {activity.description}
-                                  </p>
-                                )}
-                                {activity.display_amount !== 0 && (
-                                  <div className="flex items-center space-x-2 mb-2">
-                                    <Banknote className="h-4 w-4 text-green-600" />
-                                    <span
-                                      className={`font-bold text-lg ${
-                                        activity.display_amount > 0
-                                          ? "text-green-600"
-                                          : "text-red-600"
-                                      }`}
-                                    >
-                                      {activity.display_amount > 0 ? "+" : ""}
-                                      {
-                                        currencies.find(
-                                          (c) => c.value === activity.currency
-                                        )?.symbol
-                                      }
-                                      {Math.abs(
-                                        activity.display_amount
-                                      ).toLocaleString()}
-                                    </span>
-                                  </div>
-                                )}
-                                <div className="flex items-center space-x-4 text-xs text-gray-500">
-                                  <div className="flex items-center space-x-1">
-                                    <Clock className="h-3 w-3" />
-                                    <span>
-                                      {new Date(
-                                        activity.created_at
-                                      ).toLocaleString()}
-                                    </span>
-                                  </div>
-                                  {activity.expires_at && (
-                                    <div className="flex items-center space-x-1">
-                                      <Calendar className="h-3 w-3" />
-                                      <span>
-                                        Expires:{" "}
-                                        {new Date(
-                                          activity.expires_at
-                                        ).toLocaleDateString()}
-                                      </span>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex space-x-2">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="text-blue-600 hover:text-blue-800 hover:bg-blue-100"
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-2 mb-2">
+                              <span className="font-semibold text-sm">
+                                User ID: {activity.user_id.slice(0, 8)}...
+                              </span>
+                              <Badge
+                                variant="outline"
+                                className="text-xs font-medium"
                               >
-                                <Copy className="h-3 w-3" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() =>
-                                  handleDeleteActivity(activity.id)
+                                {activity.activity_type
+                                  .replace("_", " ")
+                                  .toUpperCase()}
+                              </Badge>
+                              <Badge
+                                className={
+                                  priorities.find(
+                                    (p) => p.value === activity.priority
+                                  )?.color
                                 }
-                                disabled={deleteLoading === activity.id}
-                                className="text-red-600 hover:text-red-800 hover:bg-red-100"
                               >
-                                {deleteLoading === activity.id ? (
-                                  <Loader2 className="h-3 w-3 animate-spin" />
-                                ) : (
-                                  <Trash2 className="h-3 w-3" />
-                                )}
-                              </Button>
+                                {activity.priority.toUpperCase()}
+                              </Badge>
+                            </div>
+                            <h4 className="font-bold text-base mb-2 text-gray-900">
+                              {activity.title}
+                            </h4>
+                            {activity.description && (
+                              <p className="text-sm text-gray-700 mb-3 leading-relaxed line-clamp-3">
+                                {activity.description.slice(0, 150)}...
+                              </p>
+                            )}
+                            {activity.display_amount !== 0 && (
+                              <div className="flex items-center space-x-2 mb-2">
+                                <Banknote className="h-4 w-4 text-green-600" />
+                                <span
+                                  className={`font-bold text-lg ${
+                                    activity.display_amount > 0
+                                      ? "text-green-600"
+                                      : "text-red-600"
+                                  }`}
+                                >
+                                  {activity.display_amount > 0 ? "+" : ""}
+                                  {
+                                    currencies.find(
+                                      (c) => c.value === activity.currency
+                                    )?.symbol
+                                  }
+                                  {Math.abs(
+                                    activity.display_amount
+                                  ).toLocaleString()}
+                                </span>
+                              </div>
+                            )}
+                            <div className="flex items-center space-x-4 text-xs text-gray-500">
+                              <div className="flex items-center space-x-1">
+                                <Clock className="h-3 w-3" />
+                                <span>
+                                  {new Date(
+                                    activity.created_at
+                                  ).toLocaleString()}
+                                </span>
+                              </div>
+                              {activity.expires_at && (
+                                <div className="flex items-center space-x-1">
+                                  <Calendar className="h-3 w-3" />
+                                  <span>
+                                    Expires:{" "}
+                                    {new Date(
+                                      activity.expires_at
+                                    ).toLocaleDateString()}
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
-                      ))
-                    )}
-                  </div>
-                </div>
+                        <div className="flex space-x-2">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-blue-600 hover:text-blue-800 hover:bg-blue-100"
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleDeleteActivity(activity.id)}
+                            className="text-red-600 hover:text-red-800 hover:bg-red-100"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
-            </TabsContent>
-            <TabsContent value="templates" className="space-y-4">
-              <div className="text-center py-8 text-gray-500">
-                <FileText className="h-16 w-16 mx-auto mb-4 opacity-30" />
-                <p className="text-lg font-medium">Template Management</p>
-                <p className="text-sm">
-                  Save and reuse activity templates for faster creation
-                </p>
-              </div>
-            </TabsContent>
-            <TabsContent value="analytics" className="space-y-4">
-              <div className="text-center py-8 text-gray-500">
-                <Activity className="h-16 w-16 mx-auto mb-4 opacity-30" />
-                <p className="text-lg font-medium">Activity Analytics</p>
-                <p className="text-sm">
-                  Track activity performance and user engagement
-                </p>
-              </div>
-            </TabsContent>
-          </Tabs>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
-      {/* Enhanced Important Notes */}
+      {/* Guidelines */}
       <Card className="border-l-4 border-l-[#F26623]">
         <CardHeader className="bg-gradient-to-r from-orange-50 to-yellow-50">
           <CardTitle className="flex items-center text-[#F26623]">
@@ -1432,11 +1112,13 @@ export default function EnhancedActivityManager() {
                 </div>
               </div>
               <div className="flex items-start space-x-3">
-                <Users className="h-5 w-5 text-purple-600 mt-0.5 flex-shrink-0" />
+                <Zap className="h-5 w-5 text-purple-600 mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="font-semibold text-sm">Bulk Operations</p>
+                  <p className="font-semibold text-sm">
+                    Ultra-Fast Performance
+                  </p>
                   <p className="text-xs text-gray-600">
-                    Efficient multi-user messaging
+                    Optimized for instant user selection
                   </p>
                 </div>
               </div>

@@ -6,6 +6,7 @@ import React, {
   useCallback,
   useRef,
   useMemo,
+  memo,
 } from "react";
 import { supabase } from "@/lib/supabase";
 import Sidebar from "./sidebar";
@@ -45,7 +46,6 @@ interface ExtendedSectionProps extends BaseSectionProps {
   setActiveTab?: (tab: string) => void;
 }
 
-// Enhanced Database Manager with better connection handling
 class DatabaseManager {
   private static instance: DatabaseManager;
   private healthCheckInterval: NodeJS.Timeout | null = null;
@@ -59,6 +59,8 @@ class DatabaseManager {
   private listeners: ((state: DatabaseState) => void)[] = [];
   private activeOperations: Map<string, Promise<any>> = new Map();
   private operationTimeouts: Map<string, NodeJS.Timeout> = new Map();
+  private abortControllers: Map<string, AbortController> = new Map();
+  private isDestroyed = false;
 
   static getInstance(): DatabaseManager {
     if (!DatabaseManager.instance) {
@@ -73,8 +75,14 @@ class DatabaseManager {
   }
 
   subscribe(callback: (state: DatabaseState) => void): () => void {
+    if (this.isDestroyed) return () => {};
+
     this.listeners.push(callback);
-    callback(this.state);
+    try {
+      callback(this.state);
+    } catch (error) {
+      console.error("Error in initial database state callback:", error);
+    }
 
     return () => {
       this.listeners = this.listeners.filter(
@@ -84,27 +92,38 @@ class DatabaseManager {
   }
 
   private notifyListeners(): void {
-    this.listeners.forEach((listener) => {
-      try {
-        listener(this.state);
-      } catch (error) {
-        console.error("Error in database state listener:", error);
-      }
+    if (this.isDestroyed) return;
+
+    requestAnimationFrame(() => {
+      this.listeners.forEach((listener) => {
+        try {
+          listener(this.state);
+        } catch (error) {
+          console.error("Error in database state listener:", error);
+        }
+      });
     });
   }
 
   private startHealthMonitoring(): void {
-    // More frequent health checks during issues
-    const getCheckInterval = () => (this.state.isHealthy ? 30000 : 5000);
+    if (this.isDestroyed) return;
+
+    const getCheckInterval = () => (this.state.isHealthy ? 15000 : 2000);
 
     const scheduleNextCheck = () => {
+      if (this.isDestroyed) return;
+
       if (this.healthCheckInterval) {
         clearTimeout(this.healthCheckInterval);
       }
       this.healthCheckInterval = setTimeout(() => {
-        this.performHealthCheck().finally(() => {
-          scheduleNextCheck();
-        });
+        if (!this.isDestroyed) {
+          this.performHealthCheck().finally(() => {
+            if (!this.isDestroyed) {
+              scheduleNextCheck();
+            }
+          });
+        }
       }, getCheckInterval());
     };
 
@@ -113,13 +132,16 @@ class DatabaseManager {
   }
 
   private setupConnectionRecovery(): void {
-    // Listen to browser online/offline events
-    window.addEventListener("online", () => {
+    if (this.isDestroyed) return;
+
+    const handleOnline = () => {
+      if (this.isDestroyed) return;
       console.log("Browser back online, checking database connection");
       this.performHealthCheck();
-    });
+    };
 
-    window.addEventListener("offline", () => {
+    const handleOffline = () => {
+      if (this.isDestroyed) return;
       console.log("Browser offline detected");
       this.state = {
         ...this.state,
@@ -127,24 +149,42 @@ class DatabaseManager {
         consecutiveFailures: this.state.consecutiveFailures + 1,
       };
       this.notifyListeners();
-    });
+    };
 
-    // Check for page visibility changes
-    document.addEventListener("visibilitychange", () => {
+    const handleVisibilityChange = () => {
+      if (this.isDestroyed) return;
       if (!document.hidden && this.state.consecutiveFailures > 0) {
         console.log("Page visible again, checking database connection");
-        setTimeout(() => this.performHealthCheck(), 1000);
+        setTimeout(() => {
+          if (!this.isDestroyed) {
+            this.performHealthCheck();
+          }
+        }, 500);
       }
+    };
+
+    window.addEventListener("online", handleOnline, { passive: true });
+    window.addEventListener("offline", handleOffline, { passive: true });
+    document.addEventListener("visibilitychange", handleVisibilityChange, {
+      passive: true,
     });
   }
 
   private async performHealthCheck(): Promise<void> {
+    if (this.isDestroyed) return;
+
     try {
       const startTime = Date.now();
+      const operationKey = `health-check-${startTime}`;
 
-      // Use a simple, fast query with proper timeout
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      this.abortControllers.set(operationKey, controller);
+
+      const timeoutId = setTimeout(() => {
+        if (!this.isDestroyed) {
+          controller.abort();
+        }
+      }, 5000);
 
       const { error } = await supabase
         .from("profiles")
@@ -153,6 +193,7 @@ class DatabaseManager {
         .abortSignal(controller.signal);
 
       clearTimeout(timeoutId);
+      this.abortControllers.delete(operationKey);
 
       const responseTime = Date.now() - startTime;
 
@@ -160,7 +201,7 @@ class DatabaseManager {
         throw error;
       }
 
-      if (responseTime > 8000) {
+      if (responseTime > 5000) {
         throw new Error("Database response timeout");
       }
 
@@ -179,6 +220,8 @@ class DatabaseManager {
 
       this.notifyListeners();
     } catch (error) {
+      if (this.isDestroyed) return;
+
       console.error("Database health check failed:", error);
 
       this.state = {
@@ -191,25 +234,23 @@ class DatabaseManager {
 
       this.notifyListeners();
 
-      // Don't auto-reconnect too aggressively
-      if (this.state.consecutiveFailures <= 5) {
+      if (this.state.consecutiveFailures <= 10) {
         this.scheduleReconnection();
       }
     }
   }
 
   private scheduleReconnection(): void {
-    if (this.state.isReconnecting) return;
+    if (this.isDestroyed || this.state.isReconnecting) return;
 
     this.state = { ...this.state, isReconnecting: true };
     this.notifyListeners();
 
-    // Exponential backoff with jitter
     const baseDelay = Math.min(
-      1000 * Math.pow(2, this.state.consecutiveFailures),
-      30000
+      500 * Math.pow(1.5, this.state.consecutiveFailures),
+      10000
     );
-    const jitter = Math.random() * 1000;
+    const jitter = Math.random() * 500;
     const delay = baseDelay + jitter;
 
     if (this.reconnectionTimeout) {
@@ -217,7 +258,9 @@ class DatabaseManager {
     }
 
     this.reconnectionTimeout = setTimeout(() => {
-      this.performHealthCheck();
+      if (!this.isDestroyed) {
+        this.performHealthCheck();
+      }
     }, delay);
   }
 
@@ -230,45 +273,46 @@ class DatabaseManager {
       skipHealthCheck?: boolean;
     } = {}
   ): Promise<T> {
+    if (this.isDestroyed) {
+      throw new Error("DatabaseManager is destroyed");
+    }
+
     const {
-      maxRetries = 2,
-      timeoutMs = 12000,
+      maxRetries = 3, // Increased retries for better reliability
+      timeoutMs = 8000, // Reduced timeout for faster response
       skipHealthCheck = false,
     } = options;
 
-    // Cancel any existing operation with the same key
-    if (this.activeOperations.has(operationKey)) {
-      console.log(`Cancelling existing operation: ${operationKey}`);
-      this.cancelOperation(operationKey);
-    }
+    this.cancelOperation(operationKey);
 
-    // Wait for healthy connection unless skipped
     if (!skipHealthCheck && !this.state.isHealthy) {
       try {
-        await this.waitForHealthyConnection(3000);
+        await this.waitForHealthyConnection(1000); // Reduced wait time
       } catch (error) {
-        // If we can't get a healthy connection, try anyway but with reduced timeout
-        console.warn("Proceeding with unhealthy connection");
+        console.warn(
+          "Proceeding with unhealthy connection for faster response"
+        );
       }
     }
 
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (this.isDestroyed) {
+        throw new Error("Operation cancelled - DatabaseManager destroyed");
+      }
+
       try {
-        // Create operation promise with timeout
         const operationPromise = this.wrapWithTimeout(
           operation(),
           timeoutMs,
           operationKey
         );
 
-        // Track active operation
         this.activeOperations.set(operationKey, operationPromise);
 
         const result = await operationPromise;
 
-        // Clean up
         this.activeOperations.delete(operationKey);
         this.clearOperationTimeout(operationKey);
 
@@ -276,7 +320,6 @@ class DatabaseManager {
       } catch (error: any) {
         lastError = error;
 
-        // Clean up failed operation
         this.activeOperations.delete(operationKey);
         this.clearOperationTimeout(operationKey);
 
@@ -289,7 +332,6 @@ class DatabaseManager {
           }
         );
 
-        // Mark as unhealthy on certain errors
         if (this.isConnectionError(error) && this.state.isHealthy) {
           this.state = {
             ...this.state,
@@ -300,9 +342,8 @@ class DatabaseManager {
           this.scheduleReconnection();
         }
 
-        // Wait before retry with exponential backoff
         if (attempt < maxRetries) {
-          const delay = Math.min(500 * Math.pow(2, attempt), 3000);
+          const delay = Math.min(200 * Math.pow(1.5, attempt), 1000);
           await this.sleep(delay);
         }
       }
@@ -320,10 +361,17 @@ class DatabaseManager {
     operationKey: string
   ): Promise<T> {
     return new Promise((resolve, reject) => {
+      if (this.isDestroyed) {
+        reject(new Error("Operation cancelled - DatabaseManager destroyed"));
+        return;
+      }
+
       const timeoutId = setTimeout(() => {
-        const error = new Error(`Operation timeout after ${timeoutMs}ms`);
-        error.name = "TimeoutError";
-        reject(error);
+        if (!this.isDestroyed) {
+          const error = new Error(`Operation timeout after ${timeoutMs}ms`);
+          error.name = "TimeoutError";
+          reject(error);
+        }
       }, timeoutMs);
 
       this.operationTimeouts.set(operationKey, timeoutId);
@@ -341,6 +389,12 @@ class DatabaseManager {
   private cancelOperation(operationKey: string): void {
     this.activeOperations.delete(operationKey);
     this.clearOperationTimeout(operationKey);
+
+    const controller = this.abortControllers.get(operationKey);
+    if (controller) {
+      controller.abort();
+      this.abortControllers.delete(operationKey);
+    }
   }
 
   private clearOperationTimeout(operationKey: string): void {
@@ -360,6 +414,7 @@ class DatabaseManager {
       "ECONNREFUSED",
       "ENOTFOUND",
       "ETIMEDOUT",
+      "abort",
     ];
 
     const errorMessage = (error.message || "").toLowerCase();
@@ -367,7 +422,7 @@ class DatabaseManager {
   }
 
   private async waitForHealthyConnection(timeoutMs: number): Promise<void> {
-    if (this.state.isHealthy) return;
+    if (this.state.isHealthy || this.isDestroyed) return;
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -375,7 +430,7 @@ class DatabaseManager {
       }, timeoutMs);
 
       const unsubscribe = this.subscribe((state) => {
-        if (state.isHealthy) {
+        if (state.isHealthy || this.isDestroyed) {
           clearTimeout(timeout);
           unsubscribe();
           resolve();
@@ -393,6 +448,8 @@ class DatabaseManager {
   }
 
   destroy(): void {
+    this.isDestroyed = true;
+
     if (this.healthCheckInterval) {
       clearTimeout(this.healthCheckInterval);
       this.healthCheckInterval = null;
@@ -402,16 +459,17 @@ class DatabaseManager {
       this.reconnectionTimeout = null;
     }
 
-    // Cancel all active operations
     this.activeOperations.clear();
     this.operationTimeouts.forEach((timeout) => clearTimeout(timeout));
     this.operationTimeouts.clear();
+
+    this.abortControllers.forEach((controller) => controller.abort());
+    this.abortControllers.clear();
 
     this.listeners = [];
   }
 }
 
-// Simplified Section Renderer without problematic caching
 class SectionRenderer {
   private sections = {
     dashboard: DashboardContent,
@@ -426,20 +484,22 @@ class SectionRenderer {
     loans: LoansSection,
   };
 
+  private memoizedComponents = new Map<string, React.ComponentType<any>>();
+
   renderSection(
     sectionName: string,
     userProfile: UserProfile,
     additionalProps: any = {}
   ): React.ReactNode {
+    if (!userProfile) {
+      return this.createErrorComponent("User profile not available");
+    }
+
     const SectionComponent =
       this.sections[sectionName as keyof typeof this.sections];
 
     if (!SectionComponent) {
       return this.createErrorComponent(`Section "${sectionName}" not found`);
-    }
-
-    if (!userProfile) {
-      return this.createErrorComponent("User profile not available");
     }
 
     try {
@@ -448,10 +508,17 @@ class SectionRenderer {
         ...additionalProps,
       };
 
-      return React.createElement(
-        SectionComponent as React.ComponentType<any>,
-        props
-      );
+      const componentKey = `${sectionName}-${userProfile.id}`;
+      if (!this.memoizedComponents.has(componentKey)) {
+        this.memoizedComponents.set(
+          componentKey,
+          memo(SectionComponent as React.ComponentType<any>)
+        );
+      }
+
+      const MemoizedComponent = this.memoizedComponents.get(componentKey)!;
+
+      return React.createElement(MemoizedComponent, props);
     } catch (error) {
       console.error(`Error creating section ${sectionName}:`, error);
       return this.createErrorComponent(`Failed to load ${sectionName}`);
@@ -486,23 +553,77 @@ class SectionRenderer {
   }
 }
 
-// Connection Status Indicator
-const ConnectionStatusIndicator = ({ dbState }: { dbState: DatabaseState }) => {
-  if (dbState.isHealthy) return null;
+const ConnectionStatusIndicator = memo(
+  ({ dbState }: { dbState: DatabaseState }) => {
+    if (dbState.isHealthy) return null;
 
-  return (
-    <div className="fixed top-0 left-0 right-0 bg-yellow-50 border-b border-yellow-200 text-yellow-800 px-4 py-2 text-sm text-center z-50">
-      <div className="flex items-center justify-center gap-2">
-        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-600"></div>
-        <span>
-          {dbState.isReconnecting
-            ? "Reconnecting to database..."
-            : `Connection issues detected (${dbState.consecutiveFailures} failures)`}
-        </span>
+    return (
+      <div className="fixed top-0 left-0 right-0 bg-yellow-50 border-b border-yellow-200 text-yellow-800 px-4 py-2 text-sm text-center z-50">
+        <div className="flex items-center justify-center gap-2">
+          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-600"></div>
+          <span>
+            {dbState.isReconnecting
+              ? "Reconnecting to database..."
+              : `Connection issues detected (${dbState.consecutiveFailures} failures)`}
+          </span>
+        </div>
       </div>
-    </div>
-  );
-};
+    );
+  }
+);
+
+ConnectionStatusIndicator.displayName = "ConnectionStatusIndicator";
+
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error?: Error }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error(
+      "Dashboard Error Boundary caught an error:",
+      error,
+      errorInfo
+    );
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="text-center max-w-md mx-auto p-6">
+            <div className="w-16 h-16 bg-red-100 rounded-lg flex items-center justify-center mx-auto mb-4">
+              <div className="w-8 h-8 text-red-500">⚠️</div>
+            </div>
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">
+              Something went wrong
+            </h2>
+            <p className="text-gray-600 mb-4">
+              The dashboard encountered an unexpected error. Please refresh the
+              page.
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="bg-[#F26623] text-white px-6 py-2 rounded-lg hover:bg-[#d55a1f] transition-colors"
+            >
+              Refresh Page
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 // Main Dashboard Component
 export default function Dashboard() {
@@ -521,19 +642,21 @@ export default function Dashboard() {
   const lastActivityRef = useRef(Date.now());
   const activityTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const initializationRef = useRef(false);
+  const mountedRef = useRef(true);
 
-  // Initialize permanent managers
-  const dbManager = useMemo(() => DatabaseManager.getInstance(), []);
+  const dbManager = useMemo(() => {
+    const manager = DatabaseManager.getInstance();
+    return manager;
+  }, []);
+
   const sectionRenderer = useMemo(() => new SectionRenderer(), []);
 
-  // Generate client ID
   const generateClientId = useCallback(() => {
     return Math.floor(Math.random() * 1000000)
       .toString()
       .padStart(6, "0");
   }, []);
 
-  // Create user profile
   const createUserProfile = useCallback(
     async (user: any): Promise<UserProfile> => {
       const profileData = {
@@ -556,10 +679,9 @@ export default function Dashboard() {
           if (error) throw error;
           return data;
         },
-        { maxRetries: 2, timeoutMs: 10000 }
+        { maxRetries: 3, timeoutMs: 8000 } // Increased retries, reduced timeout
       );
 
-      // Create balances in background (non-blocking)
       const balanceOperations = [
         "crypto_balances",
         "euro_balances",
@@ -567,7 +689,7 @@ export default function Dashboard() {
         "usd_balances",
       ];
 
-      balanceOperations.forEach((table) => {
+      const balancePromises = balanceOperations.map((table) =>
         dbManager
           .executeOperation(
             `create-balance-${table}-${user.id}-${Date.now()}`,
@@ -580,21 +702,23 @@ export default function Dashboard() {
                 );
               if (error) throw error;
             },
-            { maxRetries: 1, timeoutMs: 5000 }
+            { maxRetries: 2, timeoutMs: 3000 }
           )
           .catch((error) => {
             console.warn(`Failed to create ${table}:`, error);
-          });
-      });
+            return null;
+          })
+      );
+
+      Promise.allSettled(balancePromises);
 
       return profile;
     },
     [dbManager, generateClientId]
   );
 
-  // Fetch user data
   const fetchUserData = useCallback(async (): Promise<void> => {
-    if (!dbManager) return;
+    if (!dbManager || !mountedRef.current) return;
 
     try {
       setError(null);
@@ -611,8 +735,10 @@ export default function Dashboard() {
           if (!user) throw new Error("No authenticated user found");
           return user;
         },
-        { maxRetries: 2, timeoutMs: 8000 }
+        { maxRetries: 2, timeoutMs: 5000 }
       );
+
+      if (!mountedRef.current) return;
 
       const profile = await dbManager.executeOperation(
         `fetch-profile-${userData.id}-${Date.now()}`,
@@ -629,25 +755,29 @@ export default function Dashboard() {
           if (error) throw error;
           return data;
         },
-        { maxRetries: 2, timeoutMs: 10000 }
+        { maxRetries: 2, timeoutMs: 8000 }
       );
 
-      setUserProfile(profile);
-      console.log("User profile loaded successfully");
+      if (mountedRef.current) {
+        setUserProfile(profile);
+        console.log("User profile loaded successfully");
+      }
     } catch (error: any) {
       console.error("Error fetching user data:", error);
-      setError(error.message || "Failed to load user data");
+      if (mountedRef.current) {
+        setError(error.message || "Failed to load user data");
+      }
     } finally {
-      setLoading(false);
+      if (mountedRef.current) {
+        setLoading(false);
+      }
     }
   }, [dbManager, createUserProfile]);
 
-  // Activity tracking
   const updateActivity = useCallback(() => {
     lastActivityRef.current = Date.now();
   }, []);
 
-  // Auto-logout setup
   const setupActivityTracking = useCallback(() => {
     const IDLE_TIME = 900000; // 15 minutes
     const events = [
@@ -661,25 +791,32 @@ export default function Dashboard() {
 
     let throttleTimeout: NodeJS.Timeout | null = null;
     const throttledActivity = () => {
-      if (throttleTimeout) return;
+      if (throttleTimeout || !mountedRef.current) return;
       throttleTimeout = setTimeout(() => {
-        updateActivity();
+        if (mountedRef.current) {
+          updateActivity();
+        }
         throttleTimeout = null;
-      }, 30000); // Throttle to once per 30 seconds
+      }, 15000); // Reduced throttle time for better responsiveness
     };
 
     events.forEach((event) => {
       document.addEventListener(event, throttledActivity, { passive: true });
     });
 
-    // Check for inactivity every 2 minutes
     activityTimeoutRef.current = setInterval(() => {
+      if (!mountedRef.current) return;
+
       const timeSinceLastActivity = Date.now() - lastActivityRef.current;
       if (timeSinceLastActivity >= IDLE_TIME) {
         console.log("Auto-logout due to inactivity");
-        supabase.auth.signOut().finally(() => router.push("/"));
+        supabase.auth.signOut().finally(() => {
+          if (mountedRef.current) {
+            router.push("/");
+          }
+        });
       }
-    }, 120000);
+    }, 60000); // Reduced check interval
 
     return () => {
       events.forEach((event) => {
@@ -694,9 +831,10 @@ export default function Dashboard() {
     };
   }, [updateActivity, router]);
 
-  // Tab switching
   const handleTabChange = useCallback(
     (newTab: string) => {
+      if (!mountedRef.current) return;
+
       updateActivity();
       setActiveTab(newTab);
       console.log(`Switching to tab: ${newTab}`);
@@ -704,15 +842,15 @@ export default function Dashboard() {
     [updateActivity]
   );
 
-  // Initialize dashboard
   useEffect(() => {
-    if (initializationRef.current) return;
+    if (initializationRef.current || !mountedRef.current) return;
     initializationRef.current = true;
 
     console.log("Initializing dashboard");
 
-    fetchUserData();
-    updateActivity();
+    const initPromises = [fetchUserData(), Promise.resolve(updateActivity())];
+
+    Promise.allSettled(initPromises);
 
     const cleanup = setupActivityTracking();
     const unsubscribe = dbManager.subscribe(setDbState);
@@ -723,16 +861,17 @@ export default function Dashboard() {
     };
   }, [fetchUserData, updateActivity, setupActivityTracking, dbManager]);
 
-  // Cleanup on unmount
   useEffect(() => {
+    mountedRef.current = true;
+
     return () => {
       console.log("Dashboard unmounting");
+      mountedRef.current = false;
     };
   }, []);
 
-  // Loading state
-  if (loading) {
-    return (
+  const LoadingComponent = useMemo(
+    () => (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#F26623] mx-auto"></div>
@@ -743,12 +882,12 @@ export default function Dashboard() {
           </p>
         </div>
       </div>
-    );
-  }
+    ),
+    [dbState.isReconnecting]
+  );
 
-  // Error state
-  if (error && !userProfile) {
-    return (
+  const ErrorComponent = useMemo(
+    () => (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center max-w-md mx-auto p-6">
           <div className="w-16 h-16 bg-red-100 rounded-lg flex items-center justify-center mx-auto mb-4">
@@ -772,45 +911,57 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
-    );
+    ),
+    [error, dbState.isHealthy, fetchUserData]
+  );
+
+  // Loading state
+  if (loading) {
+    return LoadingComponent;
   }
 
-  // Main dashboard
+  // Error state
+  if (error && !userProfile) {
+    return ErrorComponent;
+  }
+
   return (
-    <div className="relative h-screen bg-gray-100">
-      <ConnectionStatusIndicator dbState={dbState} />
+    <ErrorBoundary>
+      <div className="relative h-screen bg-gray-100">
+        <ConnectionStatusIndicator dbState={dbState} />
 
-      <div className="flex h-full">
-        {userProfile && (
-          <div className="md:w-64 md:h-full md:fixed md:left-0 md:top-0 md:z-20">
-            <Sidebar
-              activeTab={activeTab}
-              setActiveTab={handleTabChange}
-              userProfile={userProfile}
-            />
-          </div>
-        )}
-
-        <div
-          className={`flex-1 md:ml-64 overflow-auto ${
-            !dbState.isHealthy ? "pt-12" : ""
-          }`}
-        >
+        <div className="flex h-full">
           {userProfile && (
-            <React.Suspense
-              fallback={
-                <div className="min-h-screen flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F26623]"></div>
-                </div>
-              }
-            >
-              {sectionRenderer.renderSection(activeTab, userProfile, {
-                setActiveTab: handleTabChange,
-              })}
-            </React.Suspense>
+            <div className="md:w-64 md:h-full md:fixed md:left-0 md:top-0 md:z-20">
+              <Sidebar
+                activeTab={activeTab}
+                setActiveTab={handleTabChange}
+                userProfile={userProfile}
+              />
+            </div>
           )}
+
+          <div
+            className={`flex-1 md:ml-64 overflow-auto ${
+              !dbState.isHealthy ? "pt-12" : ""
+            }`}
+          >
+            {userProfile && (
+              <React.Suspense
+                fallback={
+                  <div className="min-h-screen flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F26623]"></div>
+                  </div>
+                }
+              >
+                {sectionRenderer.renderSection(activeTab, userProfile, {
+                  setActiveTab: handleTabChange,
+                })}
+              </React.Suspense>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </ErrorBoundary>
   );
 }

@@ -134,46 +134,28 @@ export default function PaymentsSection({ userProfile }: PaymentsSectionProps) {
 
   const paymentTypes = [
     {
-      id: "taxes",
-      name: "Taxes",
-      icon: Receipt,
-      description: "Pay your outstanding state or national tax obligations",
-    },
-    {
-      id: "invoices",
-      name: "Invoices",
-      icon: FileText,
-      description: "Settle pending bills or service-related invoices",
-    },
-    {
-      id: "penalties",
-      name: "Penalties & Fines",
-      icon: AlertTriangle,
-      description: "Clear any fines or penalties applied to your account",
-    },
-    {
-      id: "government",
-      name: "Government Fees",
+      id: "gov",
+      name: "Taxes & Government",
       icon: Building,
-      description: "Pay administrative or registration-related fees",
+      description: "Taxes, registrations, and other official fees",
     },
     {
-      id: "utilities",
-      name: "Utility Bills",
-      icon: Zap,
-      description: "Electricity, water, internet, and other monthly charges",
+      id: "bills",
+      name: "Bills & Invoices",
+      icon: FileText,
+      description: "Utility charges, service bills, and invoices",
     },
     {
-      id: "recovery",
-      name: "Account Recovery",
-      icon: CreditCard,
-      description: "Pay to unlock or reactivate frozen accounts",
+      id: "fines",
+      name: "Fines & Penalties",
+      icon: AlertTriangle,
+      description: "Clear penalties, fines, or citations",
     },
     {
-      id: "transfer",
-      name: "Transfer Fees",
+      id: "transfers",
+      name: "Transfers & Fees",
       icon: ArrowUpDown,
-      description: "Cover costs related to outgoing or international transfers",
+      description: "Costs related to outgoing or international transfers",
     },
   ];
 

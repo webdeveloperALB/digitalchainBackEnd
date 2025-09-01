@@ -26,6 +26,9 @@ import {
   Edit,
   Plus,
   RefreshCw,
+  Search,
+  CheckCircle2,
+  X,
 } from "lucide-react";
 import {
   Dialog,
@@ -39,10 +42,12 @@ import {
 
 interface User {
   id: string;
-  client_id: string;
+  email: string;
   full_name: string | null;
-  email: string | null;
+  first_name: string | null;
+  last_name: string | null;
   created_at: string;
+  kyc_status: string;
 }
 
 interface Tax {
@@ -69,21 +74,22 @@ interface Tax {
   user_email?: string;
 }
 
-export default function SimplifiedTaxManager() {
-  const [users, setUsers] = useState<User[]>([]);
+export default function TaxManager() {
+  // Core state
+  const [searchResults, setSearchResults] = useState<User[]>([]);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [userSearch, setUserSearch] = useState("");
+  const [searching, setSearching] = useState(false);
   const [taxes, setTaxes] = useState<Tax[]>([]);
-  const [selectedUser, setSelectedUser] = useState<string>("");
   const [loading, setLoading] = useState(false);
-  const [usersLoading, setUsersLoading] = useState(true);
   const [taxesLoading, setTaxesLoading] = useState(false);
   const [message, setMessage] = useState<{ type: string; text: string } | null>(
     null
   );
   const [editingTax, setEditingTax] = useState<Tax | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [userSearchTerm, setUserSearchTerm] = useState<string>("");
 
-  // Simplified form states - only essential fields
+  // Form states
   const [taxType, setTaxType] = useState<string>("");
   const [taxName, setTaxName] = useState<string>("");
   const [taxAmount, setTaxAmount] = useState<string>("");
@@ -91,7 +97,7 @@ export default function SimplifiedTaxManager() {
   const [status, setStatus] = useState<string>("pending");
   const [description, setDescription] = useState<string>("");
 
-  // Simplified tax types - most common ones
+  // Tax types
   const taxTypes = [
     { value: "income", label: "Income Tax" },
     { value: "property", label: "Property Tax" },
@@ -110,32 +116,62 @@ export default function SimplifiedTaxManager() {
   ];
 
   useEffect(() => {
-    fetchUsers();
     setupRealtimeSubscription();
   }, []);
 
+  // Ultra-fast user search
+  useEffect(() => {
+    if (userSearch.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    const timeoutId = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const { data, error } = await supabase
+          .from("users")
+          .select(
+            "id, email, full_name, first_name, last_name, created_at, kyc_status"
+          )
+          .or(`email.ilike.%${userSearch}%,full_name.ilike.%${userSearch}%`)
+          .limit(8)
+          .order("created_at", { ascending: false });
+
+        if (!error && data) {
+          const transformedUsers = data.map((user: any) => ({
+            id: user.id,
+            email: user.email,
+            full_name:
+              user.full_name ||
+              `${user.first_name || ""} ${user.last_name || ""}`.trim() ||
+              user.email?.split("@")[0] ||
+              "Unknown",
+            first_name: user.first_name,
+            last_name: user.last_name,
+            created_at: user.created_at,
+            kyc_status: user.kyc_status,
+          }));
+          setSearchResults(transformedUsers);
+        } else {
+          setSearchResults([]);
+        }
+      } catch (error) {
+        console.error("Search failed:", error);
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [userSearch]);
+
   useEffect(() => {
     if (selectedUser) {
-      fetchTaxesForUser(selectedUser);
+      fetchTaxesForUser(selectedUser.id);
     }
   }, [selectedUser]);
-
-  const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
-
-  useEffect(() => {
-    if (!userSearchTerm.trim()) {
-      setFilteredUsers(users);
-    } else {
-      const filtered = users.filter(
-        (user) =>
-          user.full_name
-            ?.toLowerCase()
-            .includes(userSearchTerm.toLowerCase()) ||
-          user.email?.toLowerCase().includes(userSearchTerm.toLowerCase())
-      );
-      setFilteredUsers(filtered);
-    }
-  }, [users, userSearchTerm]);
 
   const setupRealtimeSubscription = () => {
     const subscription = supabase
@@ -150,7 +186,7 @@ export default function SimplifiedTaxManager() {
         (payload) => {
           console.log("Tax change detected:", payload);
           if (selectedUser) {
-            fetchTaxesForUser(selectedUser);
+            fetchTaxesForUser(selectedUser.id);
           }
         }
       )
@@ -161,45 +197,23 @@ export default function SimplifiedTaxManager() {
     };
   };
 
-  const fetchUsers = async () => {
-    try {
-      const { data: profilesData, error: profilesError } = await supabase
-        .from("profiles")
-        .select("id, client_id, full_name, email, created_at")
-        .order("created_at", { ascending: false });
-
-      if (profilesError) {
-        console.error("Error fetching profiles:", profilesError);
-        return;
-      }
-
-      setUsers(profilesData || []);
-    } catch (error) {
-      console.error("Error fetching users:", error);
-      setMessage({ type: "error", text: "Failed to load users" });
-    } finally {
-      setUsersLoading(false);
-    }
-  };
-
   const fetchTaxesForUser = async (userId: string) => {
     setTaxesLoading(true);
     try {
-      const selectedUserData = users.find((u) => u.id === userId);
-      if (!selectedUserData) return;
+      if (!selectedUser) return;
 
       const { data, error } = await supabase
         .from("taxes")
         .select("*")
-        .or(`user_id.eq.${userId},client_id.eq.${selectedUserData.client_id}`)
+        .eq("user_id", userId)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
 
       const taxesWithUserInfo = (data || []).map((tax) => ({
         ...tax,
-        user_full_name: selectedUserData.full_name,
-        user_email: selectedUserData.email,
+        user_full_name: selectedUser?.full_name,
+        user_email: selectedUser?.email,
       }));
 
       setTaxes(taxesWithUserInfo);
@@ -232,26 +246,22 @@ export default function SimplifiedTaxManager() {
     setMessage(null);
 
     try {
-      const selectedUserData = users.find((u) => u.id === selectedUser);
-      if (!selectedUserData) {
-        throw new Error("Selected user not found");
-      }
-
       const {
         data: { user: currentUser },
       } = await supabase.auth.getUser();
 
-      // Simplified tax data with auto-calculated fields
       const taxAmountNum = Number.parseFloat(taxAmount);
+      const clientId = `DCB${selectedUser.id.slice(0, 6)}`;
+
       const taxData = {
-        user_id: selectedUser,
-        client_id: selectedUserData.client_id,
+        user_id: selectedUser.id,
+        client_id: clientId,
         tax_type: taxType,
         tax_name: taxName,
-        tax_rate: 0, // Default to 0, can be calculated later if needed
+        tax_rate: 0.0, // Default rate, can be calculated later
         tax_amount: taxAmountNum,
-        taxable_income: taxAmountNum, // Simplified: assume tax amount equals taxable income
-        tax_period: "yearly", // Default to yearly
+        taxable_income: taxAmountNum,
+        tax_period: "yearly",
         due_date: dueDate || null,
         status: status,
         description: description || null,
@@ -259,6 +269,7 @@ export default function SimplifiedTaxManager() {
         is_active: true,
         is_estimated: false,
         created_by: currentUser?.email || "admin",
+        payment_reference: null,
       };
 
       let result;
@@ -276,14 +287,14 @@ export default function SimplifiedTaxManager() {
       setMessage({
         type: "success",
         text: `Tax ${editingTax ? "updated" : "created"} successfully for ${
-          selectedUserData.full_name || selectedUserData.email
+          selectedUser.full_name || selectedUser.email
         }`,
       });
 
       resetForm();
       setIsDialogOpen(false);
-      fetchTaxesForUser(selectedUser);
-    } catch (error) {
+      fetchTaxesForUser(selectedUser.id);
+    } catch (error: any) {
       console.error("Error saving tax:", error);
       setMessage({ type: "error", text: "Failed to save tax record" });
     } finally {
@@ -310,8 +321,10 @@ export default function SimplifiedTaxManager() {
       if (error) throw error;
 
       setMessage({ type: "success", text: "Tax record deleted successfully" });
-      fetchTaxesForUser(selectedUser);
-    } catch (error) {
+      if (selectedUser) {
+        fetchTaxesForUser(selectedUser.id);
+      }
+    } catch (error: any) {
       console.error("Error deleting tax:", error);
       setMessage({ type: "error", text: "Failed to delete tax record" });
     }
@@ -329,8 +342,10 @@ export default function SimplifiedTaxManager() {
         type: "success",
         text: `Tax status updated to ${newStatus}`,
       });
-      fetchTaxesForUser(selectedUser);
-    } catch (error) {
+      if (selectedUser) {
+        fetchTaxesForUser(selectedUser.id);
+      }
+    } catch (error: any) {
       console.error("Error updating tax status:", error);
       setMessage({ type: "error", text: "Failed to update tax status" });
     }
@@ -365,7 +380,7 @@ export default function SimplifiedTaxManager() {
           <CardTitle className="flex items-center justify-between">
             <div className="flex items-center">
               <Calculator className="h-5 w-5 mr-2" />
-              Simple Tax Manager
+              Tax Manager - Fast User Search
             </div>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
@@ -516,51 +531,97 @@ export default function SimplifiedTaxManager() {
           )}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* User Selection */}
+            {/* Fast User Search and Selection */}
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Select Client</h3>
-              <div className="space-y-2">
-                <Label htmlFor="user-search">Search Clients</Label>
-                <Input
-                  id="user-search"
-                  type="text"
-                  placeholder="Search by name or email..."
-                  value={userSearchTerm}
-                  onChange={(e) => setUserSearchTerm(e.target.value)}
-                  className="w-full"
-                />
-              </div>
-              <div>
-                <Label htmlFor="user-select">Choose Client *</Label>
-                <Select value={selectedUser} onValueChange={setSelectedUser}>
-                  <SelectTrigger>
-                    <SelectValue
-                      placeholder={
-                        usersLoading ? "Loading..." : "Choose a client"
-                      }
+              <h3 className="text-lg font-semibold">Search & Select Client</h3>
+
+              {selectedUser ? (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <CheckCircle2 className="w-5 h-5 text-green-600" />
+                    <div>
+                      <p className="font-medium text-green-800">
+                        {selectedUser.full_name || selectedUser.email}
+                      </p>
+                      <p className="text-sm text-green-600">
+                        DCB{selectedUser.id.slice(0, 6)} • {selectedUser.email}
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setSelectedUser(null);
+                      setUserSearch("");
+                      setTaxes([]);
+                    }}
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <Input
+                      placeholder="Type name or email to search clients..."
+                      value={userSearch}
+                      onChange={(e) => setUserSearch(e.target.value)}
+                      className="pl-10"
                     />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {filteredUsers.length === 0 && userSearchTerm ? (
-                      <div className="p-2 text-sm text-gray-500">
-                        No clients found
-                      </div>
-                    ) : (
-                      filteredUsers.map((user) => (
-                        <SelectItem key={user.id} value={user.id}>
-                          <div className="flex items-center space-x-2">
-                            <Users className="h-4 w-4" />
-                            <span>{user.full_name || user.email}</span>
-                          </div>
-                        </SelectItem>
-                      ))
+                    {searching && (
+                      <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 animate-spin text-gray-400" />
                     )}
-                  </SelectContent>
-                </Select>
-              </div>
+                  </div>
+
+                  {userSearch.length >= 2 && (
+                    <div className="border rounded-lg max-h-48 overflow-y-auto">
+                      {searchResults.length > 0 ? (
+                        searchResults.map((user) => (
+                          <div
+                            key={user.id}
+                            className="p-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
+                            onClick={() => {
+                              setSelectedUser(user);
+                              setUserSearch("");
+                              setSearchResults([]);
+                            }}
+                          >
+                            <div className="flex items-center space-x-2">
+                              <Users className="h-4 w-4 text-gray-400" />
+                              <div>
+                                <p className="font-medium text-sm">
+                                  {user.full_name ||
+                                    user.email?.split("@")[0] ||
+                                    "Unknown User"}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  DCB{user.id.slice(0, 6)} • {user.email}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      ) : !searching ? (
+                        <div className="p-4 text-center text-gray-500 text-sm">
+                          No clients found matching "{userSearch}"
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+
+                  {userSearch.length > 0 && userSearch.length < 2 && (
+                    <p className="text-xs text-gray-500">
+                      Type at least 2 characters to search
+                    </p>
+                  )}
+                </div>
+              )}
+
               {selectedUser && (
                 <Button
-                  onClick={() => fetchTaxesForUser(selectedUser)}
+                  onClick={() => fetchTaxesForUser(selectedUser.id)}
                   variant="outline"
                   className="w-full"
                 >
@@ -584,7 +645,10 @@ export default function SimplifiedTaxManager() {
               {!selectedUser ? (
                 <div className="text-center py-8 text-gray-500">
                   <Calculator className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>Select a client to view tax records</p>
+                  <p>Search and select a client to view tax records</p>
+                  <p className="text-xs mt-2">
+                    Type 2+ characters to search all clients
+                  </p>
                 </div>
               ) : taxesLoading ? (
                 <div className="space-y-3">
