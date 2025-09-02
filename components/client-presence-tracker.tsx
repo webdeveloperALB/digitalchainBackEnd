@@ -42,17 +42,46 @@ export function usePresenceTracker({
         setUserIP(ip);
         console.log("User IP:", ip);
 
-        // 🌍 Fetch location
-        const locRes = await fetch(`https://ipapi.co/${ip}/json/`);
-        const loc = await locRes.json();
-
-        const locationInfo = {
+        // 🌍 Fetch location - only if successful
+        let locationInfo: any = {
           ip_address: ip,
-          country: loc.country_name || "Unknown",
-          country_code: loc.country_code || "",
-          city: loc.city || "Unknown",
-          region: loc.region || "",
         };
+
+        try {
+          const locRes = await fetch(`https://ipapi.co/${ip}/json/`, {
+            method: "GET",
+            headers: {
+              Accept: "application/json",
+            },
+            // Add timeout
+            signal: AbortSignal.timeout(5000),
+          });
+
+          if (locRes.ok) {
+            const loc = await locRes.json();
+
+            // Only add location data if we got valid, real data
+            if (loc && !loc.error && loc.country_name && loc.city) {
+              locationInfo = {
+                ...locationInfo,
+                country: loc.country_name,
+                country_code: loc.country_code,
+                city: loc.city,
+                region: loc.region,
+              };
+              console.log("Real location data fetched:", locationInfo);
+            } else {
+              console.log("Location API returned invalid data, using IP only");
+            }
+          } else {
+            console.log("Location API request failed, using IP only");
+          }
+        } catch (locationError) {
+          console.warn(
+            "Could not fetch location data, using IP only:",
+            locationError
+          );
+        }
 
         setLocationData(locationInfo);
         setLocationFetched(true);

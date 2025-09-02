@@ -1,10 +1,8 @@
-"use client";
-import type React from "react";
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Eye, EyeOff, AlertCircle, Mail } from "lucide-react";
+import { Eye, EyeOff, AlertCircle, Mail, Building2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -15,7 +13,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import Image from "next/image";
 
 // Extend Window interface to include presenceCleanup
 declare global {
@@ -49,28 +46,9 @@ export default function AuthForm() {
     setSuccess(null);
   }, [isSignUp]);
 
-  // Add this useEffect after the existing ones
-  useEffect(() => {
-    // Check if user is already authenticated and redirect appropriately
-    const checkAuthState = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (session?.user) {
-        // User is authenticated, let the auth wrapper handle the redirect
-        console.log(
-          "User already authenticated, auth wrapper will handle redirect"
-        );
-      }
-    };
-
-    checkAuthState();
-  }, []);
-
   // Function to update user online status
   const updateUserOnlineStatus = async (userId: string, isOnline: boolean) => {
     try {
-      // First check if user_presence table exists and create record
       const { data: existingRecord, error: selectError } = await supabase
         .from("user_presence")
         .select("*")
@@ -89,7 +67,6 @@ export default function AuthForm() {
       };
 
       if (existingRecord) {
-        // Update existing record
         const { error: updateError } = await supabase
           .from("user_presence")
           .update(presenceData)
@@ -105,7 +82,6 @@ export default function AuthForm() {
           );
         }
       } else {
-        // Insert new record
         const { error: insertError } = await supabase
           .from("user_presence")
           .insert({
@@ -131,36 +107,20 @@ export default function AuthForm() {
 
   // Function to set up presence tracking when user signs in
   const setupPresenceTracking = (userId: string) => {
-    // Clean up any existing presence tracking first
     if (window.presenceCleanup) {
       window.presenceCleanup();
     }
 
-    // Update status to online immediately
     updateUserOnlineStatus(userId, true);
 
-    // Set up periodic heartbeat to maintain online status
     const heartbeatInterval = setInterval(() => {
       updateUserOnlineStatus(userId, true);
-    }, 30000); // Update every 30 seconds
+    }, 30000);
 
-    // Set up beforeunload event to mark user as offline when they leave
     const handleBeforeUnload = () => {
-      // Use sendBeacon for more reliable offline status update
-      const data = JSON.stringify({
-        user_id: userId,
-        is_online: false,
-        last_seen: new Date().toISOString(),
-      });
-
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon("/api/update-presence", data);
-      } else {
-        updateUserOnlineStatus(userId, false);
-      }
+      updateUserOnlineStatus(userId, false);
     };
 
-    // Set up visibility change to handle tab switching
     const handleVisibilityChange = () => {
       if (document.hidden) {
         updateUserOnlineStatus(userId, false);
@@ -169,17 +129,14 @@ export default function AuthForm() {
       }
     };
 
-    // Set up page focus/blur handlers
     const handleFocus = () => updateUserOnlineStatus(userId, true);
     const handleBlur = () => updateUserOnlineStatus(userId, false);
 
-    // Add all event listeners
     window.addEventListener("beforeunload", handleBeforeUnload);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("focus", handleFocus);
     window.addEventListener("blur", handleBlur);
 
-    // Store cleanup function
     window.presenceCleanup = () => {
       console.log("Cleaning up presence tracking for user:", userId);
       clearInterval(heartbeatInterval);
@@ -188,8 +145,6 @@ export default function AuthForm() {
       window.removeEventListener("focus", handleFocus);
       window.removeEventListener("blur", handleBlur);
       updateUserOnlineStatus(userId, false);
-
-      // Clear the cleanup function
       window.presenceCleanup = undefined;
     };
 
@@ -235,7 +190,6 @@ export default function AuthForm() {
     try {
       console.log("Starting signup process...");
 
-      // First, create the auth user
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
@@ -257,27 +211,24 @@ export default function AuthForm() {
 
       console.log("Auth user created:", authData.user?.id);
 
-      // Then, manually insert the user data into your users table
       if (authData.user) {
         console.log("Inserting user into users table...");
 
         const { error: dbError } = await supabase.from("users").insert({
           id: authData.user.id,
           email: formData.email,
-          password: formData.password, // Note: Consider hashing this
+          password: formData.password,
           first_name: formData.firstName,
           last_name: formData.lastName,
           full_name:
             formData.fullName || `${formData.firstName} ${formData.lastName}`,
-          age: Number.parseInt(formData.age),
-          kyc_status: "not_started", // Set initial KYC status
+          age: parseInt(formData.age),
+          kyc_status: "not_started",
           created_at: new Date().toISOString(),
         });
 
         if (dbError) {
           console.error("Database insert error:", dbError);
-          // Don't throw here - the auth user was created successfully
-          // The KYC check will handle the missing user record
           console.log(
             "User will be prompted for KYC since they're not in users table"
           );
@@ -285,34 +236,11 @@ export default function AuthForm() {
           console.log("User successfully inserted into users table");
         }
 
-        // Also insert into profiles table
-        const { error: profileError } = await supabase.from("profiles").insert({
-          id: authData.user.id,
-          full_name:
-            formData.fullName || `${formData.firstName} ${formData.lastName}`,
-          email: formData.email,
-          age: Number.parseInt(formData.age),
-          password: formData.password,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
-
-        if (profileError) {
-          console.error("Profile insert error:", profileError);
-        } else {
-          console.log("Profile successfully created");
-        }
-
-        // Set up presence tracking for new user
         setupPresenceTracking(authData.user.id);
       }
 
       console.log("Signup response:", authData);
-      setSuccess(
-        "Account created successfully! Check your email for confirmation."
-      );
-
-      // The auth state change will trigger the KYC check automatically
+      setSuccess("Account created successfully! You can now sign in.");
     } catch (error: any) {
       console.error("Signup error details:", error);
       setError(`Signup failed: ${error.message || "Unknown error occurred"}`);
@@ -342,14 +270,11 @@ export default function AuthForm() {
 
       console.log("Signin successful:", data.user?.id);
 
-      // Set up presence tracking for signed in user
       if (data.user) {
         setupPresenceTracking(data.user.id);
       }
 
       setSuccess("Successfully signed in!");
-
-      // The auth state change will handle the redirect based on KYC status
     } catch (error: any) {
       console.error("Signin error details:", error);
       setError(`Sign in failed: ${error.message || "Unknown error occurred"}`);
@@ -364,7 +289,6 @@ export default function AuthForm() {
         <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full h-auto sm:h-[600px] flex flex-col lg:flex-row overflow-visible">
           {/* Left side with ATM image - Hidden on mobile, visible on desktop */}
           <div className="relative w-full lg:w-2/5 h-32 sm:h-48 lg:h-full overflow-visible rounded-t-2xl lg:rounded-l-2xl lg:rounded-tr-none hidden sm:block">
-            {/* only on right edge - desktop only */}
             <div
               className="absolute inset-y-0 right-0 w-4 pointer-events-none hidden lg:block"
               style={{
@@ -373,7 +297,6 @@ export default function AuthForm() {
               }}
             />
             <div className="h-full flex items-center justify-center p-2 sm:p-4 pb-0 overflow-visible">
-              {/* Responsive positioning */}
               <div className="transform -translate-x-4 sm:-translate-x-10 lg:-translate-x-20 translate-y-4 sm:translate-y-8 lg:translate-y-16 overflow-visible">
                 <img
                   src="/atm.png"
@@ -388,13 +311,12 @@ export default function AuthForm() {
             {/* Header */}
             <div className="flex flex-col sm:flex-row items-center justify-between p-4 sm:p-6 bg-white gap-4 sm:gap-0">
               <div className="flex items-center">
-                <Image
-                  src="/logo.svg"
-                  alt="Digital Chain Bank Logo"
-                  width={180}
-                  height={45}
-                  className="w-[180px] h-[45px] sm:w-[200px] sm:h-[50px] object-contain"
-                />
+                <div className="flex items-center space-x-2">
+                  <Building2 className="w-8 h-8 text-[#F26623]" />
+                  <span className="text-xl font-bold text-gray-900">
+                    Digital Chain Bank
+                  </span>
+                </div>
               </div>
               <Button
                 variant="outline"

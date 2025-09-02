@@ -1,5 +1,3 @@
-"use client";
-
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
@@ -26,9 +24,7 @@ import {
   User,
   FileText,
   MapPin,
-  Mail,
   Search,
-  UserCheck,
   SkipForward,
   Loader2,
 } from "lucide-react";
@@ -63,7 +59,6 @@ interface UserInterface {
 }
 
 export default function KYCAdminPanel() {
-  // Minimal state - only what's needed
   const [kycRecords, setKycRecords] = useState<KYCRecord[]>([]);
   const [searchResults, setSearchResults] = useState<UserInterface[]>([]);
   const [loading, setLoading] = useState(false);
@@ -83,7 +78,6 @@ export default function KYCAdminPanel() {
     rejected: 0,
   });
 
-  // Simple stats - calculated from loaded data only
   const [stats, setStats] = useState({
     total: 0,
     pending: 0,
@@ -91,35 +85,29 @@ export default function KYCAdminPanel() {
     rejected: 0,
   });
 
-  // Load only pending KYC records on startup (much faster)
   useEffect(() => {
     fetchTotalCounts();
     fetchKYCRecords();
   }, []);
 
-  // Fetch total counts without loading all data
   const fetchTotalCounts = async () => {
     try {
       console.log("Fetching total counts...");
 
-      // Get total count
       const { count: totalCount, error: totalError } = await supabase
         .from("kyc_verifications")
         .select("*", { count: "exact", head: true });
 
-      // Get pending count
       const { count: pendingCount, error: pendingError } = await supabase
         .from("kyc_verifications")
         .select("*", { count: "exact", head: true })
         .eq("status", "pending");
 
-      // Get approved count
       const { count: approvedCount, error: approvedError } = await supabase
         .from("kyc_verifications")
         .select("*", { count: "exact", head: true })
         .eq("status", "approved");
 
-      // Get rejected count
       const { count: rejectedCount, error: rejectedError } = await supabase
         .from("kyc_verifications")
         .select("*", { count: "exact", head: true })
@@ -144,7 +132,6 @@ export default function KYCAdminPanel() {
     }
   };
 
-  // Search users only when typing (debounced)
   useEffect(() => {
     if (userSearchTerm.length < 2) {
       setSearchResults([]);
@@ -189,7 +176,6 @@ export default function KYCAdminPanel() {
       let kycData = [];
 
       if (searchTerm.length >= 2) {
-        // Search mode - find specific records
         console.log("Searching KYC records...");
         let query = supabase
           .from("kyc_verifications")
@@ -200,7 +186,6 @@ export default function KYCAdminPanel() {
           .order("submitted_at", { ascending: false })
           .limit(20);
 
-        // Filter by status if not "all"
         if (activeTab !== "all") {
           query = query.eq("status", activeTab);
         }
@@ -209,7 +194,6 @@ export default function KYCAdminPanel() {
         if (error) throw error;
         kycData = data || [];
       } else if (activeTab === "pending") {
-        // Show recent pending records by default
         console.log("Loading recent pending records...");
         const { data, error } = await supabase
           .from("kyc_verifications")
@@ -221,13 +205,11 @@ export default function KYCAdminPanel() {
         if (error) throw error;
         kycData = data || [];
       } else {
-        // For other tabs, only load if searching
         kycData = [];
       }
 
       setKycRecords(kycData);
 
-      // Calculate stats from loaded data
       const loadedStats = {
         total: kycData.length,
         pending: kycData.filter((r: any) => r.status === "pending").length,
@@ -245,12 +227,10 @@ export default function KYCAdminPanel() {
     }
   };
 
-  // Refetch when tab changes
   useEffect(() => {
     fetchKYCRecords();
   }, [activeTab]);
 
-  // Refetch when search term changes (debounced)
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       fetchKYCRecords();
@@ -308,7 +288,6 @@ export default function KYCAdminPanel() {
       setUpdating(userId);
       setProcessingError(null);
 
-      // Check if user already has a KYC record
       const { data: existingKyc, error: checkError } = await supabase
         .from("kyc_verifications")
         .select("id")
@@ -329,7 +308,6 @@ export default function KYCAdminPanel() {
         return;
       }
 
-      // Get user details
       const { data: user, error: userFetchError } = await supabase
         .from("users")
         .select("*")
@@ -338,7 +316,6 @@ export default function KYCAdminPanel() {
 
       if (userFetchError) throw new Error("User not found");
 
-      // Create minimal KYC record
       const kycData = {
         user_id: userId,
         full_name: user.full_name || user.email.split("@")[0],
@@ -499,272 +476,6 @@ export default function KYCAdminPanel() {
       record.full_name.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesSearch;
   });
-
-  return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">
-            KYC Administration
-          </h1>
-          <p className="text-gray-600 mt-1">
-            Review and manage KYC verification submissions
-          </p>
-        </div>
-        <Button onClick={fetchKYCRecords} variant="outline" disabled={loading}>
-          {loading ? (
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-          ) : (
-            <RefreshCw className="w-4 h-4 mr-2" />
-          )}
-          Refresh
-        </Button>
-      </div>
-
-      {error && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
-      {processingError && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{processingError}</AlertDescription>
-        </Alert>
-      )}
-
-      {/* Stats Cards - Only show loaded data stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">
-                  Total Records
-                </p>
-                <p className="text-2xl font-bold">{totalStats.total}</p>
-                <p className="text-xs text-gray-500">All KYC submissions</p>
-              </div>
-              <FileText className="w-8 h-8 text-gray-400" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">
-                  Pending Review
-                </p>
-                <p className="text-2xl font-bold text-yellow-600">
-                  {totalStats.pending}
-                </p>
-              </div>
-              <Clock className="w-8 h-8 text-yellow-400" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Approved</p>
-                <p className="text-2xl font-bold text-green-600">
-                  {totalStats.approved}
-                </p>
-              </div>
-              <CheckCircle className="w-8 h-8 text-green-400" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Rejected</p>
-                <p className="text-2xl font-bold text-red-600">
-                  {totalStats.rejected}
-                </p>
-              </div>
-              <XCircle className="w-8 h-8 text-red-400" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Search Bar */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-        <Input
-          placeholder="Search KYC records by name or document number (type 2+ characters)..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-10"
-        />
-      </div>
-
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="pending">
-            Pending ({totalStats.pending})
-          </TabsTrigger>
-          <TabsTrigger value="approved">
-            Approved ({totalStats.approved})
-          </TabsTrigger>
-          <TabsTrigger value="rejected">
-            Rejected ({totalStats.rejected})
-          </TabsTrigger>
-          <TabsTrigger value="all">All ({totalStats.total})</TabsTrigger>
-          <TabsTrigger value="skip-kyc">Skip KYC</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="skip-kyc" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <SkipForward className="w-5 h-5 mr-2" />
-                Skip KYC for Users
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Search Users Without KYC
-                </label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                  <Input
-                    placeholder="Type name or email to find users..."
-                    value={userSearchTerm}
-                    onChange={(e) => setUserSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
-                  {searching && (
-                    <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 animate-spin text-gray-400" />
-                  )}
-                </div>
-              </div>
-
-              {userSearchTerm.length >= 2 && (
-                <div className="border rounded-lg max-h-64 overflow-y-auto">
-                  {searchResults.length > 0 ? (
-                    searchResults.map((user) => (
-                      <div
-                        key={user.id}
-                        className="p-4 border-b last:border-b-0 flex items-center justify-between hover:bg-gray-50"
-                      >
-                        <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
-                            <User className="w-5 h-5 text-white" />
-                          </div>
-                          <div>
-                            <p className="font-medium">
-                              {user.full_name ||
-                                user.email?.split("@")[0] ||
-                                "Unknown"}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              {user.email}
-                            </p>
-                            <Badge variant="outline" className="text-xs mt-1">
-                              {user.kyc_status || "No KYC"}
-                            </Badge>
-                          </div>
-                        </div>
-                        <Button
-                          onClick={() => handleSkipKYC(user)}
-                          variant="outline"
-                          size="sm"
-                          disabled={updating === user.id}
-                        >
-                          {updating === user.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <>
-                              <SkipForward className="w-4 h-4 mr-1" />
-                              Skip KYC
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                    ))
-                  ) : !searching ? (
-                    <div className="p-4 text-center text-gray-500">
-                      No users found matching "{userSearchTerm}"
-                    </div>
-                  ) : null}
-                </div>
-              )}
-
-              {userSearchTerm.length > 0 && userSearchTerm.length < 2 && (
-                <p className="text-xs text-gray-500">
-                  Type at least 2 characters to search
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="pending">{renderKYCRecords()}</TabsContent>
-        <TabsContent value="approved">{renderKYCRecords()}</TabsContent>
-        <TabsContent value="rejected">{renderKYCRecords()}</TabsContent>
-        <TabsContent value="all">{renderKYCRecords()}</TabsContent>
-      </Tabs>
-
-      {/* Skip KYC Dialog */}
-      <Dialog open={showSkipDialog} onOpenChange={setShowSkipDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Skip KYC Verification</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to skip KYC verification for this user? This
-              will mark their KYC status as approved without requiring
-              documents.
-            </DialogDescription>
-          </DialogHeader>
-          {selectedUser && (
-            <div className="py-4">
-              <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-md">
-                <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
-                  <User className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <p className="font-medium">
-                    {selectedUser.full_name ||
-                      selectedUser.email?.split("@")[0] ||
-                      "Unknown"}
-                  </p>
-                  <p className="text-sm text-gray-600">{selectedUser.email}</p>
-                </div>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowSkipDialog(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => selectedUser && skipKYCForUser(selectedUser.id)}
-              disabled={updating === selectedUser?.id}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              {updating === selectedUser?.id ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                "Skip KYC"
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
 
   function renderKYCRecords() {
     if (loading) {
@@ -1056,4 +767,270 @@ export default function KYCAdminPanel() {
       </div>
     );
   }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">
+            KYC Administration
+          </h1>
+          <p className="text-gray-600 mt-1">
+            Review and manage KYC verification submissions
+          </p>
+        </div>
+        <Button onClick={fetchKYCRecords} variant="outline" disabled={loading}>
+          {loading ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <RefreshCw className="w-4 h-4 mr-2" />
+          )}
+          Refresh
+        </Button>
+      </div>
+
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {processingError && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{processingError}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">
+                  Total Records
+                </p>
+                <p className="text-2xl font-bold">{totalStats.total}</p>
+                <p className="text-xs text-gray-500">All KYC submissions</p>
+              </div>
+              <FileText className="w-8 h-8 text-gray-400" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">
+                  Pending Review
+                </p>
+                <p className="text-2xl font-bold text-yellow-600">
+                  {totalStats.pending}
+                </p>
+              </div>
+              <Clock className="w-8 h-8 text-yellow-400" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Approved</p>
+                <p className="text-2xl font-bold text-green-600">
+                  {totalStats.approved}
+                </p>
+              </div>
+              <CheckCircle className="w-8 h-8 text-green-400" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Rejected</p>
+                <p className="text-2xl font-bold text-red-600">
+                  {totalStats.rejected}
+                </p>
+              </div>
+              <XCircle className="w-8 h-8 text-red-400" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Search Bar */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+        <Input
+          placeholder="Search KYC records by name or document number (type 2+ characters)..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="pl-10"
+        />
+      </div>
+
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+          <TabsTrigger value="pending">
+            Pending ({totalStats.pending})
+          </TabsTrigger>
+          <TabsTrigger value="approved">
+            Approved ({totalStats.approved})
+          </TabsTrigger>
+          <TabsTrigger value="rejected">
+            Rejected ({totalStats.rejected})
+          </TabsTrigger>
+          <TabsTrigger value="all">All ({totalStats.total})</TabsTrigger>
+          <TabsTrigger value="skip-kyc">Skip KYC</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="skip-kyc" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <SkipForward className="w-5 h-5 mr-2" />
+                Skip KYC for Users
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  Search Users Without KYC
+                </label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <Input
+                    placeholder="Type name or email to find users..."
+                    value={userSearchTerm}
+                    onChange={(e) => setUserSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                  {searching && (
+                    <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 animate-spin text-gray-400" />
+                  )}
+                </div>
+              </div>
+
+              {userSearchTerm.length >= 2 && (
+                <div className="border rounded-lg max-h-64 overflow-y-auto">
+                  {searchResults.length > 0 ? (
+                    searchResults.map((user) => (
+                      <div
+                        key={user.id}
+                        className="p-4 border-b last:border-b-0 flex items-center justify-between hover:bg-gray-50"
+                      >
+                        <div className="flex items-center space-x-3">
+                          <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
+                            <User className="w-5 h-5 text-white" />
+                          </div>
+                          <div>
+                            <p className="font-medium">
+                              {user.full_name ||
+                                user.email?.split("@")[0] ||
+                                "Unknown"}
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              {user.email}
+                            </p>
+                            <Badge variant="outline" className="text-xs mt-1">
+                              {user.kyc_status || "No KYC"}
+                            </Badge>
+                          </div>
+                        </div>
+                        <Button
+                          onClick={() => handleSkipKYC(user)}
+                          variant="outline"
+                          size="sm"
+                          disabled={updating === user.id}
+                        >
+                          {updating === user.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <>
+                              <SkipForward className="w-4 h-4 mr-1" />
+                              Skip KYC
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    ))
+                  ) : !searching ? (
+                    <div className="p-4 text-center text-gray-500">
+                      No users found matching "{userSearchTerm}"
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
+              {userSearchTerm.length > 0 && userSearchTerm.length < 2 && (
+                <p className="text-xs text-gray-500">
+                  Type at least 2 characters to search
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="pending">{renderKYCRecords()}</TabsContent>
+        <TabsContent value="approved">{renderKYCRecords()}</TabsContent>
+        <TabsContent value="rejected">{renderKYCRecords()}</TabsContent>
+        <TabsContent value="all">{renderKYCRecords()}</TabsContent>
+      </Tabs>
+
+      {/* Skip KYC Dialog */}
+      <Dialog open={showSkipDialog} onOpenChange={setShowSkipDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Skip KYC Verification</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to skip KYC verification for this user? This
+              will mark their KYC status as approved without requiring
+              documents.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedUser && (
+            <div className="py-4">
+              <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-md">
+                <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
+                  <User className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <p className="font-medium">
+                    {selectedUser.full_name ||
+                      selectedUser.email?.split("@")[0] ||
+                      "Unknown"}
+                  </p>
+                  <p className="text-sm text-gray-600">{selectedUser.email}</p>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSkipDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => selectedUser && skipKYCForUser(selectedUser.id)}
+              disabled={updating === selectedUser?.id}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {updating === selectedUser?.id ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                "Skip KYC"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 }
