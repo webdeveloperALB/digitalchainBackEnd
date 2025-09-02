@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,8 +16,6 @@ import {
   Calendar,
   Shield,
   Loader2,
-  ChevronDown,
-  ChevronUp,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
@@ -31,6 +29,10 @@ interface User {
   kyc_status: string;
   client_id: string;
   display_name: string;
+  age: number | null;
+  is_admin: boolean;
+  is_manager: boolean;
+  is_superiormanager: boolean;
 }
 
 interface UserBalance {
@@ -41,300 +43,94 @@ interface UserBalance {
   usd: number;
 }
 
-interface LoadingStats {
-  usersLoaded: number;
-  balancesLoaded: number;
-  totalUsers: number;
-  currentBatch: number;
-  totalBatches: number;
-}
-
-export default function OptimizedUserManagement() {
+export default function UserManagement() {
   const [users, setUsers] = useState<User[]>([]);
   const [userBalances, setUserBalances] = useState<UserBalance[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [message, setMessage] = useState<{ type: string; text: string } | null>(
     null
   );
-  const [loadingStats, setLoadingStats] = useState<LoadingStats>({
-    usersLoaded: 0,
-    balancesLoaded: 0,
-    totalUsers: 0,
-    currentBatch: 0,
-    totalBatches: 0,
-  });
-  const [showAllUsers, setShowAllUsers] = useState(false);
-  const [totalUserCount, setTotalUserCount] = useState(0);
+  const [isSearchMode, setIsSearchMode] = useState(false);
 
-  // Fast parallel balance fetching for a batch of users
-  const fetchBalancesBatch = async (
-    userBatch: User[]
-  ): Promise<UserBalance[]> => {
-    const balancePromises = userBatch.map(async (user, index) => {
-      try {
-        // Add staggered delay to prevent overwhelming the database
-        await new Promise((resolve) => setTimeout(resolve, index * 50));
+  // Fetch balances for a user
+  const fetchUserBalance = async (userId: string): Promise<UserBalance> => {
+    try {
+      const [cryptoResult, euroResult, cadResult, usdResult] = await Promise.allSettled([
+        supabase
+          .from("crypto_balances")
+          .select("balance")
+          .eq("user_id", userId)
+          .maybeSingle(),
+        supabase
+          .from("euro_balances")
+          .select("balance")
+          .eq("user_id", userId)
+          .maybeSingle(),
+        supabase
+          .from("cad_balances")
+          .select("balance")
+          .eq("user_id", userId)
+          .maybeSingle(),
+        supabase
+          .from("usd_balances")
+          .select("balance")
+          .eq("user_id", userId)
+          .maybeSingle(),
+      ]);
 
-        // Parallel queries for all balance types
-        const balanceQueries = [
-          () =>
-            supabase
-              .from("crypto_balances")
-              .select("balance")
-              .eq("user_id", user.id)
-              .maybeSingle(),
-          () =>
-            supabase
-              .from("euro_balances")
-              .select("balance")
-              .eq("user_id", user.id)
-              .maybeSingle(),
-          () =>
-            supabase
-              .from("cad_balances")
-              .select("balance")
-              .eq("user_id", user.id)
-              .maybeSingle(),
-          () =>
-            supabase
-              .from("usd_balances")
-              .select("balance")
-              .eq("user_id", user.id)
-              .maybeSingle(),
-        ];
-
-        // Execute queries with retry logic
-        const results = await Promise.allSettled(
-          balanceQueries.map(async (query, queryIndex) => {
-            let retries = 3;
-            while (retries > 0) {
-              try {
-                await new Promise((resolve) =>
-                  setTimeout(resolve, queryIndex * 25)
-                );
-                return await query();
-              } catch (error: any) {
-                retries--;
-                if (retries === 0) throw error;
-                console.warn(
-                  `Retrying balance query for user ${user.id}, attempts left: ${retries}`
-                );
-                await new Promise((resolve) => setTimeout(resolve, 1000));
-              }
-            }
-          })
-        );
-
-        const [cryptoResult, euroResult, cadResult, usdResult] = results;
-
-        return {
-          user_id: user.id,
-          crypto:
-            cryptoResult.status === "fulfilled"
-              ? Number(cryptoResult.value?.data?.balance || 0)
-              : 0,
-          euro:
-            euroResult.status === "fulfilled"
-              ? Number(euroResult.value?.data?.balance || 0)
-              : 0,
-          cad:
-            cadResult.status === "fulfilled"
-              ? Number(cadResult.value?.data?.balance || 0)
-              : 0,
-          usd:
-            usdResult.status === "fulfilled"
-              ? Number(usdResult.value?.data?.balance || 0)
-              : 0,
-        };
-      } catch (error) {
-        console.error(`Balance fetch failed for user ${user.id}:`, error);
-        return {
-          user_id: user.id,
-          crypto: 0,
-          euro: 0,
-          cad: 0,
-          usd: 0,
-        };
-      }
-    });
-
-    return Promise.all(balancePromises);
+      return {
+        user_id: userId,
+        crypto:
+          cryptoResult.status === "fulfilled"
+            ? Number(cryptoResult.value?.data?.balance || 0)
+            : 0,
+        euro:
+          euroResult.status === "fulfilled"
+            ? Number(euroResult.value?.data?.balance || 0)
+            : 0,
+        cad:
+          cadResult.status === "fulfilled"
+            ? Number(cadResult.value?.data?.balance || 0)
+            : 0,
+        usd:
+          usdResult.status === "fulfilled"
+            ? Number(usdResult.value?.data?.balance || 0)
+            : 0,
+      };
+    } catch (error) {
+      console.error(`Balance fetch failed for user ${userId}:`, error);
+      return {
+        user_id: userId,
+        crypto: 0,
+        euro: 0,
+        cad: 0,
+        usd: 0,
+      };
+    }
   };
 
-  // Optimized user fetching with streaming updates
-  const fetchAllUsersOptimized = useCallback(async () => {
+  // Load 20 newest users
+  const loadNewestUsers = useCallback(async () => {
     setLoading(true);
     setUsers([]);
     setUserBalances([]);
+    setIsSearchMode(false);
+    setMessage(null);
 
     try {
-      console.log("🚀 Starting optimized user fetch...");
-      const startTime = Date.now();
-
-      // Step 1: Get total count first (fast)
-      const { count: totalCount, error: countError } = await supabase
-        .from("users")
-        .select("*", { count: "exact", head: true });
-
-      if (countError) throw countError;
-
-      setTotalUserCount(totalCount || 0);
-      console.log(`📊 Total users in database: ${totalCount}`);
-
-      // Step 2: Fetch users in optimized batches
-      const BATCH_SIZE = 25; // Reduced batch size to prevent connection issues
-      const BALANCE_BATCH_SIZE = 10; // Much smaller for balance queries
-      const totalBatches = Math.ceil((totalCount || 0) / BATCH_SIZE);
-
-      setLoadingStats({
-        usersLoaded: 0,
-        balancesLoaded: 0,
-        totalUsers: totalCount || 0,
-        currentBatch: 0,
-        totalBatches,
-      });
-
-      let allUsers: User[] = [];
-      let allBalances: UserBalance[] = [];
-
-      // Fetch users in batches with immediate UI updates
-      for (let i = 0; i < totalBatches; i++) {
-        const offset = i * BATCH_SIZE;
-        console.log(
-          `📦 Fetching user batch ${i + 1}/${totalBatches} (offset: ${offset})`
-        );
-
-        // Add delay between batches to prevent overwhelming the database
-        if (i > 0) {
-          await new Promise((resolve) => setTimeout(resolve, 500));
-        }
-
-        const { data: userBatch, error: userError } = await supabase
-          .from("users")
-          .select(
-            "id, email, full_name, first_name, last_name, created_at, kyc_status"
-          )
-          .order("created_at", { ascending: false })
-          .range(offset, offset + BATCH_SIZE - 1);
-
-        if (userError) throw userError;
-
-        // Transform user data
-        const transformedBatch: User[] = (userBatch || []).map((user: any) => ({
-          id: user.id,
-          email: user.email,
-          full_name: user.full_name,
-          first_name: user.first_name,
-          last_name: user.last_name,
-          created_at: user.created_at,
-          kyc_status: user.kyc_status || "not_started",
-          client_id: `DCB${user.id.slice(0, 6)}`,
-          display_name:
-            user.full_name ||
-            `${user.first_name || ""} ${user.last_name || ""}`.trim() ||
-            user.email?.split("@")[0] ||
-            "Unknown User",
-        }));
-
-        allUsers = [...allUsers, ...transformedBatch];
-
-        // Update UI immediately with new users
-        setUsers([...allUsers]);
-        setLoadingStats((prev) => ({
-          ...prev,
-          usersLoaded: allUsers.length,
-          currentBatch: i + 1,
-        }));
-
-        // Fetch balances for this batch in smaller sub-batches
-        const balanceBatches = [];
-        for (let j = 0; j < transformedBatch.length; j += BALANCE_BATCH_SIZE) {
-          balanceBatches.push(
-            transformedBatch.slice(j, j + BALANCE_BATCH_SIZE)
-          );
-        }
-
-        // Process balance batches sequentially to prevent connection issues
-        const batchBalances = [];
-        for (let k = 0; k < balanceBatches.length; k++) {
-          const subBatch = balanceBatches[k];
-          console.log(
-            `💰 Processing balance sub-batch ${k + 1}/${
-              balanceBatches.length
-            } for batch ${i + 1}`
-          );
-
-          // Add delay between balance batches
-          if (k > 0) {
-            await new Promise((resolve) => setTimeout(resolve, 200));
-          }
-
-          const subBatchBalances = await fetchBalancesBatch(subBatch);
-          batchBalances.push(subBatchBalances);
-        }
-
-        const flatBalances = batchBalances.flat();
-
-        allBalances = [...allBalances, ...flatBalances];
-
-        // Update balances immediately
-        setUserBalances([...allBalances]);
-        setLoadingStats((prev) => ({
-          ...prev,
-          balancesLoaded: allBalances.length,
-        }));
-
-        console.log(
-          `✅ Batch ${i + 1} complete: ${transformedBatch.length} users, ${
-            flatBalances.length
-          } balances`
-        );
-      }
-
-      const endTime = Date.now();
-      const duration = (endTime - startTime) / 1000;
-
-      console.log(`🎉 Optimized fetch complete!`);
-      console.log(
-        `📈 Performance: ${allUsers.length} users + ${
-          allBalances.length
-        } balances in ${duration.toFixed(2)}s`
-      );
-      console.log(
-        `⚡ Average: ${(allUsers.length / duration).toFixed(1)} users/second`
-      );
-    } catch (error) {
-      console.error("❌ Optimized fetch failed:", error);
-      setMessage({
-        type: "error",
-        text: "Failed to load users. Please try the Quick Load option or refresh the page.",
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  // Quick load first 100 users for immediate display
-  const quickLoadUsers = useCallback(async () => {
-    setLoading(true);
-    setUsers([]);
-    setUserBalances([]);
-
-    try {
-      console.log("⚡ Quick loading first 100 users...");
-
-      const { data: quickUsers, error } = await supabase
+      const { data: userData, error: userError } = await supabase
         .from("users")
         .select(
-          "id, email, full_name, first_name, last_name, created_at, kyc_status"
+          "id, email, full_name, first_name, last_name, created_at, kyc_status, age, is_admin, is_manager, is_superiormanager"
         )
         .order("created_at", { ascending: false })
-        .limit(100);
+        .limit(20);
 
-      if (error) throw error;
+      if (userError) throw userError;
 
-      const transformedUsers: User[] = (quickUsers || []).map((user: any) => ({
+      const transformedUsers: User[] = (userData || []).map((user: any) => ({
         id: user.id,
         email: user.email,
         full_name: user.full_name,
@@ -342,6 +138,10 @@ export default function OptimizedUserManagement() {
         last_name: user.last_name,
         created_at: user.created_at,
         kyc_status: user.kyc_status || "not_started",
+        age: user.age,
+        is_admin: user.is_admin || false,
+        is_manager: user.is_manager || false,
+        is_superiormanager: user.is_superiormanager || false,
         client_id: `DCB${user.id.slice(0, 6)}`,
         display_name:
           user.full_name ||
@@ -352,45 +152,102 @@ export default function OptimizedUserManagement() {
 
       setUsers(transformedUsers);
 
-      // Quick balance fetch in smaller chunks to prevent connection issues
-      const balances: UserBalance[] = [];
-      const chunkSize = 10;
-
-      for (let i = 0; i < transformedUsers.length; i += chunkSize) {
-        const chunk = transformedUsers.slice(i, i + chunkSize);
-        console.log(
-          `💰 Loading balances for users ${i + 1}-${Math.min(
-            i + chunkSize,
-            transformedUsers.length
-          )}`
-        );
-
-        if (i > 0) {
-          await new Promise((resolve) => setTimeout(resolve, 300));
-        }
-
-        const quickChunkBalances = await fetchBalancesBatch(chunk);
-        balances.push(...quickChunkBalances);
-
-        // Update UI progressively
-        setUserBalances([...balances]);
-      }
-
-      setUserBalances(balances);
-
-      console.log(
-        `⚡ Quick load complete: ${transformedUsers.length} users with balances`
+      // Fetch balances for all users
+      const balancePromises = transformedUsers.map((user) =>
+        fetchUserBalance(user.id)
       );
+      const balances = await Promise.all(balancePromises);
+      setUserBalances(balances);
     } catch (error) {
-      console.error("Quick load failed:", error);
+      console.error("Failed to load users:", error);
       setMessage({
         type: "error",
-        text: "Quick load failed. Please try again or check your connection.",
+        text: "Failed to load users. Please try again.",
       });
     } finally {
       setLoading(false);
     }
   }, []);
+
+  // Search users in database
+  const searchUsers = useCallback(async () => {
+    if (!searchTerm.trim()) {
+      loadNewestUsers();
+      return;
+    }
+
+    setSearchLoading(true);
+    setUsers([]);
+    setUserBalances([]);
+    setIsSearchMode(true);
+    setMessage(null);
+
+    try {
+      const searchLower = searchTerm.toLowerCase();
+      
+      const { data: userData, error: userError } = await supabase
+        .from("users")
+        .select(
+          "id, email, full_name, first_name, last_name, created_at, kyc_status, age, is_admin, is_manager, is_superiormanager"
+        )
+        .or(
+          `email.ilike.%${searchLower}%,full_name.ilike.%${searchLower}%,first_name.ilike.%${searchLower}%,last_name.ilike.%${searchLower}%`
+        )
+        .order("created_at", { ascending: false })
+        .limit(50); // Limit search results
+
+      if (userError) throw userError;
+
+      const transformedUsers: User[] = (userData || []).map((user: any) => ({
+        id: user.id,
+        email: user.email,
+        full_name: user.full_name,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        created_at: user.created_at,
+        kyc_status: user.kyc_status || "not_started",
+        age: user.age,
+        is_admin: user.is_admin || false,
+        is_manager: user.is_manager || false,
+        is_superiormanager: user.is_superiormanager || false,
+        client_id: `DCB${user.id.slice(0, 6)}`,
+        display_name:
+          user.full_name ||
+          `${user.first_name || ""} ${user.last_name || ""}`.trim() ||
+          user.email?.split("@")[0] ||
+          "Unknown User",
+      }));
+
+      setUsers(transformedUsers);
+
+      if (transformedUsers.length > 0) {
+        // Fetch balances for search results
+        const balancePromises = transformedUsers.map((user) =>
+          fetchUserBalance(user.id)
+        );
+        const balances = await Promise.all(balancePromises);
+        setUserBalances(balances);
+      }
+
+      setMessage({
+        type: "success",
+        text: `Found ${transformedUsers.length} users matching "${searchTerm}"`,
+      });
+    } catch (error) {
+      console.error("Search failed:", error);
+      setMessage({
+        type: "error",
+        text: "Search failed. Please try again.",
+      });
+    } finally {
+      setSearchLoading(false);
+    }
+  }, [searchTerm, loadNewestUsers]);
+
+  // Load newest users on component mount
+  useEffect(() => {
+    loadNewestUsers();
+  }, [loadNewestUsers]);
 
   const getUserBalance = (userId: string) => {
     return (
@@ -431,26 +288,33 @@ export default function OptimizedUserManagement() {
     }
   };
 
-  const filteredUsers = users.filter((user) => {
-    if (!searchTerm) return true;
-    const searchLower = searchTerm.toLowerCase();
-    return (
-      user.display_name?.toLowerCase().includes(searchLower) ||
-      user.email?.toLowerCase().includes(searchLower) ||
-      user.client_id?.toLowerCase().includes(searchLower)
-    );
-  });
-
-  const displayUsers = showAllUsers
-    ? filteredUsers
-    : filteredUsers.slice(0, 50);
+  const getRoleBadges = (user: User) => {
+    const roles = [];
+    if (user.is_superiormanager) roles.push("Superior Manager");
+    else if (user.is_manager) roles.push("Manager");
+    if (user.is_admin) roles.push("Admin");
+    return roles;
+  };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
       year: "numeric",
       month: "short",
       day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      searchUsers();
+    }
+  };
+
+  const clearSearch = () => {
+    setSearchTerm("");
+    loadNewestUsers();
   };
 
   return (
@@ -459,44 +323,25 @@ export default function OptimizedUserManagement() {
         <CardTitle className="flex items-center justify-between">
           <div className="flex items-center">
             <Users className="w-5 h-5 mr-2" />
-            Optimized User Management
+            User Management
             <Badge variant="outline" className="ml-3">
-              High Performance
+              {isSearchMode ? "Search Results" : "20 Newest"}
             </Badge>
           </div>
-          <div className="flex gap-2">
-            <Button
-              onClick={quickLoadUsers}
-              disabled={loading}
-              variant="outline"
-              size="sm"
-            >
-              <Loader2
-                className={`w-4 h-4 mr-2 ${
-                  loading ? "animate-spin" : "hidden"
-                }`}
-              />
-              <RefreshCw
-                className={`w-4 h-4 mr-2 ${loading ? "hidden" : ""}`}
-              />
-              Quick Load (100)
-            </Button>
-            <Button
-              onClick={fetchAllUsersOptimized}
-              disabled={loading}
-              variant="outline"
-            >
-              <Loader2
-                className={`w-4 h-4 mr-2 ${
-                  loading ? "animate-spin" : "hidden"
-                }`}
-              />
-              <RefreshCw
-                className={`w-4 h-4 mr-2 ${loading ? "hidden" : ""}`}
-              />
-              Load All Users
-            </Button>
-          </div>
+          <Button
+            onClick={loadNewestUsers}
+            disabled={loading || searchLoading}
+            variant="outline"
+            size="sm"
+          >
+            <Loader2
+              className={`w-4 h-4 mr-2 ${
+                loading ? "animate-spin" : "hidden"
+              }`}
+            />
+            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? "hidden" : ""}`} />
+            Refresh
+          </Button>
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -518,141 +363,95 @@ export default function OptimizedUserManagement() {
           </Alert>
         )}
 
-        {loading ? (
+        {/* Search Section */}
+        <div className="mb-6">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <Input
+                type="text"
+                placeholder="Search by name, email, or client ID..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyPress={handleKeyPress}
+                className="pl-10"
+              />
+            </div>
+            <Button
+              onClick={searchUsers}
+              disabled={searchLoading}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              <Loader2
+                className={`w-4 h-4 mr-2 ${
+                  searchLoading ? "animate-spin" : "hidden"
+                }`}
+              />
+              <Search className={`w-4 h-4 mr-2 ${searchLoading ? "hidden" : ""}`} />
+              Search
+            </Button>
+            {isSearchMode && (
+              <Button onClick={clearSearch} variant="outline">
+                Clear
+              </Button>
+            )}
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            {isSearchMode 
+              ? "Searching entire database (up to 50 results)"
+              : "Showing 20 newest users. Use search to find specific users."
+            }
+          </p>
+        </div>
+
+        {loading || searchLoading ? (
           <div className="text-center py-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F26623] mx-auto mb-4"></div>
-            <p className="text-gray-600 font-medium">Optimized Loading...</p>
-
-            {loadingStats.totalUsers > 0 && (
-              <div className="mt-4 space-y-2">
-                <div className="flex justify-between text-sm text-gray-500">
-                  <span>
-                    Users: {loadingStats.usersLoaded} /{" "}
-                    {loadingStats.totalUsers}
-                  </span>
-                  <span>
-                    Batch: {loadingStats.currentBatch} /{" "}
-                    {loadingStats.totalBatches}
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    className="bg-[#F26623] h-2 rounded-full transition-all duration-300"
-                    style={{
-                      width: `${
-                        (loadingStats.usersLoaded / loadingStats.totalUsers) *
-                        100
-                      }%`,
-                    }}
-                  ></div>
-                </div>
-                <div className="flex justify-between text-xs text-gray-400">
-                  <span>Balances: {loadingStats.balancesLoaded}</span>
-                  <span>
-                    {(
-                      (loadingStats.usersLoaded / loadingStats.totalUsers) *
-                      100
-                    ).toFixed(1)}
-                    %
-                  </span>
-                </div>
-                <p className="text-xs text-gray-500 mt-2">
-                  Loading optimized to prevent connection issues...
-                </p>
-              </div>
-            )}
+            <p className="text-gray-600 font-medium">
+              {searchLoading ? "Searching users..." : "Loading users..."}
+            </p>
           </div>
         ) : users.length === 0 ? (
           <div className="text-center py-8">
             <Users className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-600">No users loaded</p>
-            <p className="text-sm text-gray-500 mb-4">
-              Choose your loading strategy:
+            <p className="text-gray-600">
+              {isSearchMode ? "No users found" : "No users available"}
             </p>
-            <div className="flex gap-2 justify-center">
-              <Button onClick={quickLoadUsers} variant="outline">
-                Quick Load (100 users)
+            <p className="text-sm text-gray-500 mb-4">
+              {isSearchMode 
+                ? `No results found for "${searchTerm}"`
+                : "Click refresh to load the newest users"
+              }
+            </p>
+            {!isSearchMode && (
+              <Button onClick={loadNewestUsers} className="bg-[#F26623] hover:bg-[#E55A1F]">
+                Load Users
               </Button>
-              <Button
-                onClick={fetchAllUsersOptimized}
-                className="bg-[#F26623] hover:bg-[#E55A1F]"
-              >
-                Load All Users
-              </Button>
-            </div>
+            )}
           </div>
         ) : (
           <div className="space-y-4">
-            {/* Stats and Search */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
-              <div className="flex items-center gap-4">
-                <h3 className="text-lg font-semibold">
-                  Users ({users.length}
-                  {totalUserCount > users.length ? ` of ${totalUserCount}` : ""}
-                  )
-                </h3>
-                <Badge variant="outline" className="bg-green-50 text-green-700">
-                  {users.length} loaded
-                </Badge>
-                {userBalances.length > 0 && (
-                  <Badge variant="outline" className="bg-blue-50 text-blue-700">
-                    {userBalances.length} with balances
-                  </Badge>
-                )}
-              </div>
-              <div className="relative w-full sm:w-80">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  type="text"
-                  placeholder="Search by name, email, or client ID..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
+            {/* Stats */}
+            <div className="flex items-center gap-4 mb-4">
+              <h3 className="text-lg font-semibold">
+                {isSearchMode ? "Search Results" : "Latest Users"}
+              </h3>
             </div>
-
-            {searchTerm && (
-              <div className="text-sm text-gray-600 mb-2">
-                Showing {filteredUsers.length} of {users.length} users
-              </div>
-            )}
-
-            {/* Show/Hide Toggle */}
-            {filteredUsers.length > 50 && (
-              <div className="flex justify-center mb-4">
-                <Button
-                  variant="outline"
-                  onClick={() => setShowAllUsers(!showAllUsers)}
-                  className="flex items-center gap-2"
-                >
-                  {showAllUsers ? (
-                    <>
-                      <ChevronUp className="w-4 h-4" />
-                      Show Less (50)
-                    </>
-                  ) : (
-                    <>
-                      <ChevronDown className="w-4 h-4" />
-                      Show All ({filteredUsers.length})
-                    </>
-                  )}
-                </Button>
-              </div>
-            )}
 
             {/* User Grid */}
             <div className="grid grid-cols-1 gap-4">
-              {displayUsers.map((user) => {
+              {users.map((user) => {
                 const balance = getUserBalance(user.id);
+                const roles = getRoleBadges(user);
+                
                 return (
                   <div
                     key={user.id}
                     className="border rounded-lg p-4 hover:border-gray-300 transition-colors"
                   >
-                    <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-start justify-between mb-3">
                       <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
+                        <div className="flex items-center gap-3 mb-2 flex-wrap">
                           <h4 className="font-medium text-lg">
                             {user.display_name}
                           </h4>
@@ -660,8 +459,13 @@ export default function OptimizedUserManagement() {
                             <Shield className="w-3 h-3 mr-1" />
                             {getKycStatusLabel(user.kyc_status)}
                           </Badge>
+                          {roles.map((role) => (
+                            <Badge key={role} variant="secondary" className="bg-purple-100 text-purple-800">
+                              {role}
+                            </Badge>
+                          ))}
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm text-gray-600">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-sm text-gray-600">
                           <p>
                             <span className="font-medium">Client ID:</span>{" "}
                             {user.client_id}
@@ -675,10 +479,16 @@ export default function OptimizedUserManagement() {
                             <span className="font-medium">Joined:</span>{" "}
                             {formatDate(user.created_at)}
                           </p>
+                          {user.age && (
+                            <p>
+                              <span className="font-medium">Age:</span> {user.age}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>
 
+                    {/* Balance Section */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
                       <div className="bg-orange-50 p-3 rounded-lg border border-orange-100">
                         <div className="flex items-center justify-between">
@@ -763,14 +573,14 @@ export default function OptimizedUserManagement() {
               })}
             </div>
 
-            {filteredUsers.length === 0 && searchTerm && (
+            {isSearchMode && users.length === 0 && searchTerm && (
               <div className="text-center py-8">
                 <Search className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                 <p className="text-gray-600">
                   No users found matching "{searchTerm}"
                 </p>
                 <p className="text-sm text-gray-500">
-                  Try searching by name, email, or client ID
+                  Try searching by name, email, or different keywords
                 </p>
               </div>
             )}

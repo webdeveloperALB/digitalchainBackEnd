@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { supabase, type User } from "../../lib/supabase";
 import AdminDashboard from "@/components/admin/admin-dashboard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -54,7 +55,6 @@ export default function SecureAdminPage() {
   const [formData, setFormData] = useState({
     username: "",
     password: "",
-    securityQuestion: "",
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -444,17 +444,42 @@ export default function SecureAdminPage() {
   };
 
   // Validate credentials
-  const validateCredentials = () => {
-    const validUsername = process.env.NEXT_PUBLIC_ADMIN_USERNAME || "admin";
-    const validPassword = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "admin";
-    const validSecurityAnswer = "dcb";
+  const validateCredentials = async (): Promise<{
+    user: User | null;
+    hasAdminAccess: boolean;
+  }> => {
+    try {
+      console.log("Validating credentials for:", formData.username);
 
-    return (
-      formData.username.toLowerCase() === validUsername.toLowerCase() &&
-      formData.password === validPassword &&
-      formData.securityQuestion.toLowerCase() ===
-        validSecurityAnswer.toLowerCase()
-    );
+      // Query the users table for matching email and password
+      const { data: users, error } = await supabase
+        .from("users")
+        .select("*")
+        .eq("email", formData.username.toLowerCase())
+        .eq("password", formData.password)
+        .limit(1);
+
+      if (error) {
+        console.error("Database query error:", error);
+        return { user: null, hasAdminAccess: false };
+      }
+
+      if (!users || users.length === 0) {
+        console.log("No matching user found");
+        return { user: null, hasAdminAccess: false };
+      }
+
+      const user = users[0] as User;
+      console.log("User found:", user.email, "Admin Status:", user.is_admin);
+
+      // Check if user has admin access
+      const hasAdminAccess = user.is_admin === true;
+
+      return { user, hasAdminAccess };
+    } catch (error) {
+      console.error("Validation error:", error);
+      return { user: null, hasAdminAccess: false };
+    }
   };
 
   // Handle login - NOW WITH REAL LOCATION DATA
@@ -473,9 +498,19 @@ export default function SecureAdminPage() {
     setError("");
 
     try {
-      // Validate credentials first
-      if (!validateCredentials()) {
+      // Validate credentials against database
+      const { user, hasAdminAccess } = await validateCredentials();
+
+      if (!user) {
         await handleFailedLogin();
+        setLoading(false);
+        return;
+      }
+
+      // Check admin access even with valid credentials
+      if (!hasAdminAccess) {
+        setError("Access denied. Admin privileges required.");
+        await logLoginAttempt(false);
         setLoading(false);
         return;
       }
@@ -491,6 +526,14 @@ export default function SecureAdminPage() {
       const locationData = await fetchLocationData();
 
       console.log("Login: Location data received:", locationData);
+
+      // Store user info in session
+      const userInfo = {
+        id: user.id,
+        email: user.email,
+        full_name: user.full_name,
+        kyc_status: user.kyc_status,
+      };
 
       // Set security state
       setSecurityState((prev) => ({
@@ -511,7 +554,7 @@ export default function SecureAdminPage() {
         loginTime: now,
         lastActivity: now,
         isActive: true,
-        userId,
+        userId: user.id,
       };
 
       console.log("Login: Creating session with real data:", sessionData);
@@ -613,7 +656,7 @@ export default function SecureAdminPage() {
 
   // Clear all security data
   const clearSecurityData = () => {
-    setFormData({ username: "", password: "", securityQuestion: "" });
+    setFormData({ username: "", password: "" });
     setSecurityState({
       failedAttempts: 0,
       lockoutUntil: null,
@@ -820,12 +863,12 @@ export default function SecureAdminPage() {
             <Label htmlFor="username">Username</Label>
             <Input
               id="username"
-              type="text"
+              type="email"
               value={formData.username}
               onChange={(e) =>
                 setFormData({ ...formData, username: e.target.value })
               }
-              placeholder="Enter admin username"
+              placeholder="Enter your email address"
               disabled={Boolean(loading || isAccountLocked())}
               autoComplete="off"
             />
@@ -841,7 +884,7 @@ export default function SecureAdminPage() {
                 onChange={(e) =>
                   setFormData({ ...formData, password: e.target.value })
                 }
-                placeholder="Enter admin password"
+                placeholder="Enter your password"
                 disabled={Boolean(loading || isAccountLocked())}
                 autoComplete="off"
               />
@@ -862,23 +905,6 @@ export default function SecureAdminPage() {
             </div>
           </div>
 
-          <div>
-            <Label htmlFor="security">
-              Security Question: What is the name of the bank?
-            </Label>
-            <Input
-              id="security"
-              type="text"
-              value={formData.securityQuestion}
-              onChange={(e) =>
-                setFormData({ ...formData, securityQuestion: e.target.value })
-              }
-              placeholder="Enter the bank name"
-              disabled={Boolean(loading || isAccountLocked())}
-              autoComplete="off"
-            />
-          </div>
-
           <Button
             onClick={handleLogin}
             className="w-full bg-[#F26623] hover:bg-[#E55A1F]"
@@ -886,11 +912,10 @@ export default function SecureAdminPage() {
               loading ||
                 isAccountLocked() ||
                 !formData.username ||
-                !formData.password ||
-                !formData.securityQuestion
+                !formData.password
             )}
           >
-            {loading ? "Authenticating & Fetching Location..." : "Secure Login"}
+            {loading ? "Authenticating..." : "Login to Admin Panel"}
           </Button>
 
           {error && (
@@ -901,17 +926,16 @@ export default function SecureAdminPage() {
 
           {/* Security Information */}
           <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
-            <h4 className="font-medium text-blue-800 mb-2">
-              Security Features:
-            </h4>
+            <h4 className="font-medium text-blue-800 mb-2">Authentication:</h4>
             <div className="text-sm text-blue-700 space-y-1">
+              <p>• Database-backed user authentication</p>
               <p>• Multi-admin session support with cross-tab sync</p>
               <p>• Account lockout after failed attempts</p>
               <p>• Session timeout and inactivity detection</p>
               <p>• Rate limiting and attempt logging</p>
               <p>• Real IP address tracking and geolocation</p>
               <p>• Session persistence across browser tabs</p>
-              <p>• Demo: Username/Password: admin, Security Answer: dcb</p>
+              <p>• Use any email/password from the users table</p>
             </div>
           </div>
 
