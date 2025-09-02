@@ -1,5 +1,3 @@
-// lib/exchange-rates.ts
-
 export interface ExchangeRates {
   fiat: { [key: string]: number };
   crypto: { [key: string]: number };
@@ -8,7 +6,11 @@ export interface ExchangeRates {
 
 export class ExchangeRateService {
   private static instance: ExchangeRateService;
-  private rates: ExchangeRates = { fiat: {}, crypto: {}, lastUpdated: 0 };
+  private rates: ExchangeRates = {
+    fiat: { USD: 1 },
+    crypto: {},
+    lastUpdated: 0,
+  };
   private updateInterval: NodeJS.Timeout | null = null;
   private listeners: ((rates: ExchangeRates) => void)[] = [];
 
@@ -26,97 +28,146 @@ export class ExchangeRateService {
 
   private async updateRates() {
     try {
-      let fiatData: any = {};
-      let cryptoData: any = {};
+      console.log("Fetching exchange rates from public APIs...");
 
-      // --- Fetch fiat exchange rates ---
+      // Initialize rates object
+      const rates: ExchangeRates = {
+        fiat: { USD: 1 },
+        crypto: {},
+        lastUpdated: Date.now(),
+      };
+
+      // Fetch fiat exchange rates from exchangerate-api.com (free, no API key required)
       try {
-        console.log("Fetching fiat rates...");
+        console.log("Fetching fiat exchange rates...");
         const fiatResponse = await fetch(
-          "https://api.exchangerate.host/latest?base=USD"
+          "https://api.exchangerate-api.com/v4/latest/USD",
+          {
+            headers: {
+              Accept: "application/json",
+            },
+          }
         );
 
-        if (!fiatResponse.ok) {
-          throw new Error(
-            `ExchangeRate.host error: ${fiatResponse.status} ${fiatResponse.statusText}`
-          );
-        }
+        if (fiatResponse.ok) {
+          const fiatData = await fiatResponse.json();
 
-        fiatData = await fiatResponse.json();
-        console.log("Fiat rates fetched successfully");
+          if (fiatData.rates) {
+            rates.fiat = {
+              USD: 1,
+              EUR: 1 / fiatData.rates.EUR,
+              CAD: 1 / fiatData.rates.CAD,
+              GBP: 1 / fiatData.rates.GBP,
+              JPY: 1 / fiatData.rates.JPY,
+              AUD: 1 / fiatData.rates.AUD,
+              CHF: 1 / fiatData.rates.CHF,
+            };
+            console.log("Fiat rates fetched successfully");
+          }
+        } else {
+          throw new Error(`Fiat API error: ${fiatResponse.status}`);
+        }
       } catch (fiatError: any) {
-        console.error(
-          "Failed to fetch fiat exchange rates:",
-          fiatError.message || fiatError
+        console.warn(
+          "Failed to fetch fiat rates, using fallback:",
+          fiatError.message
         );
+        // Keep default USD: 1 as fallback
+        rates.fiat = {
+          USD: 1,
+          EUR: 0.85,
+          CAD: 1.35,
+          GBP: 0.75,
+          JPY: 110,
+          AUD: 1.45,
+          CHF: 0.92,
+        };
       }
 
-      // --- Fetch crypto prices ---
+      // Fetch crypto prices from CoinGecko (free, no API key required)
       try {
-        console.log("Fetching crypto rates...");
+        console.log("Fetching crypto prices...");
         const cryptoResponse = await fetch(
-          "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,cardano,polkadot,chainlink&vs_currencies=usd"
+          "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether,cardano,polkadot,chainlink&vs_currencies=usd",
+          {
+            headers: {
+              Accept: "application/json",
+            },
+          }
         );
 
-        if (!cryptoResponse.ok) {
-          throw new Error(
-            `CoinGecko API error: ${cryptoResponse.status} ${cryptoResponse.statusText}`
-          );
-        }
+        if (cryptoResponse.ok) {
+          const cryptoData = await cryptoResponse.json();
 
-        cryptoData = await cryptoResponse.json();
-        console.log("Crypto rates fetched successfully");
-      } catch (cryptoError: any) {
-        console.error(
-          "Failed to fetch crypto prices:",
-          cryptoError.message || cryptoError
-        );
-      }
-
-      // Set rates only if at least one source worked
-      if (Object.keys(fiatData).length || Object.keys(cryptoData).length) {
-        this.rates = {
-          fiat: {
-            USD: 1,
-            EUR: 1 / (fiatData.rates?.EUR || 1),
-            CAD: 1 / (fiatData.rates?.CAD || 1),
-            GBP: 1 / (fiatData.rates?.GBP || 1),
-            JPY: 1 / (fiatData.rates?.JPY || 1),
-            AUD: 1 / (fiatData.rates?.AUD || 1),
-            CHF: 1 / (fiatData.rates?.CHF || 1),
-            ...fiatData.rates,
-          },
-          crypto: {
-            BTC: cryptoData.bitcoin?.usd || 50000,
-            ETH: cryptoData.ethereum?.usd || 3000,
+          rates.crypto = {
+            BTC: cryptoData.bitcoin?.usd || 45000,
+            ETH: cryptoData.ethereum?.usd || 2500,
+            USDT: cryptoData.tether?.usd || 1,
             ADA: cryptoData.cardano?.usd || 0.5,
             DOT: cryptoData.polkadot?.usd || 7,
             LINK: cryptoData.chainlink?.usd || 15,
-          },
-          lastUpdated: Date.now(),
-        };
-
-        this.listeners.forEach((listener) => listener(this.rates));
-        console.log(
-          "Exchange rates updated at",
-          new Date().toLocaleTimeString()
+          };
+          console.log("Crypto rates fetched successfully");
+        } else {
+          throw new Error(`Crypto API error: ${cryptoResponse.status}`);
+        }
+      } catch (cryptoError: any) {
+        console.warn(
+          "Failed to fetch crypto rates, using fallback:",
+          cryptoError.message
         );
-      } else {
-        console.warn("No rates updated: both fiat and crypto fetch failed");
+        // Use fallback crypto rates if API fails
+        rates.crypto = {
+          BTC: 45000,
+          ETH: 2500,
+          USDT: 1,
+          ADA: 0.5,
+          DOT: 7,
+          LINK: 15,
+        };
       }
+
+      this.rates = rates;
+      this.listeners.forEach((listener) => listener(this.rates));
+      console.log(
+        "Exchange rates updated successfully at",
+        new Date().toLocaleTimeString()
+      );
     } catch (error: any) {
-      console.error("Failed to update exchange rates:", {
-        message: error.message,
-        stack: error.stack,
-        fullError: error,
-      });
+      console.error("Failed to fetch exchange rates:", error.message || error);
+
+      // Use complete fallback rates if everything fails
+      this.rates = {
+        fiat: {
+          USD: 1,
+          EUR: 0.85,
+          CAD: 1.35,
+          GBP: 0.75,
+          JPY: 110,
+          AUD: 1.45,
+          CHF: 0.92,
+        },
+        crypto: {
+          BTC: 45000,
+          ETH: 2500,
+          USDT: 1,
+          ADA: 0.5,
+          DOT: 7,
+          LINK: 15,
+        },
+        lastUpdated: Date.now(),
+      };
+
+      this.listeners.forEach((listener) => listener(this.rates));
+      console.log("Using complete fallback exchange rates");
     }
   }
 
   private startAutoUpdate() {
+    // Update every 5 minutes
     this.updateInterval = setInterval(() => {
       this.updateRates();
-    }, 30000); // every 30 seconds
+    }, 300000);
   }
 
   subscribe(listener: (rates: ExchangeRates) => void) {
@@ -175,7 +226,3 @@ export class ExchangeRateService {
     this.listeners = [];
   }
 }
-
-
-
-

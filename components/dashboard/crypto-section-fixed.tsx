@@ -161,15 +161,38 @@ export default function RealCryptoTransferSection({
     if (!userProfile?.id) return;
 
     try {
+      console.log("Fetching crypto balances for user:", userProfile.id);
+      console.log("User profile object:", userProfile);
+
+      // Check if we can connect to Supabase
+      const { data: testData, error: testError } = await supabase
+        .from("newcrypto_balances")
+        .select("count")
+        .limit(1);
+
+      console.log("Connection test:", { testData, testError });
+
       const { data, error } = await supabase
         .from("newcrypto_balances")
         .select("btc_balance, eth_balance, usdt_balance")
         .eq("user_id", userProfile.id)
         .single();
 
+      console.log("Supabase query response:", { data, error });
+      console.log(
+        "Error details:",
+        error?.message,
+        error?.code,
+        error?.details
+      );
+
       if (error) {
         if (error.code === "PGRST116") {
           // No record found, create one
+          console.log(
+            "Creating new crypto balance record for user:",
+            userProfile.id
+          );
           const { error: insertError } = await supabase
             .from("newcrypto_balances")
             .insert({
@@ -179,6 +202,8 @@ export default function RealCryptoTransferSection({
               usdt_balance: 0,
             });
 
+          console.log("Insert result:", { insertError });
+
           if (!insertError) {
             setCryptoBalances({
               btc_balance: 0,
@@ -186,8 +211,10 @@ export default function RealCryptoTransferSection({
               usdt_balance: 0,
             });
           }
+        } else {
+          console.error("Unexpected error code:", error.code, error);
         }
-        throw error;
+        return; // Don't throw, just return to avoid breaking the UI
       }
 
       setCryptoBalances({
@@ -195,8 +222,18 @@ export default function RealCryptoTransferSection({
         eth_balance: Number(data?.eth_balance) || 0,
         usdt_balance: Number(data?.usdt_balance) || 0,
       });
+
+      console.log("Successfully set crypto balances:", {
+        btc_balance: Number(data?.btc_balance) || 0,
+        eth_balance: Number(data?.eth_balance) || 0,
+        usdt_balance: Number(data?.usdt_balance) || 0,
+      });
     } catch (error) {
       console.error("Error fetching crypto balances:", error);
+      console.error("Error type:", typeof error);
+      console.error("Error constructor:", error?.constructor?.name);
+      console.error("User ID:", userProfile?.id);
+      console.error("Full error object:", JSON.stringify(error, null, 2));
     }
   };
 

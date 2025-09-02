@@ -21,7 +21,7 @@ interface RealtimeData {
     ethereum: number;
   };
   messages: any[];
-  transactions: any[];
+  deposits: any[];
   cryptoTransactions: any[];
   loading: boolean;
   error: string | null;
@@ -38,7 +38,7 @@ export function useRealtimeData(): RealtimeData {
     },
     cryptoPrices: { bitcoin: 45000, ethereum: 3000 },
     messages: [],
-    transactions: [],
+    deposits: [],
     cryptoTransactions: [],
     loading: true,
     error: null,
@@ -139,23 +139,23 @@ export function useRealtimeData(): RealtimeData {
     }
   };
 
-  const fetchTransactions = async (userId: string) => {
+  const fetchDeposits = async (userId: string) => {
     try {
       const { data, error } = await supabase
-        .from("transactions")
+        .from("deposits")
         .select("*")
-        .eq("user_id", userId)
+        .eq("uuid", userId)
         .order("created_at", { ascending: false })
         .limit(10);
 
       if (error) {
-        console.error("Error fetching transactions:", error);
+        console.error("Error fetching deposits:", error.message || error);
         return [];
       }
 
       return data || [];
-    } catch (error) {
-      console.error("Error fetching transactions:", error);
+    } catch (error: any) {
+      console.error("Error fetching deposits:", error.message || error);
       return [];
     }
   };
@@ -170,13 +170,19 @@ export function useRealtimeData(): RealtimeData {
         .limit(10);
 
       if (error) {
-        console.error("Error fetching crypto transactions:", error);
+        console.error(
+          "Error fetching crypto transactions:",
+          error.message || error
+        );
         return [];
       }
 
       return data || [];
-    } catch (error) {
-      console.error("Error fetching crypto transactions:", error);
+    } catch (error: any) {
+      console.error(
+        "Error fetching crypto transactions:",
+        error.message || error
+      );
       return [];
     }
   };
@@ -203,14 +209,14 @@ export function useRealtimeData(): RealtimeData {
         exchangeRates,
         cryptoPrices,
         messages,
-        transactions,
+        deposits,
         cryptoTransactions,
       ] = await Promise.all([
         fetchBalances(user.id),
         fetchExchangeRates(),
         fetchCryptoPrices(),
         fetchMessages(user.id),
-        fetchTransactions(user.id),
+        fetchDeposits(user.id),
         fetchCryptoTransactions(user.id),
       ]);
 
@@ -219,7 +225,7 @@ export function useRealtimeData(): RealtimeData {
         exchangeRates,
         cryptoPrices,
         messages,
-        transactions,
+        deposits,
         cryptoTransactions,
         loading: false,
         error: null,
@@ -321,20 +327,20 @@ export function useRealtimeData(): RealtimeData {
       )
       .subscribe();
 
-    // Subscribe to transaction changes
-    const transactionSubscription = supabase
-      .channel("transaction_changes")
+    // Subscribe to deposits changes
+    const depositsSubscription = supabase
+      .channel("deposits_changes")
       .on(
         "postgres_changes",
         {
           event: "*",
           schema: "public",
-          table: "transactions",
-          filter: `user_id=eq.${user.id}`,
+          table: "deposits",
+          filter: `uuid=eq.${user.id}`,
         },
         () => {
-          fetchTransactions(user.id).then((transactions) => {
-            setData((prev) => ({ ...prev, transactions }));
+          fetchDeposits(user.id).then((deposits) => {
+            setData((prev) => ({ ...prev, deposits }));
           });
         }
       )
@@ -366,7 +372,7 @@ export function useRealtimeData(): RealtimeData {
     return () => {
       balanceSubscription.unsubscribe();
       messageSubscription.unsubscribe();
-      transactionSubscription.unsubscribe();
+      depositsSubscription.unsubscribe();
       cryptoTransactionSubscription.unsubscribe();
     };
   };

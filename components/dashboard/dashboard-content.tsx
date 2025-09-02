@@ -253,7 +253,7 @@ function DashboardContent({
     balances: realtimeBalances,
     exchangeRates,
     cryptoPrices,
-    transactions,
+    deposits,
     messages,
     loading,
     error,

@@ -653,9 +653,7 @@ export default function TransfersSection({
         <h2 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent mb-1">
           Currency Transfers
         </h2>
-        <p className="text-slate-600">
-          Real-time rates • Crypto & Fiat • Internal & Bank transfers
-        </p>
+        <p className="text-slate-600">• Internal & Bank transfers</p>
         {liveRates.lastUpdated > 0 && (
           <div className="flex items-center justify-center gap-2 mt-2">
             <TrendingUp className="w-4 h-4 text-green-600 live-rate-indicator" />

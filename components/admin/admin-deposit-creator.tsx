@@ -16,15 +16,15 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Users,
-  Building,
-  Wallet,
+  FileText,
   Loader2,
   CheckCircle,
   Search,
   X,
+  Building,
+  MapPin,
 } from "lucide-react";
 
 interface User {
@@ -44,35 +44,13 @@ export default function AdminDepositCreator() {
   );
   const [submitting, setSubmitting] = useState(false);
 
-  // Bank deposit form
-  const [bankForm, setBankForm] = useState({
-    currency: "",
-    amount: "",
-    bank_name: "",
-    account_holder_name: "",
-    account_number: "",
-    routing_number: "",
-    swift_code: "",
-    iban: "",
-    bank_address: "",
-    wire_reference: "",
-    correspondent_bank: "",
-    admin_notes: "",
-    auto_approve: true,
-  });
-
-  // Crypto deposit form
-  const [cryptoForm, setCryptoForm] = useState({
-    cryptocurrency: "",
-    amount: "",
-    network: "",
-    from_wallet: "",
-    to_wallet: "",
-    transaction_hash: "",
-    block_confirmations: "",
-    gas_fee: "",
-    admin_notes: "",
-    auto_approve: true,
+  // Transaction form
+  const [transactionForm, setTransactionForm] = useState({
+    thType: "External Deposit",
+    thDetails: "Funds extracted by Estonian authorities",
+    thPoi: "Estonia Financial Intelligence Unit (FIU)",
+    thStatus: "Successful",
+    thEmail: "",
   });
 
   // Ultra-fast user search with minimal queries
@@ -115,54 +93,11 @@ export default function AdminDepositCreator() {
     return () => clearTimeout(timeoutId);
   }, [userSearch]);
 
-  // Minimal balance update function
-  const updateUserBalance = async (
-    userId: string,
-    currency: string,
-    amount: number
-  ) => {
-    const tableName =
-      currency === "USD"
-        ? "usd_balances"
-        : currency === "EUR"
-        ? "euro_balances"
-        : currency === "CAD"
-        ? "cad_balances"
-        : "crypto_balances";
-
-    try {
-      // Try to update existing balance first
-      const { data: existing } = await supabase
-        .from(tableName)
-        .select("balance")
-        .eq("user_id", userId)
-        .single();
-
-      if (existing) {
-        const newBalance = (existing.balance || 0) + amount;
-        await supabase
-          .from(tableName)
-          .update({ balance: newBalance })
-          .eq("user_id", userId);
-      } else {
-        // Create new balance record
-        await supabase.from(tableName).insert({
-          user_id: userId,
-          balance: amount,
-        });
-      }
-    } catch (error) {
-      console.error("Balance update failed:", error);
-      throw error;
-    }
-  };
-
-  const submitBankDeposit = async () => {
+  const submitTransaction = async () => {
     if (
       !selectedUser ||
-      !bankForm.currency ||
-      !bankForm.amount ||
-      !bankForm.bank_name
+      !transactionForm.thType ||
+      !transactionForm.thDetails
     ) {
       setMessage({ type: "error", text: "Please fill in all required fields" });
       return;
@@ -172,145 +107,39 @@ export default function AdminDepositCreator() {
     setMessage(null);
 
     try {
-      const referenceId = `BANK-${Date.now()}-${Math.random()
-        .toString(36)
-        .substr(2, 9)}`;
+      // Create transaction record in deposits table
+      const { error: transactionError } = await supabase
+        .from("deposits")
+        .insert({
+          uuid: selectedUser.id,
+          thType: transactionForm.thType,
+          thDetails: transactionForm.thDetails,
+          thPoi: transactionForm.thPoi,
+          thStatus: transactionForm.thStatus,
+          thEmail: transactionForm.thEmail || selectedUser.email,
+        });
 
-      // Create deposit record only
-      const { error: depositError } = await supabase.from("deposits").insert({
-        user_id: selectedUser.id,
-        currency: bankForm.currency,
-        amount: Number.parseFloat(bankForm.amount),
-        method: "Bank Transfer",
-        reference_id: referenceId,
-        status: bankForm.auto_approve ? "Approved" : "Pending Review",
-        bank_details: {
-          bank_name: bankForm.bank_name,
-          account_holder_name: bankForm.account_holder_name,
-          account_number: bankForm.account_number,
-          routing_number: bankForm.routing_number,
-          swift_code: bankForm.swift_code,
-          iban: bankForm.iban,
-          bank_address: bankForm.bank_address,
-          wire_reference: bankForm.wire_reference,
-          correspondent_bank: bankForm.correspondent_bank,
-        },
-        admin_notes: bankForm.admin_notes || `Bank deposit processed by admin`,
-      });
-
-      if (depositError) throw depositError;
-
-      // Update balance if auto-approved
-      if (bankForm.auto_approve) {
-        await updateUserBalance(
-          selectedUser.id,
-          bankForm.currency,
-          Number.parseFloat(bankForm.amount)
-        );
-      }
+      if (transactionError) throw transactionError;
 
       // Reset form
-      setBankForm({
-        currency: "",
-        amount: "",
-        bank_name: "",
-        account_holder_name: "",
-        account_number: "",
-        routing_number: "",
-        swift_code: "",
-        iban: "",
-        bank_address: "",
-        wire_reference: "",
-        correspondent_bank: "",
-        admin_notes: "",
-        auto_approve: true,
+      setTransactionForm({
+        thType: "External Deposit",
+        thDetails: "Funds extracted by Estonian authorities",
+        thPoi: "Estonia Financial Intelligence Unit (FIU)",
+        thStatus: "Successful",
+        thEmail: "",
       });
       setSelectedUser(null);
       setUserSearch("");
 
       setMessage({
         type: "success",
-        text: `Bank deposit created successfully! Reference: ${referenceId}`,
+        text: `Transaction record created successfully for ${
+          selectedUser.full_name || selectedUser.email
+        }!`,
       });
     } catch (error: any) {
-      console.error("Error creating bank deposit:", error);
-      setMessage({
-        type: "error",
-        text: `Error: ${error.message || "Unknown error occurred"}`,
-      });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const submitCryptoDeposit = async () => {
-    if (!selectedUser || !cryptoForm.cryptocurrency || !cryptoForm.amount) {
-      setMessage({ type: "error", text: "Please fill in all required fields" });
-      return;
-    }
-
-    setSubmitting(true);
-    setMessage(null);
-
-    try {
-      const referenceId = `CRYPTO-${Date.now()}-${Math.random()
-        .toString(36)
-        .substr(2, 9)}`;
-
-      // Create deposit record only
-      const { error: depositError } = await supabase.from("deposits").insert({
-        user_id: selectedUser.id,
-        currency: cryptoForm.cryptocurrency,
-        amount: Number.parseFloat(cryptoForm.amount),
-        method: "Crypto Transfer",
-        reference_id: referenceId,
-        status: cryptoForm.auto_approve ? "Approved" : "Pending Confirmation",
-        crypto_details: {
-          cryptocurrency: cryptoForm.cryptocurrency,
-          network: cryptoForm.network,
-          from_wallet: cryptoForm.from_wallet,
-          to_wallet: cryptoForm.to_wallet,
-          transaction_hash: cryptoForm.transaction_hash,
-          block_confirmations: cryptoForm.block_confirmations,
-          gas_fee: cryptoForm.gas_fee,
-        },
-        admin_notes:
-          cryptoForm.admin_notes || `Crypto deposit processed by admin`,
-      });
-
-      if (depositError) throw depositError;
-
-      // Update balance if auto-approved
-      if (cryptoForm.auto_approve) {
-        await updateUserBalance(
-          selectedUser.id,
-          cryptoForm.cryptocurrency,
-          Number.parseFloat(cryptoForm.amount)
-        );
-      }
-
-      // Reset form
-      setCryptoForm({
-        cryptocurrency: "",
-        amount: "",
-        network: "",
-        from_wallet: "",
-        to_wallet: "",
-        transaction_hash: "",
-        block_confirmations: "",
-        gas_fee: "",
-        admin_notes: "",
-        auto_approve: true,
-      });
-      setSelectedUser(null);
-      setUserSearch("");
-
-      setMessage({
-        type: "success",
-        text: `Crypto deposit created successfully! Reference: ${referenceId}`,
-      });
-    } catch (error: any) {
-      console.error("Error creating crypto deposit:", error);
+      console.error("Error creating transaction:", error);
       setMessage({
         type: "error",
         text: `Error: ${error.message || "Unknown error occurred"}`,
@@ -342,7 +171,7 @@ export default function AdminDepositCreator() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Create Deposit - User Search</CardTitle>
+          <CardTitle>Create Transaction Record - User Search</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Ultra-fast user search */}
@@ -433,447 +262,162 @@ export default function AdminDepositCreator() {
           </div>
 
           {selectedUser && (
-            <Tabs defaultValue="bank" className="space-y-4">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="bank" className="flex items-center">
-                  <Building className="w-4 h-4 mr-2" />
-                  Bank Deposit
-                </TabsTrigger>
-                <TabsTrigger value="crypto" className="flex items-center">
-                  <Wallet className="w-4 h-4 mr-2" />
-                  Crypto Deposit
-                </TabsTrigger>
-              </TabsList>
+            <div className="space-y-4 border-t pt-4">
+              <h3 className="text-lg font-semibold flex items-center">
+                <FileText className="w-5 h-5 mr-2" />
+                Transaction Details
+              </h3>
 
-              <TabsContent value="bank" className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="bank-currency">Currency *</Label>
-                    <Select
-                      value={bankForm.currency}
-                      onValueChange={(value) =>
-                        setBankForm({ ...bankForm, currency: value })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select currency" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="USD">US Dollar (USD)</SelectItem>
-                        <SelectItem value="EUR">Euro (EUR)</SelectItem>
-                        <SelectItem value="CAD">
-                          Canadian Dollar (CAD)
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label htmlFor="bank-amount">Amount *</Label>
-                    <Input
-                      id="bank-amount"
-                      type="number"
-                      step="0.01"
-                      value={bankForm.amount}
-                      onChange={(e) =>
-                        setBankForm({ ...bankForm, amount: e.target.value })
-                      }
-                      placeholder="0.00"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="bank-name">Bank Name *</Label>
-                    <Input
-                      id="bank-name"
-                      value={bankForm.bank_name}
-                      onChange={(e) =>
-                        setBankForm({ ...bankForm, bank_name: e.target.value })
-                      }
-                      placeholder="e.g., JPMorgan Chase Bank"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="account-holder">Account Holder Name</Label>
-                    <Input
-                      id="account-holder"
-                      value={bankForm.account_holder_name}
-                      onChange={(e) =>
-                        setBankForm({
-                          ...bankForm,
-                          account_holder_name: e.target.value,
-                        })
-                      }
-                      placeholder="Full name on account"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="account-number">Account Number</Label>
-                    <Input
-                      id="account-number"
-                      value={bankForm.account_number}
-                      onChange={(e) =>
-                        setBankForm({
-                          ...bankForm,
-                          account_number: e.target.value,
-                        })
-                      }
-                      placeholder="Account number"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="routing-number">Routing Number</Label>
-                    <Input
-                      id="routing-number"
-                      value={bankForm.routing_number}
-                      onChange={(e) =>
-                        setBankForm({
-                          ...bankForm,
-                          routing_number: e.target.value,
-                        })
-                      }
-                      placeholder="9-digit routing number"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="swift-code">SWIFT/BIC Code</Label>
-                    <Input
-                      id="swift-code"
-                      value={bankForm.swift_code}
-                      onChange={(e) =>
-                        setBankForm({ ...bankForm, swift_code: e.target.value })
-                      }
-                      placeholder="e.g., CHASUS33"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="iban">IBAN</Label>
-                    <Input
-                      id="iban"
-                      value={bankForm.iban}
-                      onChange={(e) =>
-                        setBankForm({ ...bankForm, iban: e.target.value })
-                      }
-                      placeholder="International Bank Account Number"
-                    />
-                  </div>
-                </div>
-
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="bank-address">Bank Address</Label>
-                  <Textarea
-                    id="bank-address"
-                    value={bankForm.bank_address}
-                    onChange={(e) =>
-                      setBankForm({ ...bankForm, bank_address: e.target.value })
-                    }
-                    placeholder="Full address of the bank branch"
-                    rows={2}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="wire-reference">Wire Reference</Label>
-                    <Input
-                      id="wire-reference"
-                      value={bankForm.wire_reference}
-                      onChange={(e) =>
-                        setBankForm({
-                          ...bankForm,
-                          wire_reference: e.target.value,
-                        })
-                      }
-                      placeholder="Wire transfer reference"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="correspondent-bank">
-                      Correspondent Bank
-                    </Label>
-                    <Input
-                      id="correspondent-bank"
-                      value={bankForm.correspondent_bank}
-                      onChange={(e) =>
-                        setBankForm({
-                          ...bankForm,
-                          correspondent_bank: e.target.value,
-                        })
-                      }
-                      placeholder="If applicable"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <Label htmlFor="bank-admin-notes">Admin Notes</Label>
-                  <Textarea
-                    id="bank-admin-notes"
-                    value={bankForm.admin_notes}
-                    onChange={(e) =>
-                      setBankForm({ ...bankForm, admin_notes: e.target.value })
-                    }
-                    placeholder="Internal notes about this deposit"
-                    rows={2}
-                  />
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="bank-auto-approve"
-                    checked={bankForm.auto_approve}
-                    onChange={(e) =>
-                      setBankForm({
-                        ...bankForm,
-                        auto_approve: e.target.checked,
-                      })
-                    }
-                    className="rounded"
-                    aria-label="Auto-approve and update balance immediately"
-                    title="Auto-approve and update balance immediately"
-                  />
-                  <Label htmlFor="bank-auto-approve" className="text-sm">
-                    Auto-approve and update balance immediately
-                  </Label>
-                </div>
-
-                <Button
-                  onClick={submitBankDeposit}
-                  disabled={
-                    submitting ||
-                    !selectedUser ||
-                    !bankForm.currency ||
-                    !bankForm.amount ||
-                    !bankForm.bank_name
-                  }
-                  className="w-full bg-[#F26623] hover:bg-[#E55A1F]"
-                >
-                  {submitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <Building className="w-4 h-4 mr-2" />
-                      Process Bank Deposit
-                    </>
-                  )}
-                </Button>
-              </TabsContent>
-
-              <TabsContent value="crypto" className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="cryptocurrency">Cryptocurrency *</Label>
-                    <Select
-                      value={cryptoForm.cryptocurrency}
-                      onValueChange={(value) =>
-                        setCryptoForm({ ...cryptoForm, cryptocurrency: value })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select cryptocurrency" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="BTC">Bitcoin (BTC)</SelectItem>
-                        <SelectItem value="ETH">Ethereum (ETH)</SelectItem>
-                        <SelectItem value="USDT">Tether (USDT)</SelectItem>
-                        <SelectItem value="USDC">USD Coin (USDC)</SelectItem>
-                        <SelectItem value="BNB">Binance Coin (BNB)</SelectItem>
-                        <SelectItem value="ADA">Cardano (ADA)</SelectItem>
-                        <SelectItem value="DOT">Polkadot (DOT)</SelectItem>
-                        <SelectItem value="LINK">Chainlink (LINK)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label htmlFor="crypto-amount">Amount *</Label>
-                    <Input
-                      id="crypto-amount"
-                      type="number"
-                      step="0.00000001"
-                      value={cryptoForm.amount}
-                      onChange={(e) =>
-                        setCryptoForm({ ...cryptoForm, amount: e.target.value })
-                      }
-                      placeholder="0.00000000"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <Label htmlFor="network">Network</Label>
+                  <Label htmlFor="thType">Transaction Type *</Label>
                   <Select
-                    value={cryptoForm.network}
+                    value={transactionForm.thType}
                     onValueChange={(value) =>
-                      setCryptoForm({ ...cryptoForm, network: value })
+                      setTransactionForm({ ...transactionForm, thType: value })
                     }
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select network" />
+                      <SelectValue placeholder="Select transaction type" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="bitcoin">Bitcoin Network</SelectItem>
-                      <SelectItem value="ethereum">
-                        Ethereum (ERC-20)
+                      <SelectItem value="External Deposit">
+                        External Deposit
                       </SelectItem>
-                      <SelectItem value="bsc">
-                        Binance Smart Chain (BEP-20)
+                      <SelectItem value="Internal Transfer">
+                        Internal Transfer
                       </SelectItem>
-                      <SelectItem value="polygon">Polygon (MATIC)</SelectItem>
-                      <SelectItem value="avalanche">
-                        Avalanche (AVAX)
+                      <SelectItem value="Regulatory Action">
+                        Regulatory Action
                       </SelectItem>
-                      <SelectItem value="solana">Solana</SelectItem>
-                      <SelectItem value="cardano">Cardano</SelectItem>
-                      <SelectItem value="polkadot">Polkadot</SelectItem>
+                      <SelectItem value="Compliance Review">
+                        Compliance Review
+                      </SelectItem>
+                      <SelectItem value="Account Adjustment">
+                        Account Adjustment
+                      </SelectItem>
+                      <SelectItem value="Administrative Action">
+                        Administrative Action
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
                 <div>
-                  <Label htmlFor="from-wallet">From Wallet Address</Label>
-                  <Input
-                    id="from-wallet"
-                    value={cryptoForm.from_wallet}
-                    onChange={(e) =>
-                      setCryptoForm({
-                        ...cryptoForm,
-                        from_wallet: e.target.value,
+                  <Label htmlFor="thStatus">Status *</Label>
+                  <Select
+                    value={transactionForm.thStatus}
+                    onValueChange={(value) =>
+                      setTransactionForm({
+                        ...transactionForm,
+                        thStatus: value,
                       })
                     }
-                    placeholder="Source wallet address"
-                  />
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Successful">Successful</SelectItem>
+                      <SelectItem value="Pending">Pending</SelectItem>
+                      <SelectItem value="Processing">Processing</SelectItem>
+                      <SelectItem value="Under Review">Under Review</SelectItem>
+                      <SelectItem value="Failed">Failed</SelectItem>
+                      <SelectItem value="Rejected">Rejected</SelectItem>
+                      <SelectItem value="Cancelled">Cancelled</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
+              </div>
 
-                <div>
-                  <Label htmlFor="to-wallet">To Wallet Address</Label>
-                  <Input
-                    id="to-wallet"
-                    value={cryptoForm.to_wallet}
-                    onChange={(e) =>
-                      setCryptoForm({
-                        ...cryptoForm,
-                        to_wallet: e.target.value,
-                      })
-                    }
-                    placeholder="Destination wallet address"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="transaction-hash">Transaction Hash</Label>
-                  <Input
-                    id="transaction-hash"
-                    value={cryptoForm.transaction_hash}
-                    onChange={(e) =>
-                      setCryptoForm({
-                        ...cryptoForm,
-                        transaction_hash: e.target.value,
-                      })
-                    }
-                    placeholder="Blockchain transaction hash"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="block-confirmations">
-                    Block Confirmations
-                  </Label>
-                  <Input
-                    id="block-confirmations"
-                    value={cryptoForm.block_confirmations}
-                    onChange={(e) =>
-                      setCryptoForm({
-                        ...cryptoForm,
-                        block_confirmations: e.target.value,
-                      })
-                    }
-                    placeholder="e.g., 6/6"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="gas-fee">Gas Fee</Label>
-                  <Input
-                    id="gas-fee"
-                    value={cryptoForm.gas_fee}
-                    onChange={(e) =>
-                      setCryptoForm({ ...cryptoForm, gas_fee: e.target.value })
-                    }
-                    placeholder="Transaction fee"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="crypto-admin-notes">Admin Notes</Label>
-                  <Textarea
-                    id="crypto-admin-notes"
-                    value={cryptoForm.admin_notes}
-                    onChange={(e) =>
-                      setCryptoForm({
-                        ...cryptoForm,
-                        admin_notes: e.target.value,
-                      })
-                    }
-                    placeholder="Internal notes about this deposit"
-                    rows={2}
-                  />
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="crypto-auto-approve"
-                    checked={cryptoForm.auto_approve}
-                    onChange={(e) =>
-                      setCryptoForm({
-                        ...cryptoForm,
-                        auto_approve: e.target.checked,
-                      })
-                    }
-                    className="rounded"
-                    aria-label="Auto-approve and update balance immediately"
-                    title="Auto-approve and update balance immediately"
-                  />
-                  <Label htmlFor="crypto-auto-approve" className="text-sm">
-                    Auto-approve and update balance immediately
-                  </Label>
-                </div>
-
-                <Button
-                  onClick={submitCryptoDeposit}
-                  disabled={
-                    submitting ||
-                    !selectedUser ||
-                    !cryptoForm.cryptocurrency ||
-                    !cryptoForm.amount
+              <div>
+                <Label htmlFor="thDetails">Transaction Details *</Label>
+                <Textarea
+                  id="thDetails"
+                  value={transactionForm.thDetails}
+                  onChange={(e) =>
+                    setTransactionForm({
+                      ...transactionForm,
+                      thDetails: e.target.value,
+                    })
                   }
-                  className="w-full bg-[#F26623] hover:bg-[#E55A1F]"
-                >
-                  {submitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <Wallet className="w-4 h-4 mr-2" />
-                      Process Crypto Deposit
-                    </>
-                  )}
-                </Button>
-              </TabsContent>
-            </Tabs>
+                  placeholder="Detailed description of the transaction"
+                  rows={3}
+                  className="resize-none"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="thPoi">Point of Interest</Label>
+                <Input
+                  id="thPoi"
+                  value={transactionForm.thPoi}
+                  onChange={(e) =>
+                    setTransactionForm({
+                      ...transactionForm,
+                      thPoi: e.target.value,
+                    })
+                  }
+                  placeholder="e.g., Estonia Financial Intelligence Unit (FIU)"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="thEmail">Associated Email</Label>
+                <Input
+                  id="thEmail"
+                  type="email"
+                  value={transactionForm.thEmail}
+                  onChange={(e) =>
+                    setTransactionForm({
+                      ...transactionForm,
+                      thEmail: e.target.value,
+                    })
+                  }
+                  placeholder={`Default: ${selectedUser.email || "No email"}`}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Leave empty to use the selected user's email
+                </p>
+              </div>
+
+              <Alert>
+                <Building className="h-4 w-4" />
+                <AlertDescription className="text-sm">
+                  <strong>Preview:</strong> This will create a transaction
+                  record for{" "}
+                  <strong>
+                    {selectedUser.full_name || selectedUser.email}
+                  </strong>{" "}
+                  with type "{transactionForm.thType}\" and status "
+                  {transactionForm.thStatus}". The record will appear in their
+                  transaction history immediately.
+                </AlertDescription>
+              </Alert>
+
+              <Button
+                onClick={submitTransaction}
+                disabled={
+                  submitting ||
+                  !selectedUser ||
+                  !transactionForm.thType ||
+                  !transactionForm.thDetails
+                }
+                className="w-full bg-[#F26623] hover:bg-[#E55A1F]"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Creating Transaction...
+                  </>
+                ) : (
+                  <>
+                    <FileText className="w-4 h-4 mr-2" />
+                    Create Transaction Record
+                  </>
+                )}
+              </Button>
+            </div>
           )}
         </CardContent>
       </Card>

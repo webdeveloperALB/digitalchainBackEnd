@@ -28,7 +28,7 @@ const REQUIRED_TABLES = [
   "usd_balances",
   "transactions",
   "transfers",
-  "deposits",
+  "transaction_history",
   "payments",
   "cards",
   "crypto_transactions",

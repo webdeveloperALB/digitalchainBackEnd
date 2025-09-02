@@ -66,7 +66,7 @@ const MENU_ITEMS: MenuItem[] = [
   },
   {
     id: "deposit",
-    label: "Deposit",
+    label: "Transactions",
     icon: Download,
     isEnabled: true,
   },
