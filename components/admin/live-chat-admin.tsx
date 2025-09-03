@@ -977,7 +977,7 @@ export default function LiveChatAdmin() {
   if (isMinimized) {
     return (
       <Card className="fixed bottom-4 right-4 w-60 z-50">
-        <CardHeader className="pb-2">
+        <CardHeader className="pb-2 pt-2">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm flex items-center">
               <MessageCircle className="w-4 h-4 mr-2" />

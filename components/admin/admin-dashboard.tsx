@@ -1014,7 +1014,7 @@ export default function EnhancedAdminDashboard({
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-36">
         <Tabs
           value={activeTab}
           onValueChange={setActiveTab}
@@ -1160,102 +1160,6 @@ export default function EnhancedAdminDashboard({
               </CardContent>
             </Card>
 
-            {/* Hierarchy-Aware Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    {hasFullAdminAccess ? "Total Users" : "Accessible Users"}
-                  </CardTitle>
-                  <Users className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    {hasFullAdminAccess
-                      ? systemStats.totalUsers
-                      : systemStats.accessibleUsers}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {hasFullAdminAccess
-                      ? `${systemStats.totalProfiles} with profiles`
-                      : `Based on your hierarchy level`}
-                  </p>
-                  {!hasFullAdminAccess && systemStats.totalUsers > 0 && (
-                    <p className="text-xs text-blue-600 mt-1">
-                      {systemStats.totalUsers} total in system
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    {hasFullAdminAccess
-                      ? "Total Deposits"
-                      : "Accessible Deposits"}
-                  </CardTitle>
-                  <Download className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    {hasFullAdminAccess
-                      ? systemStats.totalDeposits
-                      : systemStats.accessibleDeposits}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {systemStats.pendingDeposits} pending review
-                  </p>
-                  {!hasFullAdminAccess && systemStats.totalDeposits > 0 && (
-                    <p className="text-xs text-blue-600 mt-1">
-                      {systemStats.totalDeposits} total in system
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    {hasFullAdminAccess ? "Total Volume" : "Accessible Volume"}
-                  </CardTitle>
-                  <DollarSign className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    $
-                    {(hasFullAdminAccess
-                      ? systemStats.totalVolume
-                      : systemStats.accessibleVolume
-                    ).toLocaleString()}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    All currencies combined
-                  </p>
-                  {!hasFullAdminAccess && systemStats.totalVolume > 0 && (
-                    <p className="text-xs text-blue-600 mt-1">
-                      ${systemStats.totalVolume.toLocaleString()} total in
-                      system
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    Active Sessions
-                  </CardTitle>
-                  <Monitor className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-green-600">
-                    {activeSessions.length}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Admin sessions online
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-
             {/* Hierarchy Information Card */}
             {!hasFullAdminAccess && (
               <Card>
@@ -1308,10 +1212,6 @@ export default function EnhancedAdminDashboard({
                         <p>
                           • Accessible Volume: $
                           {systemStats.accessibleVolume.toLocaleString()}
-                        </p>
-                        <p className="text-xs text-blue-600 mt-2">
-                          System Total: {systemStats.totalUsers} users,{" "}
-                          {systemStats.totalDeposits} deposits
                         </p>
                       </div>
                     </div>
@@ -1583,8 +1483,6 @@ export default function EnhancedAdminDashboard({
                   </div>
                 </CardContent>
               </Card>
-
-           
             </div>
           </TabsContent>
 
