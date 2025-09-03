@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -18,9 +18,13 @@ import {
   MapPin,
   Globe,
   Monitor,
+  Crown,
+  UserCheck,
+  AlertTriangle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from "@/lib/supabase";
 import BalanceUpdater from "./balance-updater";
 import MessageManager from "./message-manager";
@@ -33,6 +37,7 @@ import UserPresenceTracker from "./user-presence-tracker";
 import PresenceManager from "./presence-manager";
 import AdminDepositCreator from "./admin-deposit-creator";
 import LiveChatAdmin from "./live-chat-admin";
+import UserHierarchyManager from "../../components/user-hierarchy-manager";
 
 interface LocationInfo {
   ip: string;
@@ -72,6 +77,21 @@ interface SecurityProps {
   onUpdateSession: (sessionId: string) => void;
 }
 
+interface CurrentAdmin {
+  id: string;
+  is_admin: boolean;
+  is_manager: boolean;
+  is_superiormanager: boolean;
+}
+
+interface UserAssignment {
+  id: string;
+  manager_id: string;
+  assigned_user_id: string;
+  assigned_by: string;
+  created_at: string;
+}
+
 export default function EnhancedAdminDashboard({
   sessionTimeLeft,
   sessionId,
@@ -81,6 +101,13 @@ export default function EnhancedAdminDashboard({
   currentSessionId,
   onUpdateSession,
 }: SecurityProps) {
+  // Core state
+  const [currentAdmin, setCurrentAdmin] = useState<CurrentAdmin | null>(null);
+  const [assignments, setAssignments] = useState<UserAssignment[]>([]);
+  const [accessibleUserIds, setAccessibleUserIds] = useState<string[]>([]);
+  const [accessibleUserIdsLoaded, setAccessibleUserIdsLoaded] = useState(false);
+  const [loadingPermissions, setLoadingPermissions] = useState(true);
+
   const [activeTab, setActiveTab] = useState("overview");
   const [locationInfo, setLocationInfo] = useState<LocationInfo>({
     ip: "Detecting...",
@@ -96,6 +123,9 @@ export default function EnhancedAdminDashboard({
     totalDeposits: 0,
     pendingDeposits: 0,
     totalVolume: 0,
+    accessibleUsers: 0,
+    accessibleDeposits: 0,
+    accessibleVolume: 0,
   });
   const [securityStats, setSecurityStats] = useState({
     activeAdminSessions: activeSessions.length,
@@ -103,6 +133,251 @@ export default function EnhancedAdminDashboard({
     totalLoginAttempts: loginAttempts.length,
     successfulLogins: loginAttempts.filter((a) => a.success).length,
   });
+
+  // Get current admin info - STABLE FUNCTION
+  const getCurrentAdmin =
+    useCallback(async (): Promise<CurrentAdmin | null> => {
+      try {
+        const currentSession = localStorage.getItem("current_admin_session");
+        if (!currentSession) {
+          console.log("No current admin session found");
+          return null;
+        }
+
+        const sessionData = JSON.parse(currentSession);
+        console.log("Current session data:", sessionData);
+
+        const { data: adminData, error } = await supabase
+          .from("users")
+          .select("id, is_admin, is_manager, is_superiormanager")
+          .eq("id", sessionData.userId)
+          .single();
+
+        if (error) {
+          console.error("Failed to get admin data:", error);
+          return null;
+        }
+
+        console.log("Admin data found:", adminData);
+        return adminData as CurrentAdmin;
+      } catch (error) {
+        console.error("Failed to get current admin:", error);
+        return null;
+      }
+    }, []);
+
+  // Load assignments - STABLE FUNCTION
+  const loadAssignments = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from("user_assignments")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setAssignments(data || []);
+    } catch (error) {
+      console.error("Failed to load assignments:", error);
+    }
+  }, []);
+
+  // Get accessible user IDs - STABLE FUNCTION
+  const loadAccessibleUserIds = useCallback(
+    async (admin: CurrentAdmin): Promise<string[]> => {
+      if (!admin) {
+        console.log("No admin provided to loadAccessibleUserIds");
+        return [];
+      }
+
+      console.log("Getting accessible users for admin:", admin);
+
+      // Full admin (is_admin: true, is_superiormanager: false, is_manager: false) - can see everyone
+      if (admin.is_admin && !admin.is_superiormanager && !admin.is_manager) {
+        console.log("Full admin - can see all users");
+        return []; // Empty array means no filter (see all)
+      }
+
+      // Superior manager (is_admin: true, is_superiormanager: true) - can see their managers and their assigned users
+      if (admin.is_admin && admin.is_superiormanager) {
+        console.log("Superior manager loading accessible users for:", admin.id);
+
+        try {
+          // Get managers assigned to this superior manager
+          const { data: managerAssignments, error: managerError } =
+            await supabase
+              .from("user_assignments")
+              .select("assigned_user_id")
+              .eq("manager_id", admin.id);
+
+          if (managerError) {
+            console.error("Error fetching manager assignments:", managerError);
+            return [admin.id];
+          }
+
+          const managerIds =
+            managerAssignments?.map((a) => a.assigned_user_id) || [];
+          console.log("Superior manager's assigned managers:", managerIds);
+
+          if (managerIds.length > 0) {
+            // Verify these are actually managers (not other superior managers or regular users)
+            const { data: verifiedManagers, error: verifyError } =
+              await supabase
+                .from("users")
+                .select("id")
+                .in("id", managerIds)
+                .eq("is_manager", true)
+                .eq("is_superiormanager", false); // Only regular managers, not other superior managers
+
+            if (verifyError) {
+              console.error("Error verifying managers:", verifyError);
+              return [admin.id];
+            }
+
+            const verifiedManagerIds =
+              verifiedManagers?.map((m: any) => m.id) || [];
+            console.log("Verified manager IDs:", verifiedManagerIds);
+
+            if (verifiedManagerIds.length > 0) {
+              // Get users assigned to those verified managers
+              const { data: userAssignments, error: userError } = await supabase
+                .from("user_assignments")
+                .select("assigned_user_id")
+                .in("manager_id", verifiedManagerIds);
+
+              if (userError) {
+                console.error("Error fetching user assignments:", userError);
+                return [admin.id, ...verifiedManagerIds];
+              }
+
+              const userIds =
+                userAssignments?.map((a) => a.assigned_user_id) || [];
+
+              // Filter out any admin/manager users from the assigned users list
+              const { data: verifiedUsers, error: verifyUsersError } =
+                await supabase
+                  .from("users")
+                  .select("id")
+                  .in("id", userIds)
+                  .eq("is_admin", false)
+                  .eq("is_manager", false)
+                  .eq("is_superiormanager", false);
+
+              if (verifyUsersError) {
+                console.error("Error verifying users:", verifyUsersError);
+                return [admin.id, ...verifiedManagerIds];
+              }
+
+              const verifiedUserIds =
+                verifiedUsers?.map((u: any) => u.id) || [];
+              const accessibleIds = [
+                admin.id,
+                ...verifiedManagerIds,
+                ...verifiedUserIds,
+              ];
+              console.log(
+                "Superior manager can access (verified):",
+                accessibleIds
+              );
+              return accessibleIds;
+            }
+          }
+
+          console.log("Superior manager has no verified managers");
+          return [admin.id];
+        } catch (error) {
+          console.error("Error in superior manager logic:", error);
+          return [admin.id];
+        }
+      }
+
+      // Manager (is_manager: true) - can only see assigned users (not other managers)
+      if (admin.is_manager) {
+        console.log("Manager loading accessible users for:", admin.id);
+
+        try {
+          const { data: userAssignments, error: userError } = await supabase
+            .from("user_assignments")
+            .select("assigned_user_id")
+            .eq("manager_id", admin.id);
+
+          if (userError) {
+            console.error(
+              "Error fetching user assignments for manager:",
+              userError
+            );
+            return [admin.id];
+          }
+
+          const assignedUserIds =
+            userAssignments?.map((a) => a.assigned_user_id) || [];
+          console.log("Manager's assigned user IDs:", assignedUserIds);
+
+          if (assignedUserIds.length > 0) {
+            // Verify these are regular users (not managers or admins)
+            const { data: verifiedUsers, error: verifyError } = await supabase
+              .from("users")
+              .select("id")
+              .in("id", assignedUserIds)
+              .eq("is_admin", false)
+              .eq("is_manager", false)
+              .eq("is_superiormanager", false);
+
+            if (verifyError) {
+              console.error("Error verifying assigned users:", verifyError);
+              return [admin.id];
+            }
+
+            const verifiedUserIds = verifiedUsers?.map((u: any) => u.id) || [];
+            const accessibleIds = [admin.id, ...verifiedUserIds];
+            console.log(
+              "Manager can access (verified users only):",
+              accessibleIds
+            );
+            return accessibleIds;
+          }
+
+          console.log("Manager has no verified assigned users");
+          return [admin.id];
+        } catch (error) {
+          console.error("Error in manager logic:", error);
+          return [admin.id];
+        }
+      }
+
+      console.log("No valid admin role found");
+      return [];
+    },
+    []
+  );
+
+  // Check if user has full admin access (is_admin: true, others: false)
+  const hasFullAdminAccess = useMemo(() => {
+    return (
+      currentAdmin?.is_admin === true &&
+      currentAdmin?.is_manager === false &&
+      currentAdmin?.is_superiormanager === false
+    );
+  }, [currentAdmin]);
+
+  // Get admin level description
+  const getAdminLevelDescription = useMemo(() => {
+    if (!currentAdmin) return "Loading permissions...";
+
+    if (
+      currentAdmin.is_admin &&
+      !currentAdmin.is_superiormanager &&
+      !currentAdmin.is_manager
+    ) {
+      return "Full Administrator - Complete system access";
+    }
+    if (currentAdmin.is_admin && currentAdmin.is_superiormanager) {
+      return "Superior Manager - Manages assigned managers and their users";
+    }
+    if (currentAdmin.is_manager) {
+      return "Manager - Manages assigned users only";
+    }
+    return "No admin permissions";
+  }, [currentAdmin]);
 
   // Fetch location info and update session
   useEffect(() => {
@@ -331,254 +606,148 @@ export default function EnhancedAdminDashboard({
     fetchLocationAndUpdateSession();
   }, []); // Remove sessionId dependency to avoid loops
 
-  useEffect(() => {
-    fetchSystemStats();
+  // Fetch system stats with hierarchy awareness - STABLE FUNCTION
+  const fetchSystemStats = useCallback(async () => {
+    if (!currentAdmin || !accessibleUserIdsLoaded) {
+      console.log(
+        "Cannot fetch system stats - admin or accessible IDs not ready"
+      );
+      return;
+    }
 
-    // Set up real-time subscription for system stats
-    const subscription = supabase
-      .channel("admin_system_stats")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "users",
-        },
-        () => {
-          fetchSystemStats();
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "users",
-        },
-        () => {
-          fetchSystemStats();
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "deposits",
-        },
-        () => {
-          fetchSystemStats();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
-
-  useEffect(() => {
-    // Update security stats when login attempts or sessions change
-    setSecurityStats((prev) => ({
-      ...prev,
-      activeAdminSessions: activeSessions.length,
-      totalLoginAttempts: loginAttempts.length,
-      successfulLogins: loginAttempts.filter((a) => a.success).length,
-    }));
-  }, [loginAttempts, activeSessions]);
-
-  const fetchSystemStats = async () => {
     try {
-      console.log("Fetching system stats...");
+      console.log(
+        "Fetching hierarchy-aware system stats for admin:",
+        currentAdmin
+      );
 
-      // Method 1: Try to get total users count from users table with RLS bypass
-      console.log("Attempting Method 1: Count query with exact count...");
-      const { count: userCountExact, error: userErrorExact } = await supabase
-        .from("users")
-        .select("*", { count: "exact", head: true });
+      // Get total system stats (for full admin comparison)
+      let totalUsers = 0;
+      let totalProfiles = 0;
+      let totalDeposits = 0;
+      let totalVolume = 0;
 
-      console.log("Method 1 result:", { userCountExact, userErrorExact });
-
-      // Method 2: Try estimated count (faster, bypasses some RLS issues)
-      console.log("Attempting Method 2: Estimated count...");
-      const { count: userCountEstimated, error: userErrorEstimated } =
-        await supabase
-          .from("users")
-          .select("*", { count: "estimated", head: true });
-
-      console.log("Method 2 result:", {
-        userCountEstimated,
-        userErrorEstimated,
-      });
-
-      // Method 3: Try planned count
-      console.log("Attempting Method 3: Planned count...");
-      const { count: userCountPlanned, error: userErrorPlanned } =
-        await supabase
-          .from("users")
-          .select("*", { count: "planned", head: true });
-
-      console.log("Method 3 result:", { userCountPlanned, userErrorPlanned });
-
-      // Method 4: Try to get actual users by fetching with limit to test RLS
-      console.log("Attempting Method 4: Fetch with high limit...");
-      const {
-        data: usersLimited,
-        error: usersLimitedError,
-        count: usersLimitedCount,
-      } = await supabase
-        .from("users")
-        .select("id", { count: "exact" })
-        .limit(5000); // High limit to test if we can get more
-
-      console.log("Method 4 result:", {
-        count: usersLimited?.length,
-        actualCount: usersLimitedCount,
-        error: usersLimitedError,
-      });
-
-      // Method 5: Try to get all users by fetching all (might be slow but accurate)
-      console.log("Attempting Method 5: Fetch all users...");
-      const { data: allUsers, error: allUsersError } = await supabase
-        .from("users")
-        .select("id");
-
-      console.log("Method 5 result:", {
-        count: allUsers?.length,
-        error: allUsersError,
-      });
-
-      // Method 6: Try using a function call if available (bypasses RLS)
-      console.log("Attempting Method 6: RPC function call...");
+      // Try to get total counts
       try {
-        const { data: rpcCount, error: rpcError } = await supabase.rpc(
-          "get_user_count"
-        ); // This would need to be created as a database function
-        console.log("Method 6 result:", { rpcCount, rpcError });
-      } catch (rpcErr) {
-        console.log(
-          "Method 6 not available (RPC function doesn't exist):",
-          rpcErr
-        );
-      }
+        const { data: allUsers, error: allUsersError } = await supabase
+          .from("users")
+          .select("id");
 
-      // Get profiles count for comparison
-      const { count: profileCount, error: profileError } = await supabase
-        .from("profiles")
-        .select("*", { count: "exact", head: true });
-
-      console.log("Profile count result:", { profileCount, profileError });
-
-      // Determine final user count using the best available method
-      let finalUserCount = 0;
-      let countMethod = "unknown";
-
-      // Priority order: exact count > estimated > planned > fetched data > limited fetch
-      if (userCountExact !== null && !userErrorExact) {
-        finalUserCount = userCountExact;
-        countMethod = "exact count query";
-        console.log("Using exact count query result:", finalUserCount);
-      } else if (userCountEstimated !== null && !userErrorEstimated) {
-        finalUserCount = userCountEstimated;
-        countMethod = "estimated count query";
-        console.log("Using estimated count query result:", finalUserCount);
-      } else if (userCountPlanned !== null && !userErrorPlanned) {
-        finalUserCount = userCountPlanned;
-        countMethod = "planned count query";
-        console.log("Using planned count query result:", finalUserCount);
-      } else if (allUsers && !allUsersError) {
-        finalUserCount = allUsers.length;
-        countMethod = "full data fetch";
-        console.log("Using full data fetch result:", finalUserCount);
-      } else if (usersLimited && !usersLimitedError) {
-        finalUserCount = usersLimited.length;
-        countMethod = "limited fetch (may be incomplete)";
-        console.log("Using limited fetch result:", finalUserCount);
-        if (usersLimited.length === 5000) {
-          console.warn(
-            "WARNING: Hit limit of 5000, actual count may be higher!"
-          );
-          countMethod += " - INCOMPLETE (5000+ users)";
+        if (!allUsersError && allUsers) {
+          totalUsers = allUsers.length;
         }
-      } else {
-        console.error("All user count methods failed:", {
-          userErrorExact,
-          userErrorEstimated,
-          userErrorPlanned,
-          allUsersError,
-          usersLimitedError,
-        });
 
-        // Try one more fallback - get from user_balances or any other user-related table
-        console.log("Attempting final fallback: user_balances count...");
-        const { count: balanceCount } = await supabase
-          .from("user_balances")
+        const { count: profileCount, error: profileError } = await supabase
+          .from("profiles")
           .select("*", { count: "exact", head: true });
 
-        if (balanceCount !== null) {
-          finalUserCount = balanceCount;
-          countMethod = "user_balances fallback";
-          console.log("Using balance count as fallback:", finalUserCount);
+        if (!profileError) {
+          totalProfiles = profileCount || 0;
         }
+
+        const { data: allDeposits, error: depositsError } = await supabase
+          .from("deposits")
+          .select("amount, status");
+
+        if (!depositsError && allDeposits) {
+          totalDeposits = allDeposits.length;
+          totalVolume = allDeposits.reduce(
+            (sum, d) => sum + (d.amount || 0),
+            0
+          );
+        }
+      } catch (error) {
+        console.error("Error fetching total stats:", error);
       }
 
-      // Check if we might have RLS issues
-      if (finalUserCount < 4000 && finalUserCount > 0) {
-        console.warn(`
-          ⚠️  USER COUNT WARNING ⚠️
-          Expected 4000+ users but got ${finalUserCount}
-          This might indicate:
-          1. Row Level Security (RLS) is limiting results
-          2. Admin user doesn't have proper permissions
-          3. Database connection issues
-          
-          Method used: ${countMethod}
-          
-          To fix this, you may need to:
-          - Disable RLS on users table for admin queries
-          - Create a database function that bypasses RLS
-          - Grant proper permissions to admin user
-        `);
+      // Get accessible stats based on hierarchy
+      let accessibleUsers = 0;
+      let accessibleDeposits = 0;
+      let accessibleVolume = 0;
+      let pendingDeposits = 0;
+
+      if (accessibleUserIds.length > 0) {
+        // Count accessible users
+        console.log("Counting accessible users:", accessibleUserIds);
+        const { data: accessibleUsersData, error: accessibleUsersError } =
+          await supabase.from("users").select("id").in("id", accessibleUserIds);
+
+        if (!accessibleUsersError && accessibleUsersData) {
+          accessibleUsers = accessibleUsersData.length;
+        }
+
+        // Count accessible deposits
+        const { data: accessibleDepositsData, error: accessibleDepositsError } =
+          await supabase
+            .from("deposits")
+            .select("amount, status")
+            .in("uuid", accessibleUserIds);
+
+        if (!accessibleDepositsError && accessibleDepositsData) {
+          accessibleDeposits = accessibleDepositsData.length;
+          accessibleVolume = accessibleDepositsData.reduce(
+            (sum, d) => sum + (d.amount || 0),
+            0
+          );
+          pendingDeposits = accessibleDepositsData.filter((d) =>
+            d.status.includes("Pending")
+          ).length;
+        }
+      } else if (
+        currentAdmin.is_admin &&
+        !currentAdmin.is_superiormanager &&
+        !currentAdmin.is_manager
+      ) {
+        // Full admin - use total stats
+        console.log("Full admin - using total stats");
+        accessibleUsers = totalUsers;
+        accessibleDeposits = totalDeposits;
+        accessibleVolume = totalVolume;
+
+        // Get pending deposits for full admin
+        const { data: allDeposits, error: depositsError } = await supabase
+          .from("deposits")
+          .select("amount, status");
+
+        if (!depositsError && allDeposits) {
+          pendingDeposits = allDeposits.filter((d) =>
+            d.status.includes("Pending")
+          ).length;
+        }
+      } else {
+        // No accessible users
+        console.log("No accessible users for stats");
+        accessibleUsers = 0;
+        accessibleDeposits = 0;
+        accessibleVolume = 0;
+        pendingDeposits = 0;
       }
-
-      // Get deposit stats
-      const { data: deposits, error: depositsError } = await supabase
-        .from("deposits")
-        .select("amount, status");
-
-      console.log("Deposits result:", {
-        count: deposits?.length,
-        error: depositsError,
-      });
-
-      const totalDeposits = deposits?.length || 0;
-      const pendingDeposits =
-        deposits?.filter((d) => d.status.includes("Pending")).length || 0;
-      const totalVolume =
-        deposits?.reduce((sum, d) => sum + (d.amount || 0), 0) || 0;
 
       const newStats = {
-        totalUsers: finalUserCount,
-        totalProfiles: profileCount || 0,
+        totalUsers,
+        totalProfiles,
         totalDeposits,
         pendingDeposits,
         totalVolume,
+        accessibleUsers,
+        accessibleDeposits,
+        accessibleVolume,
       };
 
-      console.log("Final system stats:", newStats);
-      console.log("Count method used:", countMethod);
+      console.log("Final hierarchy-aware system stats:", newStats);
       setSystemStats(newStats);
     } catch (error) {
       console.error("Error fetching system stats:", error);
-
-      // Set fallback values
       setSystemStats((prev) => ({
         ...prev,
         totalUsers: 0,
         totalProfiles: 0,
+        accessibleUsers: 0,
+        accessibleDeposits: 0,
+        accessibleVolume: 0,
       }));
     }
-  };
+  }, [currentAdmin, accessibleUserIds, accessibleUserIdsLoaded]);
 
   // Format time remaining
   const formatTimeRemaining = (ms: number) => {
@@ -606,11 +775,182 @@ export default function EnhancedAdminDashboard({
     return "Just now";
   };
 
+  // EFFECT 1: Initialize current admin - NO DEPENDENCIES ON OTHER FUNCTIONS
+  useEffect(() => {
+    let mounted = true;
+
+    const init = async () => {
+      try {
+        const admin = await getCurrentAdmin();
+        if (mounted) {
+          setCurrentAdmin(admin);
+        }
+      } catch (error) {
+        console.error("Failed to initialize:", error);
+      } finally {
+        if (mounted) {
+          setLoadingPermissions(false);
+        }
+      }
+    };
+
+    init();
+
+    return () => {
+      mounted = false;
+    };
+  }, []); // NO DEPENDENCIES
+
+  // EFFECT 2: Load assignments and accessible user IDs when admin changes - STABLE
+  useEffect(() => {
+    let mounted = true;
+
+    if (!currentAdmin) {
+      setAccessibleUserIds([]);
+      setAccessibleUserIdsLoaded(false);
+      return;
+    }
+
+    const loadData = async () => {
+      try {
+        console.log(
+          "Loading assignments and accessible user IDs for admin:",
+          currentAdmin
+        );
+
+        // Load assignments
+        await loadAssignments();
+
+        // Load accessible user IDs
+        const userIds = await loadAccessibleUserIds(currentAdmin);
+        if (mounted) {
+          setAccessibleUserIds(userIds);
+          setAccessibleUserIdsLoaded(true);
+          console.log("Cached accessible user IDs:", userIds);
+        }
+      } catch (error) {
+        console.error("Failed to load admin data:", error);
+        if (mounted) {
+          setAccessibleUserIds([]);
+          setAccessibleUserIdsLoaded(true);
+        }
+      }
+    };
+
+    loadData();
+
+    return () => {
+      mounted = false;
+    };
+  }, [currentAdmin, loadAssignments, loadAccessibleUserIds]); // Only depends on currentAdmin and stable functions
+
+  // EFFECT 3: Fetch system stats when accessible user IDs are ready - STABLE
+  useEffect(() => {
+    if (currentAdmin && accessibleUserIdsLoaded) {
+      console.log(
+        "Loading system stats - admin ready and accessible IDs loaded"
+      );
+      fetchSystemStats();
+    }
+  }, [currentAdmin, accessibleUserIdsLoaded, fetchSystemStats]); // Stable dependencies
+
+  // EFFECT 4: Update security stats when sessions change
+  useEffect(() => {
+    setSecurityStats((prev) => ({
+      ...prev,
+      activeAdminSessions: activeSessions.length,
+      totalLoginAttempts: loginAttempts.length,
+      successfulLogins: loginAttempts.filter((a) => a.success).length,
+    }));
+  }, [loginAttempts, activeSessions]);
+
+  // EFFECT 5: Set up real-time subscription for system stats
+  useEffect(() => {
+    if (!currentAdmin || !accessibleUserIdsLoaded) return;
+
+    const subscription = supabase
+      .channel("admin_system_stats")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "users",
+        },
+        () => {
+          fetchSystemStats();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "deposits",
+        },
+        () => {
+          fetchSystemStats();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [currentAdmin, accessibleUserIdsLoaded, fetchSystemStats]);
+
+  // Loading state
+  if (loadingPermissions) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardContent className="text-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F26623] mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading admin dashboard...</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // No admin session
+  if (!currentAdmin) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="flex items-center text-red-600">
+              <AlertTriangle className="w-5 h-5 mr-2" />
+              Session Error
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-center py-8">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle className="w-8 h-8 text-red-600" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Admin Session Not Found
+            </h3>
+            <p className="text-gray-600 mb-4">
+              Unable to verify your admin permissions. Please log in again.
+            </p>
+            <Button
+              onClick={onLogout}
+              className="bg-[#F26623] hover:bg-[#E55A1F]"
+            >
+              Return to Login
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <PresenceManager />
 
-      {/* Enhanced Header with Current User's Location */}
+      {/* Enhanced Header with Current User's Location and Hierarchy Info */}
       <div className="bg-white border-b shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
@@ -640,6 +980,27 @@ export default function EnhancedAdminDashboard({
               </div>
             </div>
             <div className="flex items-center space-x-4">
+              {/* Admin Level Badge */}
+              {currentAdmin.is_admin &&
+                !currentAdmin.is_superiormanager &&
+                !currentAdmin.is_manager && (
+                  <Badge className="bg-red-100 text-red-800">
+                    <Shield className="w-3 h-3 mr-1" />
+                    Full Administrator
+                  </Badge>
+                )}
+              {currentAdmin.is_admin && currentAdmin.is_superiormanager && (
+                <Badge className="bg-purple-100 text-purple-800">
+                  <Crown className="w-3 h-3 mr-1" />
+                  Superior Manager
+                </Badge>
+              )}
+              {currentAdmin.is_manager && (
+                <Badge className="bg-blue-100 text-blue-800">
+                  <UserCheck className="w-3 h-3 mr-1" />
+                  Manager
+                </Badge>
+              )}
               <div className="flex items-center text-sm text-green-600">
                 <Activity className="w-4 h-4 mr-1" />
                 System Online
@@ -671,7 +1032,7 @@ export default function EnhancedAdminDashboard({
           onValueChange={setActiveTab}
           className="space-y-6"
         >
-          <TabsList className="grid w-full grid-cols-11">
+          <TabsList className="grid w-full grid-cols-12">
             <TabsTrigger value="overview" className="flex items-center">
               <Settings className="w-4 h-4 mr-2" />
               Overview
@@ -712,6 +1073,10 @@ export default function EnhancedAdminDashboard({
               <Users className="w-4 h-4 mr-2" />
               Users
             </TabsTrigger>
+            <TabsTrigger value="hierarchy" className="flex items-center">
+              <Shield className="w-4 h-4 mr-2" />
+              Hierarchy
+            </TabsTrigger>
             <TabsTrigger value="database" className="flex items-center">
               <Database className="w-4 h-4 mr-2" />
               Database
@@ -719,53 +1084,170 @@ export default function EnhancedAdminDashboard({
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
+            {/* Admin Level Display */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <Shield className="w-5 h-5 mr-2" />
+                  Your Admin Level & Access Scope
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center space-x-4 mb-4">
+                  {currentAdmin.is_admin &&
+                    !currentAdmin.is_superiormanager &&
+                    !currentAdmin.is_manager && (
+                      <Badge className="bg-red-100 text-red-800">
+                        <Shield className="w-3 h-3 mr-1" />
+                        Full Administrator
+                      </Badge>
+                    )}
+                  {currentAdmin.is_admin && currentAdmin.is_superiormanager && (
+                    <Badge className="bg-purple-100 text-purple-800">
+                      <Crown className="w-3 h-3 mr-1" />
+                      Superior Manager
+                    </Badge>
+                  )}
+                  {currentAdmin.is_manager && (
+                    <Badge className="bg-blue-100 text-blue-800">
+                      <UserCheck className="w-3 h-3 mr-1" />
+                      Manager
+                    </Badge>
+                  )}
+                  <span className="text-sm text-gray-600">
+                    {getAdminLevelDescription}
+                  </span>
+                </div>
+
+                {/* Access Scope Information */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                  <div className="p-3 bg-blue-50 rounded-lg">
+                    <h4 className="font-medium text-blue-900">
+                      Your Accessible Users
+                    </h4>
+                    <p className="text-2xl font-bold text-blue-600">
+                      {hasFullAdminAccess
+                        ? systemStats.totalUsers
+                        : systemStats.accessibleUsers}
+                    </p>
+                    <p className="text-xs text-blue-700">
+                      {hasFullAdminAccess
+                        ? "All users in system"
+                        : "Users you can manage"}
+                    </p>
+                  </div>
+                  <div className="p-3 bg-green-50 rounded-lg">
+                    <h4 className="font-medium text-green-900">
+                      Your Accessible Deposits
+                    </h4>
+                    <p className="text-2xl font-bold text-green-600">
+                      {hasFullAdminAccess
+                        ? systemStats.totalDeposits
+                        : systemStats.accessibleDeposits}
+                    </p>
+                    <p className="text-xs text-green-700">
+                      {hasFullAdminAccess
+                        ? "All deposits in system"
+                        : "Deposits you can view"}
+                    </p>
+                  </div>
+                  <div className="p-3 bg-purple-50 rounded-lg">
+                    <h4 className="font-medium text-purple-900">
+                      Your Accessible Volume
+                    </h4>
+                    <p className="text-2xl font-bold text-purple-600">
+                      $
+                      {(hasFullAdminAccess
+                        ? systemStats.totalVolume
+                        : systemStats.accessibleVolume
+                      ).toLocaleString()}
+                    </p>
+                    <p className="text-xs text-purple-700">
+                      {hasFullAdminAccess
+                        ? "Total system volume"
+                        : "Volume you can manage"}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Hierarchy-Aware Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">
-                    Total Users
+                    {hasFullAdminAccess ? "Total Users" : "Accessible Users"}
                   </CardTitle>
                   <Users className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">
-                    {systemStats.totalUsers}
+                    {hasFullAdminAccess
+                      ? systemStats.totalUsers
+                      : systemStats.accessibleUsers}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {systemStats.totalProfiles} with profiles
+                    {hasFullAdminAccess
+                      ? `${systemStats.totalProfiles} with profiles`
+                      : `Based on your hierarchy level`}
                   </p>
+                  {!hasFullAdminAccess && systemStats.totalUsers > 0 && (
+                    <p className="text-xs text-blue-600 mt-1">
+                      {systemStats.totalUsers} total in system
+                    </p>
+                  )}
                 </CardContent>
               </Card>
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">
-                    Total Deposits
+                    {hasFullAdminAccess
+                      ? "Total Deposits"
+                      : "Accessible Deposits"}
                   </CardTitle>
                   <Download className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">
-                    {systemStats.totalDeposits}
+                    {hasFullAdminAccess
+                      ? systemStats.totalDeposits
+                      : systemStats.accessibleDeposits}
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {systemStats.pendingDeposits} pending review
                   </p>
+                  {!hasFullAdminAccess && systemStats.totalDeposits > 0 && (
+                    <p className="text-xs text-blue-600 mt-1">
+                      {systemStats.totalDeposits} total in system
+                    </p>
+                  )}
                 </CardContent>
               </Card>
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">
-                    Total Volume
+                    {hasFullAdminAccess ? "Total Volume" : "Accessible Volume"}
                   </CardTitle>
                   <DollarSign className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">
-                    ${systemStats.totalVolume.toLocaleString()}
+                    $
+                    {(hasFullAdminAccess
+                      ? systemStats.totalVolume
+                      : systemStats.accessibleVolume
+                    ).toLocaleString()}
                   </div>
                   <p className="text-xs text-muted-foreground">
                     All currencies combined
                   </p>
+                  {!hasFullAdminAccess && systemStats.totalVolume > 0 && (
+                    <p className="text-xs text-blue-600 mt-1">
+                      ${systemStats.totalVolume.toLocaleString()} total in
+                      system
+                    </p>
+                  )}
                 </CardContent>
               </Card>
               <Card>
@@ -786,7 +1268,71 @@ export default function EnhancedAdminDashboard({
               </Card>
             </div>
 
-            {/* Debug Information Card */}
+            {/* Hierarchy Information Card */}
+            {!hasFullAdminAccess && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <Shield className="w-5 h-5 mr-2" />
+                    Your Hierarchy Access Information
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Alert className="border-blue-500 bg-blue-50">
+                    <Shield className="h-4 w-4" />
+                    <AlertDescription className="text-blue-700">
+                      <strong>Access Level:</strong> {getAdminLevelDescription}
+                    </AlertDescription>
+                  </Alert>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <h4 className="font-medium">What You Can Access:</h4>
+                      <ul className="text-sm text-gray-600 space-y-1">
+                        {currentAdmin.is_admin &&
+                          currentAdmin.is_superiormanager && (
+                            <>
+                              <li>• Your own account and data</li>
+                              <li>• Managers you have assigned</li>
+                              <li>• Users assigned to your managers</li>
+                              <li>• All related deposits and activities</li>
+                            </>
+                          )}
+                        {currentAdmin.is_manager && (
+                          <>
+                            <li>• Your own account and data</li>
+                            <li>• Users specifically assigned to you</li>
+                            <li>
+                              • Deposits and activities for assigned users
+                            </li>
+                          </>
+                        )}
+                      </ul>
+                    </div>
+                    <div className="space-y-2">
+                      <h4 className="font-medium">Access Statistics:</h4>
+                      <div className="text-sm text-gray-600 space-y-1">
+                        <p>• Accessible Users: {systemStats.accessibleUsers}</p>
+                        <p>
+                          • Accessible Deposits:{" "}
+                          {systemStats.accessibleDeposits}
+                        </p>
+                        <p>
+                          • Accessible Volume: $
+                          {systemStats.accessibleVolume.toLocaleString()}
+                        </p>
+                        <p className="text-xs text-blue-600 mt-2">
+                          System Total: {systemStats.totalUsers} users,{" "}
+                          {systemStats.totalDeposits} deposits
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Debug Information Card - Enhanced with Hierarchy Info */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center">
@@ -797,11 +1343,19 @@ export default function EnhancedAdminDashboard({
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="p-3 bg-blue-50 rounded-lg">
-                    <h4 className="font-medium text-blue-900">Total Users</h4>
+                    <h4 className="font-medium text-blue-900">
+                      {hasFullAdminAccess ? "Total Users" : "Your Users"}
+                    </h4>
                     <p className="text-2xl font-bold text-blue-600">
-                      {systemStats.totalUsers}
+                      {hasFullAdminAccess
+                        ? systemStats.totalUsers
+                        : systemStats.accessibleUsers}
                     </p>
-                    <p className="text-xs text-blue-700">From users table</p>
+                    <p className="text-xs text-blue-700">
+                      {hasFullAdminAccess
+                        ? "From users table"
+                        : "Based on hierarchy"}
+                    </p>
                   </div>
                   <div className="p-3 bg-green-50 rounded-lg">
                     <h4 className="font-medium text-green-900">
@@ -815,44 +1369,45 @@ export default function EnhancedAdminDashboard({
                     </p>
                   </div>
                   <div className="p-3 bg-purple-50 rounded-lg">
-                    <h4 className="font-medium text-purple-900">Deposits</h4>
+                    <h4 className="font-medium text-purple-900">
+                      {hasFullAdminAccess ? "Total Deposits" : "Your Deposits"}
+                    </h4>
                     <p className="text-2xl font-bold text-purple-600">
-                      {systemStats.totalDeposits}
+                      {hasFullAdminAccess
+                        ? systemStats.totalDeposits
+                        : systemStats.accessibleDeposits}
                     </p>
                     <p className="text-xs text-purple-700">
-                      Total deposit records
+                      {hasFullAdminAccess
+                        ? "All deposit records"
+                        : "Accessible deposits"}
                     </p>
                   </div>
                 </div>
 
-                {systemStats.totalUsers < 4000 &&
-                  systemStats.totalUsers > 0 && (
-                    <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                      <h4 className="font-medium text-yellow-800 mb-2">
-                        ⚠️ Potential Issue Detected
-                      </h4>
-                      <p className="text-sm text-yellow-700 mb-2">
-                        Expected 4000+ users but showing{" "}
-                        {systemStats.totalUsers}. This might indicate:
-                      </p>
-                      <ul className="text-xs text-yellow-600 space-y-1 ml-4">
-                        <li>
-                          • Row Level Security (RLS) is limiting query results
-                        </li>
-                        <li>• Admin user lacks proper database permissions</li>
-                        <li>• Database connection or query issues</li>
-                      </ul>
-                      <p className="text-xs text-yellow-600 mt-2">
-                        Check browser console for detailed query logs.
-                      </p>
-                    </div>
-                  )}
+                {!hasFullAdminAccess && (
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <h4 className="font-medium text-blue-800 mb-2">
+                      ℹ️ Hierarchy-Based Access
+                    </h4>
+                    <p className="text-sm text-blue-700 mb-2">
+                      Your statistics are filtered based on your admin level:
+                    </p>
+                    <ul className="text-xs text-blue-600 space-y-1 ml-4">
+                      <li>• You can only see users within your hierarchy</li>
+                      <li>• Statistics reflect your accessible data only</li>
+                      <li>
+                        • All admin operations respect hierarchy permissions
+                      </li>
+                    </ul>
+                  </div>
+                )}
 
                 <div className="text-xs text-gray-500 mt-4">
                   <p>Last updated: {new Date().toLocaleTimeString()}</p>
                   <p>
-                    Note: Multiple query methods attempted to ensure accurate
-                    count. Check console for detailed logs.
+                    Admin Level: {getAdminLevelDescription} | Accessible Users:{" "}
+                    {hasFullAdminAccess ? "All" : systemStats.accessibleUsers}
                   </p>
                 </div>
               </CardContent>
@@ -985,6 +1540,13 @@ export default function EnhancedAdminDashboard({
                   </p>
                 </div>
                 <div className="space-y-2">
+                  <h4 className="font-medium">🏗️ Hierarchy Management</h4>
+                  <p className="text-sm text-gray-600">
+                    Three-tier admin system: Full Admin → Superior Manager →
+                    Manager
+                  </p>
+                </div>
+                <div className="space-y-2">
                   <h4 className="font-medium">🌍 Real-time Geolocation</h4>
                   <p className="text-sm text-gray-600">
                     Each admin sees their own IP address and location
@@ -995,7 +1557,7 @@ export default function EnhancedAdminDashboard({
                   <h4 className="font-medium">💳 Deposit Management</h4>
                   <p className="text-sm text-gray-600">
                     Create bank and crypto deposits for users with detailed
-                    forms
+                    forms (hierarchy-aware)
                   </p>
                 </div>
                 <div className="space-y-2">
@@ -1013,13 +1575,7 @@ export default function EnhancedAdminDashboard({
                 <div className="space-y-2">
                   <h4 className="font-medium">📊 Activity Management</h4>
                   <p className="text-sm text-gray-600">
-                    Push account activity entries to users
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <h4 className="font-medium">💰 Balance Management</h4>
-                  <p className="text-sm text-gray-600">
-                    Update user balances across all currencies
+                    Push account activity entries to users (hierarchy-filtered)
                   </p>
                 </div>
                 <div className="space-y-2">
@@ -1118,6 +1674,15 @@ export default function EnhancedAdminDashboard({
                     </Badge>
                   </div>
                   <div className="flex items-center justify-between">
+                    <span className="text-sm">Hierarchy System</span>
+                    <Badge
+                      variant="default"
+                      className="bg-green-100 text-green-800"
+                    >
+                      Active
+                    </Badge>
+                  </div>
+                  <div className="flex items-center justify-between">
                     <span className="text-sm">Cross-Tab Session Sync</span>
                     <Badge
                       variant="default"
@@ -1174,59 +1739,7 @@ export default function EnhancedAdminDashboard({
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>Recent Login Attempts</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {loginAttempts
-                      .slice(-5)
-                      .reverse()
-                      .map((attempt, index) => (
-                        <div
-                          key={index}
-                          className="flex items-center justify-between p-2 bg-gray-50 rounded"
-                        >
-                          <div className="flex items-center space-x-2">
-                            <div
-                              className={`w-2 h-2 rounded-full ${
-                                attempt.success ? "bg-green-500" : "bg-red-500"
-                              }`}
-                            />
-                            <span className="text-sm">
-                              {new Date(attempt.timestamp).toLocaleTimeString()}
-                            </span>
-                            <span className="text-xs text-gray-500 font-mono">
-                              {attempt.ip}
-                            </span>
-                            <span className="text-xs text-gray-500">
-                              {attempt.country}
-                            </span>
-                            {attempt.sessionId === currentSessionId && (
-                              <Badge variant="outline" className="text-xs">
-                                You
-                              </Badge>
-                            )}
-                          </div>
-                          <Badge
-                            variant={
-                              attempt.success ? "default" : "destructive"
-                            }
-                            className="text-xs"
-                          >
-                            {attempt.success ? "Success" : "Failed"}
-                          </Badge>
-                        </div>
-                      ))}
-                    {loginAttempts.length === 0 && (
-                      <p className="text-sm text-gray-500 text-center py-4">
-                        No login attempts recorded
-                      </p>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
+           
             </div>
           </TabsContent>
 
@@ -1260,6 +1773,10 @@ export default function EnhancedAdminDashboard({
 
           <TabsContent value="users">
             <UserManagementTest />
+          </TabsContent>
+
+          <TabsContent value="hierarchy">
+            <UserHierarchyManager />
           </TabsContent>
 
           <TabsContent value="database">

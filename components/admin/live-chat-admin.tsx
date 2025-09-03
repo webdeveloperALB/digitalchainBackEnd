@@ -470,12 +470,12 @@ export default function LiveChatAdmin() {
 
   if (isMinimized) {
     return (
-      <Card className="fixed bottom-4 right-4 w-80 z-50">
-        <CardHeader className="pb-2">
+      <Card className="fixed bottom-4 right-4 w-40 z-50">
+        <CardHeader className="pb-1">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm flex items-center">
               <MessageCircle className="w-4 h-4 mr-2" />
-              Live Chat ({activeSessions.length})
+               ({activeSessions.length})
               {isConnected ? (
                 <Wifi className="w-3 h-3 ml-2 text-green-500" />
               ) : (

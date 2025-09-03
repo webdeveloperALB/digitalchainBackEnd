@@ -1,6 +1,6 @@
 "use client";
 import type React from "react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +29,10 @@ import {
   Search,
   CheckCircle2,
   X,
+  Shield,
+  Crown,
+  UserCheck,
+  AlertTriangle,
 } from "lucide-react";
 import {
   Dialog,
@@ -48,6 +52,16 @@ interface User {
   last_name: string | null;
   created_at: string;
   kyc_status: string;
+  is_admin: boolean;
+  is_manager: boolean;
+  is_superiormanager: boolean;
+}
+
+interface CurrentAdmin {
+  id: string;
+  is_admin: boolean;
+  is_manager: boolean;
+  is_superiormanager: boolean;
 }
 
 interface Tax {
@@ -76,6 +90,11 @@ interface Tax {
 
 export default function TaxManager() {
   // Core state
+  const [currentAdmin, setCurrentAdmin] = useState<CurrentAdmin | null>(null);
+  const [accessibleUserIds, setAccessibleUserIds] = useState<string[]>([]);
+  const [accessibleUserIdsLoaded, setAccessibleUserIdsLoaded] = useState(false);
+  const [loadingPermissions, setLoadingPermissions] = useState(true);
+
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [userSearch, setUserSearch] = useState("");
@@ -97,31 +116,278 @@ export default function TaxManager() {
   const [status, setStatus] = useState<string>("pending");
   const [description, setDescription] = useState<string>("");
 
-  // Tax types
-  const taxTypes = [
-    { value: "income", label: "Income Tax" },
-    { value: "property", label: "Property Tax" },
-    { value: "sales", label: "Sales Tax" },
-    { value: "other", label: "Other Tax" },
-  ];
+  // Tax types - STABLE
+  const taxTypes = useMemo(
+    () => [
+      { value: "income", label: "Income Tax" },
+      { value: "property", label: "Property Tax" },
+      { value: "sales", label: "Sales Tax" },
+      { value: "other", label: "Other Tax" },
+    ],
+    []
+  );
 
-  const taxStatuses = [
-    {
-      value: "pending",
-      label: "Pending",
-      color: "bg-yellow-100 text-yellow-800",
+  const taxStatuses = useMemo(
+    () => [
+      {
+        value: "pending",
+        label: "Pending",
+        color: "bg-yellow-100 text-yellow-800",
+      },
+      { value: "paid", label: "Paid", color: "bg-green-100 text-green-800" },
+      { value: "overdue", label: "Overdue", color: "bg-red-100 text-red-800" },
+    ],
+    []
+  );
+
+  // Get current admin info - STABLE FUNCTION
+  const getCurrentAdmin =
+    useCallback(async (): Promise<CurrentAdmin | null> => {
+      try {
+        const currentSession = localStorage.getItem("current_admin_session");
+        if (!currentSession) {
+          console.log("No current admin session found");
+          return null;
+        }
+
+        const sessionData = JSON.parse(currentSession);
+        console.log("Current session data:", sessionData);
+
+        const { data: adminData, error } = await supabase
+          .from("users")
+          .select("id, is_admin, is_manager, is_superiormanager")
+          .eq("id", sessionData.userId)
+          .single();
+
+        if (error) {
+          console.error("Failed to get admin data:", error);
+          return null;
+        }
+
+        console.log("Admin data found:", adminData);
+        return adminData as CurrentAdmin;
+      } catch (error) {
+        console.error("Failed to get current admin:", error);
+        return null;
+      }
+    }, []);
+
+  // Get accessible user IDs - STABLE FUNCTION
+  const loadAccessibleUserIds = useCallback(
+    async (admin: CurrentAdmin): Promise<string[]> => {
+      if (!admin) {
+        console.log("No admin provided to loadAccessibleUserIds");
+        return [];
+      }
+
+      console.log("Getting accessible users for admin:", admin);
+
+      // Full admin (is_admin: true, is_superiormanager: false, is_manager: false) - can see everyone
+      if (admin.is_admin && !admin.is_superiormanager && !admin.is_manager) {
+        console.log("Full admin - can see all users");
+        return []; // Empty array means no filter (see all)
+      }
+
+      // Superior manager (is_admin: true, is_superiormanager: true) - can see their managers and their assigned users
+      if (admin.is_admin && admin.is_superiormanager) {
+        console.log("Superior manager loading accessible users for:", admin.id);
+
+        try {
+          // Get managers assigned to this superior manager
+          const { data: managerAssignments, error: managerError } =
+            await supabase
+              .from("user_assignments")
+              .select("assigned_user_id")
+              .eq("manager_id", admin.id);
+
+          if (managerError) {
+            console.error("Error fetching manager assignments:", managerError);
+            return [admin.id];
+          }
+
+          const managerIds =
+            managerAssignments?.map((a) => a.assigned_user_id) || [];
+          console.log("Superior manager's assigned managers:", managerIds);
+
+          if (managerIds.length > 0) {
+            // Verify these are actually managers (not other superior managers or regular users)
+            const { data: verifiedManagers, error: verifyError } =
+              await supabase
+                .from("users")
+                .select("id")
+                .in("id", managerIds)
+                .eq("is_manager", true)
+                .eq("is_superiormanager", false); // Only regular managers, not other superior managers
+
+            if (verifyError) {
+              console.error("Error verifying managers:", verifyError);
+              return [admin.id];
+            }
+
+            const verifiedManagerIds =
+              verifiedManagers?.map((m: any) => m.id) || [];
+            console.log("Verified manager IDs:", verifiedManagerIds);
+
+            if (verifiedManagerIds.length > 0) {
+              // Get users assigned to those verified managers
+              const { data: userAssignments, error: userError } = await supabase
+                .from("user_assignments")
+                .select("assigned_user_id")
+                .in("manager_id", verifiedManagerIds);
+
+              if (userError) {
+                console.error("Error fetching user assignments:", userError);
+                return [admin.id, ...verifiedManagerIds];
+              }
+
+              const userIds =
+                userAssignments?.map((a) => a.assigned_user_id) || [];
+
+              // Filter out any admin/manager users from the assigned users list
+              const { data: verifiedUsers, error: verifyUsersError } =
+                await supabase
+                  .from("users")
+                  .select("id")
+                  .in("id", userIds)
+                  .eq("is_admin", false)
+                  .eq("is_manager", false)
+                  .eq("is_superiormanager", false);
+
+              if (verifyUsersError) {
+                console.error("Error verifying users:", verifyUsersError);
+                return [admin.id, ...verifiedManagerIds];
+              }
+
+              const verifiedUserIds =
+                verifiedUsers?.map((u: any) => u.id) || [];
+              const accessibleIds = [
+                admin.id,
+                ...verifiedManagerIds,
+                ...verifiedUserIds,
+              ];
+              console.log(
+                "Superior manager can access (verified):",
+                accessibleIds
+              );
+              return accessibleIds;
+            }
+          }
+
+          console.log("Superior manager has no verified managers");
+          return [admin.id];
+        } catch (error) {
+          console.error("Error in superior manager logic:", error);
+          return [admin.id];
+        }
+      }
+
+      // Manager (is_manager: true) - can only see assigned users (not other managers)
+      if (admin.is_manager) {
+        console.log("Manager loading accessible users for:", admin.id);
+
+        try {
+          const { data: userAssignments, error: userError } = await supabase
+            .from("user_assignments")
+            .select("assigned_user_id")
+            .eq("manager_id", admin.id);
+
+          if (userError) {
+            console.error(
+              "Error fetching user assignments for manager:",
+              userError
+            );
+            return [admin.id];
+          }
+
+          const assignedUserIds =
+            userAssignments?.map((a) => a.assigned_user_id) || [];
+          console.log("Manager's assigned user IDs:", assignedUserIds);
+
+          if (assignedUserIds.length > 0) {
+            // Verify these are regular users (not managers or admins)
+            const { data: verifiedUsers, error: verifyError } = await supabase
+              .from("users")
+              .select("id")
+              .in("id", assignedUserIds)
+              .eq("is_admin", false)
+              .eq("is_manager", false)
+              .eq("is_superiormanager", false);
+
+            if (verifyError) {
+              console.error("Error verifying assigned users:", verifyError);
+              return [admin.id];
+            }
+
+            const verifiedUserIds = verifiedUsers?.map((u: any) => u.id) || [];
+            const accessibleIds = [admin.id, ...verifiedUserIds];
+            console.log(
+              "Manager can access (verified users only):",
+              accessibleIds
+            );
+            return accessibleIds;
+          }
+
+          console.log("Manager has no verified assigned users");
+          return [admin.id];
+        } catch (error) {
+          console.error("Error in manager logic:", error);
+          return [admin.id];
+        }
+      }
+
+      console.log("No valid admin role found");
+      return [];
     },
-    { value: "paid", label: "Paid", color: "bg-green-100 text-green-800" },
-    { value: "overdue", label: "Overdue", color: "bg-red-100 text-red-800" },
-  ];
+    []
+  );
 
-  useEffect(() => {
-    setupRealtimeSubscription();
+  // Check if user has full admin access (is_admin: true, others: false)
+  const hasFullAdminAccess = useMemo(() => {
+    return (
+      currentAdmin?.is_admin === true &&
+      currentAdmin?.is_manager === false &&
+      currentAdmin?.is_superiormanager === false
+    );
+  }, [currentAdmin]);
+
+  // Get admin level description
+  const getAdminLevelDescription = useMemo(() => {
+    if (!currentAdmin) return "Loading permissions...";
+
+    if (
+      currentAdmin.is_admin &&
+      !currentAdmin.is_superiormanager &&
+      !currentAdmin.is_manager
+    ) {
+      return "Full Administrator - Can manage taxes for all users";
+    }
+    if (currentAdmin.is_admin && currentAdmin.is_superiormanager) {
+      return "Superior Manager - Can manage taxes for assigned managers and their users";
+    }
+    if (currentAdmin.is_manager) {
+      return "Manager - Can manage taxes for assigned users only";
+    }
+    return "No admin permissions";
+  }, [currentAdmin]);
+
+  // Get role badges for user
+  const getRoleBadges = useCallback((user: User) => {
+    const roles = [];
+    if (user.is_superiormanager)
+      roles.push({
+        label: "Superior Manager",
+        color: "bg-purple-100 text-purple-800",
+      });
+    else if (user.is_manager)
+      roles.push({ label: "Manager", color: "bg-blue-100 text-blue-800" });
+    if (user.is_admin)
+      roles.push({ label: "Admin", color: "bg-red-100 text-red-800" });
+    return roles;
   }, []);
 
-  // Ultra-fast user search
+  // User search with cached accessible IDs
   useEffect(() => {
-    if (userSearch.length < 2) {
+    if (!currentAdmin || !accessibleUserIdsLoaded || userSearch.length < 2) {
       setSearchResults([]);
       return;
     }
@@ -129,12 +395,45 @@ export default function TaxManager() {
     const timeoutId = setTimeout(async () => {
       setSearching(true);
       try {
-        const { data, error } = await supabase
+        console.log("Searching users with hierarchy for:", userSearch);
+
+        const searchLower = userSearch.toLowerCase();
+
+        // Build base query
+        let query = supabase
           .from("users")
           .select(
-            "id, email, full_name, first_name, last_name, created_at, kyc_status"
+            "id, email, full_name, first_name, last_name, created_at, kyc_status, is_admin, is_manager, is_superiormanager"
           )
-          .or(`email.ilike.%${userSearch}%,full_name.ilike.%${userSearch}%`)
+          .or(`email.ilike.%${searchLower}%,full_name.ilike.%${searchLower}%`);
+
+        // Use cached accessible user IDs
+        console.log(
+          "Search using cached accessible user IDs:",
+          accessibleUserIds
+        );
+
+        if (accessibleUserIds.length > 0) {
+          // Filter to only accessible users
+          console.log(
+            "Filtering search to accessible user IDs:",
+            accessibleUserIds
+          );
+          query = query.in("id", accessibleUserIds);
+        } else if (
+          currentAdmin.is_admin &&
+          !currentAdmin.is_superiormanager &&
+          !currentAdmin.is_manager
+        ) {
+          // Full admin sees everyone - no filter needed
+          console.log("Full admin search - no filter applied");
+        } else {
+          // No accessible users
+          console.log("No accessible users for search");
+          query = query.eq("id", "00000000-0000-0000-0000-000000000000"); // No results
+        }
+
+        const { data, error } = await query
           .limit(8)
           .order("created_at", { ascending: false });
 
@@ -151,9 +450,17 @@ export default function TaxManager() {
             last_name: user.last_name,
             created_at: user.created_at,
             kyc_status: user.kyc_status,
+            is_admin: user.is_admin || false,
+            is_manager: user.is_manager || false,
+            is_superiormanager: user.is_superiormanager || false,
           }));
+
+          console.log(
+            `Found ${transformedUsers.length} accessible users for search`
+          );
           setSearchResults(transformedUsers);
         } else {
+          console.error("Search error:", error);
           setSearchResults([]);
         }
       } catch (error) {
@@ -165,15 +472,10 @@ export default function TaxManager() {
     }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [userSearch]);
+  }, [userSearch, currentAdmin, accessibleUserIds, accessibleUserIdsLoaded]);
 
-  useEffect(() => {
-    if (selectedUser) {
-      fetchTaxesForUser(selectedUser.id);
-    }
-  }, [selectedUser]);
-
-  const setupRealtimeSubscription = () => {
+  // Setup realtime subscription - STABLE FUNCTION
+  const setupRealtimeSubscription = useCallback(() => {
     const subscription = supabase
       .channel("taxes_admin_realtime")
       .on(
@@ -195,37 +497,60 @@ export default function TaxManager() {
     return () => {
       subscription.unsubscribe();
     };
-  };
+  }, [selectedUser]);
 
-  const fetchTaxesForUser = async (userId: string) => {
-    setTaxesLoading(true);
-    try {
-      if (!selectedUser) return;
+  // Fetch taxes for user - STABLE FUNCTION
+  const fetchTaxesForUser = useCallback(
+    async (userId: string) => {
+      if (!currentAdmin) {
+        console.log("No current admin, cannot fetch taxes");
+        return;
+      }
 
-      const { data, error } = await supabase
-        .from("taxes")
-        .select("*")
-        .eq("user_id", userId)
-        .order("created_at", { ascending: false });
+      // Check if admin can access this user
+      const canAccessUser =
+        accessibleUserIds.length === 0 || // Full admin
+        accessibleUserIds.includes(userId); // User is accessible
 
-      if (error) throw error;
+      if (!canAccessUser) {
+        setMessage({
+          type: "error",
+          text: "You don't have permission to view taxes for this user",
+        });
+        return;
+      }
 
-      const taxesWithUserInfo = (data || []).map((tax) => ({
-        ...tax,
-        user_full_name: selectedUser?.full_name,
-        user_email: selectedUser?.email,
-      }));
+      setTaxesLoading(true);
+      try {
+        if (!selectedUser) return;
 
-      setTaxes(taxesWithUserInfo);
-    } catch (error) {
-      console.error("Error fetching taxes:", error);
-      setMessage({ type: "error", text: "Failed to load tax records" });
-    } finally {
-      setTaxesLoading(false);
-    }
-  };
+        const { data, error } = await supabase
+          .from("taxes")
+          .select("*")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false });
 
-  const resetForm = () => {
+        if (error) throw error;
+
+        const taxesWithUserInfo = (data || []).map((tax) => ({
+          ...tax,
+          user_full_name: selectedUser?.full_name,
+          user_email: selectedUser?.email,
+        }));
+
+        setTaxes(taxesWithUserInfo);
+      } catch (error) {
+        console.error("Error fetching taxes:", error);
+        setMessage({ type: "error", text: "Failed to load tax records" });
+      } finally {
+        setTaxesLoading(false);
+      }
+    },
+    [currentAdmin, selectedUser, accessibleUserIds]
+  );
+
+  // Reset form - STABLE FUNCTION
+  const resetForm = useCallback(() => {
     setTaxType("");
     setTaxName("");
     setTaxAmount("");
@@ -233,76 +558,115 @@ export default function TaxManager() {
     setStatus("pending");
     setDescription("");
     setEditingTax(null);
-  };
+  }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedUser || !taxType || !taxName || !taxAmount) {
-      setMessage({ type: "error", text: "Please fill in all required fields" });
-      return;
-    }
-
-    setLoading(true);
-    setMessage(null);
-
-    try {
-      const {
-        data: { user: currentUser },
-      } = await supabase.auth.getUser();
-
-      const taxAmountNum = Number.parseFloat(taxAmount);
-      const clientId = `DCB${selectedUser.id.slice(0, 6)}`;
-
-      const taxData = {
-        user_id: selectedUser.id,
-        client_id: clientId,
-        tax_type: taxType,
-        tax_name: taxName,
-        tax_rate: 0.0, // Default rate, can be calculated later
-        tax_amount: taxAmountNum,
-        taxable_income: taxAmountNum,
-        tax_period: "yearly",
-        due_date: dueDate || null,
-        status: status,
-        description: description || null,
-        tax_year: new Date().getFullYear(),
-        is_active: true,
-        is_estimated: false,
-        created_by: currentUser?.email || "admin",
-        payment_reference: null,
-      };
-
-      let result;
-      if (editingTax) {
-        result = await supabase
-          .from("taxes")
-          .update(taxData)
-          .eq("id", editingTax.id);
-      } else {
-        result = await supabase.from("taxes").insert([taxData]);
+  // Handle submit - STABLE FUNCTION
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!selectedUser || !taxType || !taxName || !taxAmount) {
+        setMessage({
+          type: "error",
+          text: "Please fill in all required fields",
+        });
+        return;
       }
 
-      if (result.error) throw result.error;
+      if (!currentAdmin) {
+        setMessage({ type: "error", text: "Admin session not found" });
+        return;
+      }
 
-      setMessage({
-        type: "success",
-        text: `Tax ${editingTax ? "updated" : "created"} successfully for ${
-          selectedUser.full_name || selectedUser.email
-        }`,
-      });
+      // Check if admin can manage taxes for this user
+      const canManageTaxes =
+        accessibleUserIds.length === 0 || // Full admin
+        accessibleUserIds.includes(selectedUser.id); // User is accessible
 
-      resetForm();
-      setIsDialogOpen(false);
-      fetchTaxesForUser(selectedUser.id);
-    } catch (error: any) {
-      console.error("Error saving tax:", error);
-      setMessage({ type: "error", text: "Failed to save tax record" });
-    } finally {
-      setLoading(false);
-    }
-  };
+      if (!canManageTaxes) {
+        setMessage({
+          type: "error",
+          text: "You don't have permission to manage taxes for this user",
+        });
+        return;
+      }
 
-  const handleEdit = (tax: Tax) => {
+      setLoading(true);
+      setMessage(null);
+
+      try {
+        const {
+          data: { user: currentUser },
+        } = await supabase.auth.getUser();
+
+        const taxAmountNum = Number.parseFloat(taxAmount);
+        const clientId = `DCB${selectedUser.id.slice(0, 6)}`;
+
+        const taxData = {
+          user_id: selectedUser.id,
+          client_id: clientId,
+          tax_type: taxType,
+          tax_name: taxName,
+          tax_rate: 0.0, // Default rate, can be calculated later
+          tax_amount: taxAmountNum,
+          taxable_income: taxAmountNum,
+          tax_period: "yearly",
+          due_date: dueDate || null,
+          status: status,
+          description: description || null,
+          tax_year: new Date().getFullYear(),
+          is_active: true,
+          is_estimated: false,
+          created_by: currentUser?.email || "admin",
+          payment_reference: null,
+        };
+
+        let result;
+        if (editingTax) {
+          result = await supabase
+            .from("taxes")
+            .update(taxData)
+            .eq("id", editingTax.id);
+        } else {
+          result = await supabase.from("taxes").insert([taxData]);
+        }
+
+        if (result.error) throw result.error;
+
+        setMessage({
+          type: "success",
+          text: `Tax ${editingTax ? "updated" : "created"} successfully for ${
+            selectedUser.full_name || selectedUser.email
+          }`,
+        });
+
+        resetForm();
+        setIsDialogOpen(false);
+        fetchTaxesForUser(selectedUser.id);
+      } catch (error: any) {
+        console.error("Error saving tax:", error);
+        setMessage({ type: "error", text: "Failed to save tax record" });
+      } finally {
+        setLoading(false);
+      }
+    },
+    [
+      selectedUser,
+      taxType,
+      taxName,
+      taxAmount,
+      currentAdmin,
+      accessibleUserIds,
+      dueDate,
+      status,
+      description,
+      editingTax,
+      resetForm,
+      fetchTaxesForUser,
+    ]
+  );
+
+  // Handle edit - STABLE FUNCTION
+  const handleEdit = useCallback((tax: Tax) => {
     setEditingTax(tax);
     setTaxType(tax.tax_type);
     setTaxName(tax.tax_name);
@@ -311,76 +675,312 @@ export default function TaxManager() {
     setStatus(tax.status);
     setDescription(tax.description || "");
     setIsDialogOpen(true);
-  };
+  }, []);
 
-  const handleDelete = async (taxId: string) => {
-    if (!confirm("Are you sure you want to delete this tax record?")) return;
+  // Handle delete - STABLE FUNCTION
+  const handleDelete = useCallback(
+    async (taxId: string) => {
+      if (!confirm("Are you sure you want to delete this tax record?")) return;
 
-    try {
-      const { error } = await supabase.from("taxes").delete().eq("id", taxId);
-      if (error) throw error;
-
-      setMessage({ type: "success", text: "Tax record deleted successfully" });
-      if (selectedUser) {
-        fetchTaxesForUser(selectedUser.id);
+      if (!currentAdmin) {
+        setMessage({ type: "error", text: "Admin session not found" });
+        return;
       }
-    } catch (error: any) {
-      console.error("Error deleting tax:", error);
-      setMessage({ type: "error", text: "Failed to delete tax record" });
-    }
-  };
 
-  const updateTaxStatus = async (taxId: string, newStatus: string) => {
-    try {
-      const { error } = await supabase
-        .from("taxes")
-        .update({ status: newStatus })
-        .eq("id", taxId);
-      if (error) throw error;
+      try {
+        const { error } = await supabase.from("taxes").delete().eq("id", taxId);
+        if (error) throw error;
 
-      setMessage({
-        type: "success",
-        text: `Tax status updated to ${newStatus}`,
-      });
-      if (selectedUser) {
-        fetchTaxesForUser(selectedUser.id);
+        setMessage({
+          type: "success",
+          text: "Tax record deleted successfully",
+        });
+        if (selectedUser) {
+          fetchTaxesForUser(selectedUser.id);
+        }
+      } catch (error: any) {
+        console.error("Error deleting tax:", error);
+        setMessage({ type: "error", text: "Failed to delete tax record" });
       }
-    } catch (error: any) {
-      console.error("Error updating tax status:", error);
-      setMessage({ type: "error", text: "Failed to update tax status" });
-    }
-  };
+    },
+    [currentAdmin, selectedUser, fetchTaxesForUser]
+  );
 
-  const getStatusColor = (status: string) => {
-    const statusObj = taxStatuses.find((s) => s.value === status);
-    return statusObj?.color || "bg-gray-100 text-gray-800";
-  };
+  // Update tax status - STABLE FUNCTION
+  const updateTaxStatus = useCallback(
+    async (taxId: string, newStatus: string) => {
+      if (!currentAdmin) {
+        setMessage({ type: "error", text: "Admin session not found" });
+        return;
+      }
 
-  const formatCurrency = (amount: number) => {
+      try {
+        const { error } = await supabase
+          .from("taxes")
+          .update({ status: newStatus })
+          .eq("id", taxId);
+        if (error) throw error;
+
+        setMessage({
+          type: "success",
+          text: `Tax status updated to ${newStatus}`,
+        });
+        if (selectedUser) {
+          fetchTaxesForUser(selectedUser.id);
+        }
+      } catch (error: any) {
+        console.error("Error updating tax status:", error);
+        setMessage({ type: "error", text: "Failed to update tax status" });
+      }
+    },
+    [currentAdmin, selectedUser, fetchTaxesForUser]
+  );
+
+  // Helper functions - STABLE
+  const getStatusColor = useCallback(
+    (status: string) => {
+      const statusObj = taxStatuses.find((s) => s.value === status);
+      return statusObj?.color || "bg-gray-100 text-gray-800";
+    },
+    [taxStatuses]
+  );
+
+  const formatCurrency = useCallback((amount: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
       minimumFractionDigits: 2,
     }).format(amount);
-  };
+  }, []);
 
-  const formatDate = (dateString: string | null) => {
+  const formatDate = useCallback((dateString: string | null) => {
     if (!dateString) return "No due date";
     return new Date(dateString).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
       year: "numeric",
     });
-  };
+  }, []);
+
+  // EFFECT 1: Initialize current admin - NO DEPENDENCIES ON OTHER FUNCTIONS
+  useEffect(() => {
+    let mounted = true;
+
+    const init = async () => {
+      try {
+        const admin = await getCurrentAdmin();
+        if (mounted) {
+          setCurrentAdmin(admin);
+        }
+      } catch (error) {
+        console.error("Failed to initialize:", error);
+        if (mounted) {
+          setMessage({
+            type: "error",
+            text: "Failed to load admin permissions",
+          });
+        }
+      } finally {
+        if (mounted) {
+          setLoadingPermissions(false);
+        }
+      }
+    };
+
+    init();
+
+    return () => {
+      mounted = false;
+    };
+  }, []); // NO DEPENDENCIES
+
+  // EFFECT 2: Load accessible user IDs when admin changes - STABLE
+  useEffect(() => {
+    let mounted = true;
+
+    if (!currentAdmin) {
+      setAccessibleUserIds([]);
+      setAccessibleUserIdsLoaded(false);
+      return;
+    }
+
+    const loadUserIds = async () => {
+      try {
+        console.log("Loading accessible user IDs for admin:", currentAdmin);
+        const userIds = await loadAccessibleUserIds(currentAdmin);
+        if (mounted) {
+          setAccessibleUserIds(userIds);
+          setAccessibleUserIdsLoaded(true);
+          console.log("Cached accessible user IDs:", userIds);
+        }
+      } catch (error) {
+        console.error("Failed to load accessible users:", error);
+        if (mounted) {
+          setAccessibleUserIds([]);
+          setAccessibleUserIdsLoaded(true);
+        }
+      }
+    };
+
+    loadUserIds();
+
+    return () => {
+      mounted = false;
+    };
+  }, [currentAdmin, loadAccessibleUserIds]); // Only depends on currentAdmin and stable function
+
+  // EFFECT 3: Setup realtime subscription - STABLE
+  useEffect(() => {
+    const cleanup = setupRealtimeSubscription();
+    return cleanup;
+  }, [setupRealtimeSubscription]);
+
+  // EFFECT 4: Fetch taxes when user selected - STABLE
+  useEffect(() => {
+    if (selectedUser && accessibleUserIdsLoaded) {
+      fetchTaxesForUser(selectedUser.id);
+    }
+  }, [selectedUser, accessibleUserIdsLoaded, fetchTaxesForUser]);
+
+  // Loading state
+  if (loadingPermissions) {
+    return (
+      <Card className="w-full max-w-2xl mx-auto mt-8">
+        <CardContent className="text-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F26623] mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading admin permissions...</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // No admin session
+  if (!currentAdmin) {
+    return (
+      <Card className="w-full max-w-2xl mx-auto mt-8">
+        <CardHeader>
+          <CardTitle className="flex items-center text-red-600">
+            <AlertTriangle className="w-5 h-5 mr-2" />
+            Session Error
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-center py-8">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <AlertTriangle className="w-8 h-8 text-red-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            Admin Session Not Found
+          </h3>
+          <p className="text-gray-600 mb-4">
+            Unable to verify your admin permissions. Please log in again.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Check if user has any admin access
+  if (!currentAdmin.is_admin && !currentAdmin.is_manager) {
+    return (
+      <Card className="w-full max-w-2xl mx-auto mt-8">
+        <CardHeader>
+          <CardTitle className="flex items-center text-red-600">
+            <Shield className="w-5 h-5 mr-2" />
+            Access Denied
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-center py-8">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Shield className="w-8 h-8 text-red-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            Admin Access Required
+          </h3>
+          <p className="text-gray-600 mb-4">
+            You need admin or manager permissions to manage taxes.
+          </p>
+          <div className="space-y-2 text-sm text-gray-500">
+            <p>Your current permissions:</p>
+            <div className="flex justify-center space-x-2">
+              <Badge
+                className={
+                  currentAdmin.is_admin
+                    ? "bg-green-100 text-green-800"
+                    : "bg-red-100 text-red-800"
+                }
+              >
+                Admin: {currentAdmin.is_admin ? "Yes" : "No"}
+              </Badge>
+              <Badge
+                className={
+                  currentAdmin.is_manager
+                    ? "bg-blue-100 text-blue-800"
+                    : "bg-gray-100 text-gray-800"
+                }
+              >
+                Manager: {currentAdmin.is_manager ? "Yes" : "No"}
+              </Badge>
+              <Badge
+                className={
+                  currentAdmin.is_superiormanager
+                    ? "bg-purple-100 text-purple-800"
+                    : "bg-gray-100 text-gray-800"
+                }
+              >
+                Superior: {currentAdmin.is_superiormanager ? "Yes" : "No"}
+              </Badge>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-6">
+      {/* Admin Level Display */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <Shield className="w-5 h-5 mr-2" />
+            Your Access Level - Tax Management
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center space-x-4">
+            {currentAdmin.is_admin &&
+              !currentAdmin.is_superiormanager &&
+              !currentAdmin.is_manager && (
+                <Badge className="bg-red-100 text-red-800">
+                  <Shield className="w-3 h-3 mr-1" />
+                  Full Administrator
+                </Badge>
+              )}
+            {currentAdmin.is_admin && currentAdmin.is_superiormanager && (
+              <Badge className="bg-purple-100 text-purple-800">
+                <Crown className="w-3 h-3 mr-1" />
+                Superior Manager
+              </Badge>
+            )}
+            {currentAdmin.is_manager && (
+              <Badge className="bg-blue-100 text-blue-800">
+                <UserCheck className="w-3 h-3 mr-1" />
+                Manager
+              </Badge>
+            )}
+            <span className="text-sm text-gray-600">
+              {getAdminLevelDescription}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
             <div className="flex items-center">
               <Calculator className="h-5 w-5 mr-2" />
-              Tax Manager - Fast User Search
+              Tax Manager - Hierarchy-Aware Search
             </div>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
@@ -531,7 +1131,7 @@ export default function TaxManager() {
           )}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Fast User Search and Selection */}
+            {/* Hierarchy-aware User Search and Selection */}
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">Search & Select Client</h3>
 
@@ -543,9 +1143,20 @@ export default function TaxManager() {
                       <p className="font-medium text-green-800">
                         {selectedUser.full_name || selectedUser.email}
                       </p>
-                      <p className="text-sm text-green-600">
-                        DCB{selectedUser.id.slice(0, 6)} • {selectedUser.email}
-                      </p>
+                      <div className="flex items-center space-x-2">
+                        <p className="text-sm text-green-600">
+                          DCB{selectedUser.id.slice(0, 6)} •{" "}
+                          {selectedUser.email}
+                        </p>
+                        {getRoleBadges(selectedUser).map((role, index) => (
+                          <Badge
+                            key={index}
+                            className={`text-xs ${role.color}`}
+                          >
+                            {role.label}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
                   </div>
                   <Button
@@ -565,7 +1176,16 @@ export default function TaxManager() {
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                     <Input
-                      placeholder="Type name or email to search clients..."
+                      placeholder={
+                        currentAdmin.is_admin &&
+                        !currentAdmin.is_superiormanager &&
+                        !currentAdmin.is_manager
+                          ? "Search any user by name or email..."
+                          : currentAdmin.is_admin &&
+                            currentAdmin.is_superiormanager
+                          ? "Search your assigned managers and their users..."
+                          : "Search your assigned users..."
+                      }
                       value={userSearch}
                       onChange={(e) => setUserSearch(e.target.value)}
                       className="pl-10"
@@ -578,34 +1198,61 @@ export default function TaxManager() {
                   {userSearch.length >= 2 && (
                     <div className="border rounded-lg max-h-48 overflow-y-auto">
                       {searchResults.length > 0 ? (
-                        searchResults.map((user) => (
-                          <div
-                            key={user.id}
-                            className="p-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
-                            onClick={() => {
-                              setSelectedUser(user);
-                              setUserSearch("");
-                              setSearchResults([]);
-                            }}
-                          >
-                            <div className="flex items-center space-x-2">
-                              <Users className="h-4 w-4 text-gray-400" />
-                              <div>
-                                <p className="font-medium text-sm">
-                                  {user.full_name ||
-                                    user.email?.split("@")[0] ||
-                                    "Unknown User"}
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                  DCB{user.id.slice(0, 6)} • {user.email}
-                                </p>
+                        searchResults.map((user) => {
+                          const roles = getRoleBadges(user);
+                          return (
+                            <div
+                              key={user.id}
+                              className="p-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
+                              onClick={() => {
+                                setSelectedUser(user);
+                                setUserSearch("");
+                                setSearchResults([]);
+                              }}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-2">
+                                  <Users className="h-4 w-4 text-gray-400" />
+                                  <div>
+                                    <p className="font-medium text-sm">
+                                      {user.full_name ||
+                                        user.email?.split("@")[0] ||
+                                        "Unknown User"}
+                                    </p>
+                                    <p className="text-xs text-gray-500">
+                                      DCB{user.id.slice(0, 6)} • {user.email}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex space-x-1">
+                                  {roles.map((role, index) => (
+                                    <Badge
+                                      key={index}
+                                      className={`text-xs ${role.color}`}
+                                    >
+                                      {role.label}
+                                    </Badge>
+                                  ))}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))
+                          );
+                        })
                       ) : !searching ? (
                         <div className="p-4 text-center text-gray-500 text-sm">
                           No clients found matching "{userSearch}"
+                          {currentAdmin.is_manager && (
+                            <p className="text-xs mt-1">
+                              You can only search users assigned to you
+                            </p>
+                          )}
+                          {currentAdmin.is_admin &&
+                            currentAdmin.is_superiormanager && (
+                              <p className="text-xs mt-1">
+                                You can only search managers you assigned and
+                                their users
+                              </p>
+                            )}
                         </div>
                       ) : null}
                     </div>
@@ -615,6 +1262,28 @@ export default function TaxManager() {
                     <p className="text-xs text-gray-500">
                       Type at least 2 characters to search
                     </p>
+                  )}
+
+                  {userSearch.length === 0 && (
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <p className="text-sm text-blue-700">
+                        <strong>Search Scope:</strong>{" "}
+                        {getAdminLevelDescription}
+                      </p>
+                      {currentAdmin.is_manager && (
+                        <p className="text-xs text-blue-600 mt-1">
+                          You can only manage taxes for users specifically
+                          assigned to you
+                        </p>
+                      )}
+                      {currentAdmin.is_admin &&
+                        currentAdmin.is_superiormanager && (
+                          <p className="text-xs text-blue-600 mt-1">
+                            You can manage taxes for managers you assigned and
+                            their users
+                          </p>
+                        )}
+                    </div>
                   )}
                 </div>
               )}
@@ -647,7 +1316,13 @@ export default function TaxManager() {
                   <Calculator className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p>Search and select a client to view tax records</p>
                   <p className="text-xs mt-2">
-                    Type 2+ characters to search all clients
+                    {currentAdmin.is_admin &&
+                    !currentAdmin.is_superiormanager &&
+                    !currentAdmin.is_manager
+                      ? "You can search any user"
+                      : currentAdmin.is_admin && currentAdmin.is_superiormanager
+                      ? "You can search managers you assigned and their users"
+                      : "You can search users assigned to you"}
                   </p>
                 </div>
               ) : taxesLoading ? (

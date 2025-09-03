@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +27,10 @@ import {
   Search,
   SkipForward,
   Loader2,
+  Shield,
+  Crown,
+  UserCheck,
+  AlertTriangle,
 } from "lucide-react";
 
 interface KYCRecord {
@@ -56,9 +60,26 @@ interface UserInterface {
   full_name?: string;
   kyc_status: string;
   created_at: string;
+  is_admin: boolean;
+  is_manager: boolean;
+  is_superiormanager: boolean;
+}
+
+interface CurrentAdmin {
+  id: string;
+  is_admin: boolean;
+  is_manager: boolean;
+  is_superiormanager: boolean;
 }
 
 export default function KYCAdminPanel() {
+  // Core state
+  const [currentAdmin, setCurrentAdmin] = useState<CurrentAdmin | null>(null);
+  const [accessibleUserIds, setAccessibleUserIds] = useState<string[]>([]);
+  const [accessibleUserIdsLoaded, setAccessibleUserIdsLoaded] = useState(false);
+  const [loadingPermissions, setLoadingPermissions] = useState(true);
+
+  // KYC state
   const [kycRecords, setKycRecords] = useState<KYCRecord[]>([]);
   const [searchResults, setSearchResults] = useState<UserInterface[]>([]);
   const [loading, setLoading] = useState(false);
@@ -85,55 +106,320 @@ export default function KYCAdminPanel() {
     rejected: 0,
   });
 
-  useEffect(() => {
-    fetchTotalCounts();
-    fetchKYCRecords();
-  }, []);
+  // Get current admin info - STABLE FUNCTION
+  const getCurrentAdmin =
+    useCallback(async (): Promise<CurrentAdmin | null> => {
+      try {
+        const currentSession = localStorage.getItem("current_admin_session");
+        if (!currentSession) {
+          console.log("No current admin session found");
+          return null;
+        }
 
-  const fetchTotalCounts = async () => {
-    try {
-      console.log("Fetching total counts...");
+        const sessionData = JSON.parse(currentSession);
+        console.log("Current session data:", sessionData);
 
-      const { count: totalCount, error: totalError } = await supabase
-        .from("kyc_verifications")
-        .select("*", { count: "exact", head: true });
+        const { data: adminData, error } = await supabase
+          .from("users")
+          .select("id, is_admin, is_manager, is_superiormanager")
+          .eq("id", sessionData.userId)
+          .single();
 
-      const { count: pendingCount, error: pendingError } = await supabase
-        .from("kyc_verifications")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "pending");
+        if (error) {
+          console.error("Failed to get admin data:", error);
+          return null;
+        }
 
-      const { count: approvedCount, error: approvedError } = await supabase
-        .from("kyc_verifications")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "approved");
-
-      const { count: rejectedCount, error: rejectedError } = await supabase
-        .from("kyc_verifications")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "rejected");
-
-      if (!totalError && !pendingError && !approvedError && !rejectedError) {
-        setTotalStats({
-          total: totalCount || 0,
-          pending: pendingCount || 0,
-          approved: approvedCount || 0,
-          rejected: rejectedCount || 0,
-        });
-        console.log("Total stats:", {
-          total: totalCount,
-          pending: pendingCount,
-          approved: approvedCount,
-          rejected: rejectedCount,
-        });
+        console.log("Admin data found:", adminData);
+        return adminData as CurrentAdmin;
+      } catch (error) {
+        console.error("Failed to get current admin:", error);
+        return null;
       }
-    } catch (error) {
-      console.error("Error fetching total counts:", error);
-    }
-  };
+    }, []);
 
+  // Get accessible user IDs - STABLE FUNCTION
+  const loadAccessibleUserIds = useCallback(
+    async (admin: CurrentAdmin): Promise<string[]> => {
+      if (!admin) {
+        console.log("No admin provided to loadAccessibleUserIds");
+        return [];
+      }
+
+      console.log("Getting accessible users for KYC admin:", admin);
+
+      // Full admin (is_admin: true, is_superiormanager: false, is_manager: false) - can see everyone
+      if (admin.is_admin && !admin.is_superiormanager && !admin.is_manager) {
+        console.log("Full admin - can see all KYC records");
+        return []; // Empty array means no filter (see all)
+      }
+
+      // Superior manager (is_admin: true, is_superiormanager: true) - can see their managers and their assigned users
+      if (admin.is_admin && admin.is_superiormanager) {
+        console.log(
+          "Superior manager loading accessible users for KYC:",
+          admin.id
+        );
+
+        try {
+          // Get managers assigned to this superior manager
+          const { data: managerAssignments, error: managerError } =
+            await supabase
+              .from("user_assignments")
+              .select("assigned_user_id")
+              .eq("manager_id", admin.id);
+
+          if (managerError) {
+            console.error("Error fetching manager assignments:", managerError);
+            return [admin.id];
+          }
+
+          const managerIds =
+            managerAssignments?.map((a) => a.assigned_user_id) || [];
+          console.log("Superior manager's assigned managers:", managerIds);
+
+          if (managerIds.length > 0) {
+            // Verify these are actually managers (not other superior managers or regular users)
+            const { data: verifiedManagers, error: verifyError } =
+              await supabase
+                .from("users")
+                .select("id")
+                .in("id", managerIds)
+                .eq("is_manager", true)
+                .eq("is_superiormanager", false); // Only regular managers, not other superior managers
+
+            if (verifyError) {
+              console.error("Error verifying managers:", verifyError);
+              return [admin.id];
+            }
+
+            const verifiedManagerIds =
+              verifiedManagers?.map((m: any) => m.id) || [];
+            console.log("Verified manager IDs:", verifiedManagerIds);
+
+            if (verifiedManagerIds.length > 0) {
+              // Get users assigned to those verified managers
+              const { data: userAssignments, error: userError } = await supabase
+                .from("user_assignments")
+                .select("assigned_user_id")
+                .in("manager_id", verifiedManagerIds);
+
+              if (userError) {
+                console.error("Error fetching user assignments:", userError);
+                return [admin.id, ...verifiedManagerIds];
+              }
+
+              const userIds =
+                userAssignments?.map((a) => a.assigned_user_id) || [];
+
+              // Filter out any admin/manager users from the assigned users list
+              const { data: verifiedUsers, error: verifyUsersError } =
+                await supabase
+                  .from("users")
+                  .select("id")
+                  .in("id", userIds)
+                  .eq("is_admin", false)
+                  .eq("is_manager", false)
+                  .eq("is_superiormanager", false);
+
+              if (verifyUsersError) {
+                console.error("Error verifying users:", verifyUsersError);
+                return [admin.id, ...verifiedManagerIds];
+              }
+
+              const verifiedUserIds =
+                verifiedUsers?.map((u: any) => u.id) || [];
+              const accessibleIds = [
+                admin.id,
+                ...verifiedManagerIds,
+                ...verifiedUserIds,
+              ];
+              console.log(
+                "Superior manager can access KYC for (verified):",
+                accessibleIds
+              );
+              return accessibleIds;
+            }
+          }
+
+          console.log("Superior manager has no verified managers");
+          return [admin.id];
+        } catch (error) {
+          console.error("Error in superior manager logic:", error);
+          return [admin.id];
+        }
+      }
+
+      // Manager (is_manager: true) - can only see assigned users (not other managers)
+      if (admin.is_manager) {
+        console.log("Manager loading accessible users for KYC:", admin.id);
+
+        try {
+          const { data: userAssignments, error: userError } = await supabase
+            .from("user_assignments")
+            .select("assigned_user_id")
+            .eq("manager_id", admin.id);
+
+          if (userError) {
+            console.error(
+              "Error fetching user assignments for manager:",
+              userError
+            );
+            return [admin.id];
+          }
+
+          const assignedUserIds =
+            userAssignments?.map((a) => a.assigned_user_id) || [];
+          console.log("Manager's assigned user IDs for KYC:", assignedUserIds);
+
+          if (assignedUserIds.length > 0) {
+            // Verify these are regular users (not managers or admins)
+            const { data: verifiedUsers, error: verifyError } = await supabase
+              .from("users")
+              .select("id")
+              .in("id", assignedUserIds)
+              .eq("is_admin", false)
+              .eq("is_manager", false)
+              .eq("is_superiormanager", false);
+
+            if (verifyError) {
+              console.error("Error verifying assigned users:", verifyError);
+              return [admin.id];
+            }
+
+            const verifiedUserIds = verifiedUsers?.map((u: any) => u.id) || [];
+            const accessibleIds = [admin.id, ...verifiedUserIds];
+            console.log(
+              "Manager can access KYC for (verified users only):",
+              accessibleIds
+            );
+            return accessibleIds;
+          }
+
+          console.log("Manager has no verified assigned users");
+          return [admin.id];
+        } catch (error) {
+          console.error("Error in manager logic:", error);
+          return [admin.id];
+        }
+      }
+
+      console.log("No valid admin role found");
+      return [];
+    },
+    []
+  );
+
+  // Check if user has full admin access (is_admin: true, others: false)
+  const hasFullAdminAccess = useMemo(() => {
+    return (
+      currentAdmin?.is_admin === true &&
+      currentAdmin?.is_manager === false &&
+      currentAdmin?.is_superiormanager === false
+    );
+  }, [currentAdmin]);
+
+  // Get admin level description
+  const getAdminLevelDescription = useMemo(() => {
+    if (!currentAdmin) return "Loading permissions...";
+
+    if (
+      currentAdmin.is_admin &&
+      !currentAdmin.is_superiormanager &&
+      !currentAdmin.is_manager
+    ) {
+      return "Full Administrator - Can manage all KYC records";
+    }
+    if (currentAdmin.is_admin && currentAdmin.is_superiormanager) {
+      return "Superior Manager - Can manage KYC for assigned managers and their users";
+    }
+    if (currentAdmin.is_manager) {
+      return "Manager - Can manage KYC for assigned users only";
+    }
+    return "No admin permissions";
+  }, [currentAdmin]);
+
+  // Fetch total counts with hierarchy filtering - STABLE FUNCTION
+  const fetchTotalCounts = useCallback(async () => {
+    if (!currentAdmin || !accessibleUserIdsLoaded) {
+      console.log(
+        "Cannot fetch total counts - admin or accessible IDs not ready"
+      );
+      return;
+    }
+
+    try {
+      console.log("Fetching total KYC counts for admin:", currentAdmin);
+
+      // For count queries, we need to fetch data first then count
+      let query = supabase.from("kyc_verifications").select("user_id, status");
+
+      // Apply hierarchy-based filtering
+      console.log(
+        "Using cached accessible user IDs for counts:",
+        accessibleUserIds
+      );
+
+      if (accessibleUserIds.length > 0) {
+        console.log(
+          "Filtering total counts to accessible user IDs:",
+          accessibleUserIds
+        );
+        query = query.in("user_id", accessibleUserIds);
+      } else if (
+        currentAdmin.is_admin &&
+        !currentAdmin.is_superiormanager &&
+        !currentAdmin.is_manager
+      ) {
+        // Full admin sees all records - no filter needed
+        console.log("Full admin - loading all counts");
+      } else {
+        // No accessible users
+        console.log("No accessible users for counts");
+        query = query.eq("user_id", "00000000-0000-0000-0000-000000000000");
+      }
+
+      const { data: kycData, error } = await query;
+
+      if (error) {
+        console.error("Error fetching KYC data for counts:", error);
+        return;
+      }
+
+      // Count the results manually
+      const totalCount = kycData?.length || 0;
+      const pendingCount =
+        kycData?.filter((record) => record.status === "pending").length || 0;
+      const approvedCount =
+        kycData?.filter((record) => record.status === "approved").length || 0;
+      const rejectedCount =
+        kycData?.filter((record) => record.status === "rejected").length || 0;
+
+      setTotalStats({
+        total: totalCount,
+        pending: pendingCount,
+        approved: approvedCount,
+        rejected: rejectedCount,
+      });
+
+      console.log("Total KYC counts loaded:", {
+        total: totalCount,
+        pending: pendingCount,
+        approved: approvedCount,
+        rejected: rejectedCount,
+      });
+    } catch (error) {
+      console.error("Error fetching total KYC counts:", error);
+    }
+  }, [currentAdmin, accessibleUserIds, accessibleUserIdsLoaded]);
+
+  // User search with hierarchy filtering
   useEffect(() => {
-    if (userSearchTerm.length < 2) {
+    if (
+      !currentAdmin ||
+      !accessibleUserIdsLoaded ||
+      userSearchTerm.length < 2
+    ) {
       setSearchResults([]);
       return;
     }
@@ -141,19 +427,50 @@ export default function KYCAdminPanel() {
     const timeoutId = setTimeout(async () => {
       setSearching(true);
       try {
-        const { data, error } = await supabase
+        console.log(
+          "Searching users for KYC skip with hierarchy:",
+          userSearchTerm
+        );
+
+        let query = supabase
           .from("users")
-          .select("id, email, full_name, kyc_status, created_at")
+          .select(
+            "id, email, full_name, kyc_status, created_at, is_admin, is_manager, is_superiormanager"
+          )
           .or(
             `email.ilike.%${userSearchTerm}%,full_name.ilike.%${userSearchTerm}%`
           )
-          .neq("kyc_status", "approved")
+          .neq("kyc_status", "approved");
+
+        // Apply hierarchy filtering
+        if (accessibleUserIds.length > 0) {
+          console.log(
+            "Filtering user search to accessible user IDs:",
+            accessibleUserIds
+          );
+          query = query.in("id", accessibleUserIds);
+        } else if (
+          currentAdmin.is_admin &&
+          !currentAdmin.is_superiormanager &&
+          !currentAdmin.is_manager
+        ) {
+          // Full admin sees everyone - no filter needed
+          console.log("Full admin user search - no filter applied");
+        } else {
+          // No accessible users
+          console.log("No accessible users for search");
+          query = query.eq("id", "00000000-0000-0000-0000-000000000000"); // No results
+        }
+
+        const { data, error } = await query
           .limit(10)
           .order("created_at", { ascending: false });
 
         if (!error && data) {
           setSearchResults(data);
+          console.log(`Found ${data.length} accessible users for KYC skip`);
         } else {
+          console.error("User search error:", error);
           setSearchResults([]);
         }
       } catch (error) {
@@ -165,48 +482,81 @@ export default function KYCAdminPanel() {
     }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [userSearchTerm]);
+  }, [
+    userSearchTerm,
+    currentAdmin,
+    accessibleUserIds,
+    accessibleUserIdsLoaded,
+  ]);
 
-  const fetchKYCRecords = async () => {
+  // Fetch KYC records with hierarchy filtering
+  const fetchKYCRecords = useCallback(async () => {
+    if (!currentAdmin || !accessibleUserIdsLoaded) {
+      console.log(
+        "Cannot fetch KYC records - admin or accessible IDs not ready"
+      );
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
       console.log("Fetching KYC records for search term:", searchTerm);
 
       let kycData = [];
+      let query = supabase.from("kyc_verifications").select("*");
+
+      // Apply hierarchy filtering first
+      if (accessibleUserIds.length > 0) {
+        console.log(
+          "Filtering KYC records to accessible user IDs:",
+          accessibleUserIds
+        );
+        query = query.in("user_id", accessibleUserIds);
+      } else if (
+        currentAdmin.is_admin &&
+        !currentAdmin.is_superiormanager &&
+        !currentAdmin.is_manager
+      ) {
+        // Full admin sees all KYC records - no filter needed
+        console.log("Full admin - loading all KYC records");
+      } else {
+        // No accessible users
+        console.log("No accessible users for KYC records");
+        setKycRecords([]);
+        setStats({ total: 0, pending: 0, approved: 0, rejected: 0 });
+        setLoading(false);
+        return;
+      }
 
       if (searchTerm.length >= 2) {
         console.log("Searching KYC records...");
-        let query = supabase
-          .from("kyc_verifications")
-          .select("*")
-          .or(
-            `full_name.ilike.%${searchTerm}%,document_number.ilike.%${searchTerm}%`
-          )
-          .order("submitted_at", { ascending: false })
-          .limit(20);
-
-        if (activeTab !== "all") {
-          query = query.eq("status", activeTab);
-        }
-
-        const { data, error } = await query;
-        if (error) throw error;
-        kycData = data || [];
-      } else if (activeTab === "pending") {
-        console.log("Loading recent pending records...");
-        const { data, error } = await supabase
-          .from("kyc_verifications")
-          .select("*")
-          .eq("status", "pending")
-          .order("submitted_at", { ascending: false })
-          .limit(10);
-
-        if (error) throw error;
-        kycData = data || [];
-      } else {
-        kycData = [];
+        query = query.or(
+          `full_name.ilike.%${searchTerm}%,document_number.ilike.%${searchTerm}%`
+        );
       }
+
+      if (activeTab !== "all") {
+        query = query.eq("status", activeTab);
+      }
+
+      // Apply limits based on search
+      if (searchTerm.length >= 2) {
+        query = query.limit(20);
+      } else if (activeTab === "pending") {
+        query = query.limit(10);
+      } else if (activeTab !== "all") {
+        query = query.limit(20);
+      } else {
+        query = query.limit(50);
+      }
+
+      const { data, error } = await query.order("submitted_at", {
+        ascending: false,
+      });
+
+      if (error) throw error;
+      kycData = data || [];
 
       setKycRecords(kycData);
 
@@ -218,33 +568,43 @@ export default function KYCAdminPanel() {
       };
       setStats(loadedStats);
 
-      console.log(`Loaded ${kycData.length} KYC records`);
+      console.log(`Loaded ${kycData.length} KYC records for admin`);
     } catch (error: any) {
       console.error("Error in fetchKYCRecords:", error);
       setError(`Failed to load KYC records: ${error.message}`);
     } finally {
       setLoading(false);
     }
-  };
+  }, [
+    currentAdmin,
+    accessibleUserIds,
+    accessibleUserIdsLoaded,
+    searchTerm,
+    activeTab,
+  ]);
 
-  useEffect(() => {
-    fetchKYCRecords();
-  }, [activeTab]);
-
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      fetchKYCRecords();
-    }, 300);
-
-    return () => clearTimeout(timeoutId);
-  }, [searchTerm]);
-
+  // Update KYC status with permission check
   const updateKYCStatus = async (
     userId: string,
     kycId: string,
     newStatus: string,
     rejectionReason?: string
   ) => {
+    if (!currentAdmin) {
+      setProcessingError("Admin session not found");
+      return;
+    }
+
+    // Check if admin can manage this user's KYC
+    const canManageKYC =
+      accessibleUserIds.length === 0 || // Full admin
+      accessibleUserIds.includes(userId); // User is accessible
+
+    if (!canManageKYC) {
+      setProcessingError("You don't have permission to manage this user's KYC");
+      return;
+    }
+
     try {
       setUpdating(kycId);
       setProcessingError(null);
@@ -273,6 +633,7 @@ export default function KYCAdminPanel() {
       if (userError) throw userError;
 
       await fetchKYCRecords();
+      await fetchTotalCounts();
       alert(`KYC ${newStatus} successfully!`);
     } catch (error: any) {
       console.error("Error updating KYC status:", error);
@@ -283,7 +644,23 @@ export default function KYCAdminPanel() {
     }
   };
 
+  // Skip KYC with permission check
   const skipKYCForUser = async (userId: string) => {
+    if (!currentAdmin) {
+      setProcessingError("Admin session not found");
+      return;
+    }
+
+    // Check if admin can skip KYC for this user
+    const canSkipKYC =
+      accessibleUserIds.length === 0 || // Full admin
+      accessibleUserIds.includes(userId); // User is accessible
+
+    if (!canSkipKYC) {
+      setProcessingError("You don't have permission to skip KYC for this user");
+      return;
+    }
+
     try {
       setUpdating(userId);
       setProcessingError(null);
@@ -350,6 +727,7 @@ export default function KYCAdminPanel() {
       if (userError) throw userError;
 
       await fetchKYCRecords();
+      await fetchTotalCounts();
       setShowSkipDialog(false);
       setSelectedUser(null);
       alert("KYC successfully skipped for user!");
@@ -470,12 +848,123 @@ export default function KYCAdminPanel() {
     }
   };
 
+  // Get role badges for user
+  const getRoleBadges = useCallback((user: UserInterface) => {
+    const roles = [];
+    if (user.is_superiormanager)
+      roles.push({
+        label: "Superior Manager",
+        color: "bg-purple-100 text-purple-800",
+      });
+    else if (user.is_manager)
+      roles.push({ label: "Manager", color: "bg-blue-100 text-blue-800" });
+    if (user.is_admin)
+      roles.push({ label: "Admin", color: "bg-red-100 text-red-800" });
+    return roles;
+  }, []);
+
   const filteredRecords = kycRecords.filter((record) => {
     const matchesSearch =
       searchTerm === "" ||
       record.full_name.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesSearch;
   });
+
+  // EFFECT 1: Initialize current admin - NO DEPENDENCIES ON OTHER FUNCTIONS
+  useEffect(() => {
+    let mounted = true;
+
+    const init = async () => {
+      try {
+        const admin = await getCurrentAdmin();
+        if (mounted) {
+          setCurrentAdmin(admin);
+        }
+      } catch (error) {
+        console.error("Failed to initialize KYC admin:", error);
+        if (mounted) {
+          setError("Failed to load admin permissions");
+        }
+      } finally {
+        if (mounted) {
+          setLoadingPermissions(false);
+        }
+      }
+    };
+
+    init();
+
+    return () => {
+      mounted = false;
+    };
+  }, []); // NO DEPENDENCIES
+
+  // EFFECT 2: Load accessible user IDs when admin changes - STABLE
+  useEffect(() => {
+    let mounted = true;
+
+    if (!currentAdmin) {
+      setAccessibleUserIds([]);
+      setAccessibleUserIdsLoaded(false);
+      return;
+    }
+
+    const loadUserIds = async () => {
+      try {
+        console.log("Loading accessible user IDs for KYC admin:", currentAdmin);
+        const userIds = await loadAccessibleUserIds(currentAdmin);
+        if (mounted) {
+          setAccessibleUserIds(userIds);
+          setAccessibleUserIdsLoaded(true);
+          console.log("Cached accessible user IDs for KYC:", userIds);
+        }
+      } catch (error) {
+        console.error("Failed to load accessible users for KYC:", error);
+        if (mounted) {
+          setAccessibleUserIds([]);
+          setAccessibleUserIdsLoaded(true);
+        }
+      }
+    };
+
+    loadUserIds();
+
+    return () => {
+      mounted = false;
+    };
+  }, [currentAdmin, loadAccessibleUserIds]); // Only depends on currentAdmin and stable function
+
+  // EFFECT 3: Load data when accessible user IDs are ready - STABLE
+  useEffect(() => {
+    if (currentAdmin && accessibleUserIdsLoaded) {
+      console.log("Loading KYC data - admin ready and accessible IDs loaded");
+      fetchTotalCounts();
+      fetchKYCRecords();
+    }
+  }, [
+    currentAdmin,
+    accessibleUserIdsLoaded,
+    fetchTotalCounts,
+    fetchKYCRecords,
+  ]); // Stable dependencies
+
+  // EFFECT 4: Refetch when tab changes
+  useEffect(() => {
+    if (currentAdmin && accessibleUserIdsLoaded) {
+      fetchKYCRecords();
+    }
+  }, [activeTab, currentAdmin, accessibleUserIdsLoaded, fetchKYCRecords]);
+
+  // EFFECT 5: Search with debounce
+  useEffect(() => {
+    if (!currentAdmin || !accessibleUserIdsLoaded) return;
+
+    const timeoutId = setTimeout(() => {
+      fetchKYCRecords();
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm, currentAdmin, accessibleUserIdsLoaded, fetchKYCRecords]);
 
   function renderKYCRecords() {
     if (loading) {
@@ -512,6 +1001,17 @@ export default function KYCAdminPanel() {
                 ? "Use the search box above to find specific records"
                 : "KYC submissions will appear here when users complete verification"}
             </p>
+            {currentAdmin?.is_manager && (
+              <p className="text-xs text-blue-600 mt-2">
+                You can only see KYC records for users assigned to you
+              </p>
+            )}
+            {currentAdmin?.is_admin && currentAdmin?.is_superiormanager && (
+              <p className="text-xs text-purple-600 mt-2">
+                You can see KYC records for managers you assigned and their
+                users
+              </p>
+            )}
           </CardContent>
         </Card>
       );
@@ -768,8 +1268,139 @@ export default function KYCAdminPanel() {
     );
   }
 
+  // Loading state
+  if (loadingPermissions) {
+    return (
+      <Card>
+        <CardContent className="text-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F26623] mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading admin permissions...</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // No admin session
+  if (!currentAdmin) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center text-red-600">
+            <AlertTriangle className="w-5 h-5 mr-2" />
+            Session Error
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-center py-8">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <AlertTriangle className="w-8 h-8 text-red-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            Admin Session Not Found
+          </h3>
+          <p className="text-gray-600 mb-4">
+            Unable to verify your admin permissions. Please log in again.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Check if user has any admin access
+  if (!currentAdmin.is_admin && !currentAdmin.is_manager) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center text-red-600">
+            <Shield className="w-5 h-5 mr-2" />
+            Access Denied
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-center py-8">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Shield className="w-8 h-8 text-red-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            Admin Access Required
+          </h3>
+          <p className="text-gray-600 mb-4">
+            You need admin or manager permissions to manage KYC records.
+          </p>
+          <div className="space-y-2 text-sm text-gray-500">
+            <p>Your current permissions:</p>
+            <div className="flex justify-center space-x-2">
+              <Badge
+                className={
+                  currentAdmin.is_admin
+                    ? "bg-green-100 text-green-800"
+                    : "bg-red-100 text-red-800"
+                }
+              >
+                Admin: {currentAdmin.is_admin ? "Yes" : "No"}
+              </Badge>
+              <Badge
+                className={
+                  currentAdmin.is_manager
+                    ? "bg-blue-100 text-blue-800"
+                    : "bg-gray-100 text-gray-800"
+                }
+              >
+                Manager: {currentAdmin.is_manager ? "Yes" : "No"}
+              </Badge>
+              <Badge
+                className={
+                  currentAdmin.is_superiormanager
+                    ? "bg-purple-100 text-purple-800"
+                    : "bg-gray-100 text-gray-800"
+                }
+              >
+                Superior: {currentAdmin.is_superiormanager ? "Yes" : "No"}
+              </Badge>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <div className="space-y-6">
+      {/* Admin Level Display */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <Shield className="w-5 h-5 mr-2" />
+            Your Access Level - KYC Management
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center space-x-4">
+            {currentAdmin.is_admin &&
+              !currentAdmin.is_superiormanager &&
+              !currentAdmin.is_manager && (
+                <Badge className="bg-red-100 text-red-800">
+                  <Shield className="w-3 h-3 mr-1" />
+                  Full Administrator
+                </Badge>
+              )}
+            {currentAdmin.is_admin && currentAdmin.is_superiormanager && (
+              <Badge className="bg-purple-100 text-purple-800">
+                <Crown className="w-3 h-3 mr-1" />
+                Superior Manager
+              </Badge>
+            )}
+            {currentAdmin.is_manager && (
+              <Badge className="bg-blue-100 text-blue-800">
+                <UserCheck className="w-3 h-3 mr-1" />
+                Manager
+              </Badge>
+            )}
+            <span className="text-sm text-gray-600">
+              {getAdminLevelDescription}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">
@@ -813,7 +1444,11 @@ export default function KYCAdminPanel() {
                   Total Records
                 </p>
                 <p className="text-2xl font-bold">{totalStats.total}</p>
-                <p className="text-xs text-gray-500">All KYC submissions</p>
+                <p className="text-xs text-gray-500">
+                  {hasFullAdminAccess
+                    ? "All KYC submissions"
+                    : "Your accessible KYC records"}
+                </p>
               </div>
               <FileText className="w-8 h-8 text-gray-400" />
             </div>
@@ -866,7 +1501,13 @@ export default function KYCAdminPanel() {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
         <Input
-          placeholder="Search KYC records by name or document number (type 2+ characters)..."
+          placeholder={
+            hasFullAdminAccess
+              ? "Search KYC records by name or document number (type 2+ characters)..."
+              : currentAdmin.is_admin && currentAdmin.is_superiormanager
+              ? "Search KYC records for your assigned managers and their users..."
+              : "Search KYC records for your assigned users..."
+          }
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="pl-10"
@@ -905,7 +1546,14 @@ export default function KYCAdminPanel() {
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <Input
-                    placeholder="Type name or email to find users..."
+                    placeholder={
+                      hasFullAdminAccess
+                        ? "Type name or email to find users..."
+                        : currentAdmin.is_admin &&
+                          currentAdmin.is_superiormanager
+                        ? "Search your assigned managers and their users..."
+                        : "Search your assigned users..."
+                    }
                     value={userSearchTerm}
                     onChange={(e) => setUserSearchTerm(e.target.value)}
                     className="pl-10"
@@ -919,49 +1567,73 @@ export default function KYCAdminPanel() {
               {userSearchTerm.length >= 2 && (
                 <div className="border rounded-lg max-h-64 overflow-y-auto">
                   {searchResults.length > 0 ? (
-                    searchResults.map((user) => (
-                      <div
-                        key={user.id}
-                        className="p-4 border-b last:border-b-0 flex items-center justify-between hover:bg-gray-50"
-                      >
-                        <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
-                            <User className="w-5 h-5 text-white" />
-                          </div>
-                          <div>
-                            <p className="font-medium">
-                              {user.full_name ||
-                                user.email?.split("@")[0] ||
-                                "Unknown"}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              {user.email}
-                            </p>
-                            <Badge variant="outline" className="text-xs mt-1">
-                              {user.kyc_status || "No KYC"}
-                            </Badge>
-                          </div>
-                        </div>
-                        <Button
-                          onClick={() => handleSkipKYC(user)}
-                          variant="outline"
-                          size="sm"
-                          disabled={updating === user.id}
+                    searchResults.map((user) => {
+                      const roles = getRoleBadges(user);
+                      return (
+                        <div
+                          key={user.id}
+                          className="p-4 border-b last:border-b-0 flex items-center justify-between hover:bg-gray-50"
                         >
-                          {updating === user.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <>
-                              <SkipForward className="w-4 h-4 mr-1" />
-                              Skip KYC
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                    ))
+                          <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
+                              <User className="w-5 h-5 text-white" />
+                            </div>
+                            <div>
+                              <p className="font-medium">
+                                {user.full_name ||
+                                  user.email?.split("@")[0] ||
+                                  "Unknown"}
+                              </p>
+                              <p className="text-sm text-gray-600">
+                                {user.email}
+                              </p>
+                              <div className="flex items-center space-x-1 mt-1">
+                                <Badge variant="outline" className="text-xs">
+                                  {user.kyc_status || "No KYC"}
+                                </Badge>
+                                {roles.map((role, index) => (
+                                  <Badge
+                                    key={index}
+                                    className={`text-xs ${role.color}`}
+                                  >
+                                    {role.label}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                          <Button
+                            onClick={() => handleSkipKYC(user)}
+                            variant="outline"
+                            size="sm"
+                            disabled={updating === user.id}
+                          >
+                            {updating === user.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <>
+                                <SkipForward className="w-4 h-4 mr-1" />
+                                Skip KYC
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      );
+                    })
                   ) : !searching ? (
                     <div className="p-4 text-center text-gray-500">
                       No users found matching "{userSearchTerm}"
+                      {currentAdmin.is_manager && (
+                        <p className="text-xs text-blue-600 mt-1">
+                          You can only search users assigned to you
+                        </p>
+                      )}
+                      {currentAdmin.is_admin &&
+                        currentAdmin.is_superiormanager && (
+                          <p className="text-xs text-purple-600 mt-1">
+                            You can search managers you assigned and their users
+                          </p>
+                        )}
                     </div>
                   ) : null}
                 </div>
@@ -1006,6 +1678,13 @@ export default function KYCAdminPanel() {
                       "Unknown"}
                   </p>
                   <p className="text-sm text-gray-600">{selectedUser.email}</p>
+                  <div className="flex space-x-1 mt-1">
+                    {getRoleBadges(selectedUser).map((role, index) => (
+                      <Badge key={index} className={`text-xs ${role.color}`}>
+                        {role.label}
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
