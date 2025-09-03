@@ -8,11 +8,11 @@ import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY; // service role key
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY; 
 const CSV_PATH = process.argv[2] || "./taxes.csv";
-const DRY_RUN = process.argv.includes("--dry-run"); // optional flag
-const INSERT_CHUNK = 500; // rows per insert
-const QUERY_CHUNK = 500; // emails per .in() query
+const DRY_RUN = process.argv.includes("--dry-run"); 
+const INSERT_CHUNK = 500; 
+const QUERY_CHUNK = 500; 
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   console.error("❌ Missing SUPABASE env vars. Check .env.local");
