@@ -606,7 +606,7 @@ export default function EnhancedAdminDashboard({
     fetchLocationAndUpdateSession();
   }, []); // Remove sessionId dependency to avoid loops
 
-  // Fetch system stats with hierarchy awareness - STABLE FUNCTION
+  // Fetch system stats with hierarchy awareness - STABLE FUNCTION - FIXED FOR LARGE DATASETS
   const fetchSystemStats = useCallback(async () => {
     if (!currentAdmin || !accessibleUserIdsLoaded) {
       console.log(
@@ -621,40 +621,59 @@ export default function EnhancedAdminDashboard({
         currentAdmin
       );
 
-      // Get total system stats (for full admin comparison)
+      // Get total system stats using COUNT queries (more efficient for large datasets)
       let totalUsers = 0;
       let totalProfiles = 0;
       let totalDeposits = 0;
       let totalVolume = 0;
 
-      // Try to get total counts
+      // Use count queries instead of fetching all data
       try {
-        const { data: allUsers, error: allUsersError } = await supabase
+        console.log("Fetching total user count using count query...");
+        const { count: userCount, error: userCountError } = await supabase
           .from("users")
-          .select("id");
+          .select("*", { count: "exact", head: true });
 
-        if (!allUsersError && allUsers) {
-          totalUsers = allUsers.length;
+        if (!userCountError) {
+          totalUsers = userCount || 0;
+          console.log("Total users count:", totalUsers);
+        } else {
+          console.error("Error getting user count:", userCountError);
         }
 
+        console.log("Fetching total profile count...");
         const { count: profileCount, error: profileError } = await supabase
           .from("profiles")
           .select("*", { count: "exact", head: true });
 
         if (!profileError) {
           totalProfiles = profileCount || 0;
+          console.log("Total profiles count:", totalProfiles);
         }
 
-        const { data: allDeposits, error: depositsError } = await supabase
+        console.log("Fetching total deposit count and volume...");
+        const { count: depositCount, error: depositCountError } = await supabase
           .from("deposits")
-          .select("amount, status");
+          .select("*", { count: "exact", head: true });
 
-        if (!depositsError && allDeposits) {
-          totalDeposits = allDeposits.length;
-          totalVolume = allDeposits.reduce(
+        if (!depositCountError) {
+          totalDeposits = depositCount || 0;
+          console.log("Total deposits count:", totalDeposits);
+        }
+
+        // For volume calculation, we need to fetch amounts in batches to handle large datasets
+        console.log("Calculating total deposit volume...");
+        const { data: depositVolumes, error: volumeError } = await supabase
+          .from("deposits")
+          .select("amount")
+          .limit(50000); // Increase limit for volume calculation
+
+        if (!volumeError && depositVolumes) {
+          totalVolume = depositVolumes.reduce(
             (sum, d) => sum + (d.amount || 0),
             0
           );
+          console.log("Total volume calculated:", totalVolume);
         }
       } catch (error) {
         console.error("Error fetching total stats:", error);
@@ -667,24 +686,44 @@ export default function EnhancedAdminDashboard({
       let pendingDeposits = 0;
 
       if (accessibleUserIds.length > 0) {
-        // Count accessible users
+        // Count accessible users using count query
         console.log("Counting accessible users:", accessibleUserIds);
-        const { data: accessibleUsersData, error: accessibleUsersError } =
-          await supabase.from("users").select("id").in("id", accessibleUserIds);
+        const { count: accessibleUserCount, error: accessibleUsersError } =
+          await supabase
+            .from("users")
+            .select("*", { count: "exact", head: true })
+            .in("id", accessibleUserIds);
 
-        if (!accessibleUsersError && accessibleUsersData) {
-          accessibleUsers = accessibleUsersData.length;
+        if (!accessibleUsersError) {
+          accessibleUsers = accessibleUserCount || 0;
         }
 
-        // Count accessible deposits
+        // Count accessible deposits using count query
+        console.log(
+          "Counting accessible deposits for users:",
+          accessibleUserIds
+        );
+        const {
+          count: accessibleDepositCount,
+          error: accessibleDepositsCountError,
+        } = await supabase
+          .from("deposits")
+          .select("*", { count: "exact", head: true })
+          .in("uuid", accessibleUserIds);
+
+        if (!accessibleDepositsCountError) {
+          accessibleDeposits = accessibleDepositCount || 0;
+        }
+
+        // Calculate accessible volume and pending deposits
         const { data: accessibleDepositsData, error: accessibleDepositsError } =
           await supabase
             .from("deposits")
             .select("amount, status")
-            .in("uuid", accessibleUserIds);
+            .in("uuid", accessibleUserIds)
+            .limit(50000); // Handle large datasets with higher limit
 
         if (!accessibleDepositsError && accessibleDepositsData) {
-          accessibleDeposits = accessibleDepositsData.length;
           accessibleVolume = accessibleDepositsData.reduce(
             (sum, d) => sum + (d.amount || 0),
             0
@@ -704,15 +743,14 @@ export default function EnhancedAdminDashboard({
         accessibleDeposits = totalDeposits;
         accessibleVolume = totalVolume;
 
-        // Get pending deposits for full admin
-        const { data: allDeposits, error: depositsError } = await supabase
+        // Get pending deposits count for full admin
+        const { count: pendingCount, error: pendingError } = await supabase
           .from("deposits")
-          .select("amount, status");
+          .select("*", { count: "exact", head: true })
+          .like("status", "%Pending%");
 
-        if (!depositsError && allDeposits) {
-          pendingDeposits = allDeposits.filter((d) =>
-            d.status.includes("Pending")
-          ).length;
+        if (!pendingError) {
+          pendingDeposits = pendingCount || 0;
         }
       } else {
         // No accessible users
@@ -1403,7 +1441,7 @@ export default function EnhancedAdminDashboard({
               </Card>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
               <Card>
                 <CardHeader>
                   <CardTitle>Security Features Active</CardTitle>

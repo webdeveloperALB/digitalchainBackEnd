@@ -990,7 +990,7 @@ export default function ActivityManager() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Create User Activity - Hierarchy-Aware Search</CardTitle>
+          <CardTitle>Create User Activity</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Hierarchy-aware user search */}
