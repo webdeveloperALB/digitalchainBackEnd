@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   MessageCircle,
   Send,
@@ -16,6 +17,10 @@ import {
   Maximize2,
   Wifi,
   WifiOff,
+  Shield,
+  Crown,
+  UserCheck,
+  AlertTriangle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
@@ -24,6 +29,7 @@ interface ChatSession {
   id: string;
   client_name: string | null;
   client_email: string | null;
+  client_user_id: string | null;
   status: string;
   created_at: string;
   updated_at: string;
@@ -42,14 +48,34 @@ interface ChatMessage {
   read_by_client: boolean;
 }
 
+interface CurrentAdmin {
+  id: string;
+  is_admin: boolean;
+  is_manager: boolean;
+  is_superiormanager: boolean;
+}
+
 export default function LiveChatAdmin() {
   const { toast } = useToast();
+
+  // Core state
+  const [currentAdmin, setCurrentAdmin] = useState<CurrentAdmin | null>(null);
+  const [accessibleUserIds, setAccessibleUserIds] = useState<string[]>([]);
+  const [accessibleUserIdsLoaded, setAccessibleUserIdsLoaded] = useState(false);
+  const [loadingPermissions, setLoadingPermissions] = useState(true);
+
+  // Chat state
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSession, setActiveSession] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [isMinimized, setIsMinimized] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [message, setMessage] = useState<{ type: string; text: string } | null>(
+    null
+  );
+
+  // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const sessionsPollingRef = useRef<NodeJS.Timeout | null>(null);
@@ -57,8 +83,238 @@ export default function LiveChatAdmin() {
   const lastSessionCountRef = useRef(0);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Get current admin info - STABLE FUNCTION
+  const getCurrentAdmin =
+    useCallback(async (): Promise<CurrentAdmin | null> => {
+      try {
+        const currentSession = localStorage.getItem("current_admin_session");
+        if (!currentSession) {
+          console.log("No current admin session found");
+          return null;
+        }
+
+        const sessionData = JSON.parse(currentSession);
+        console.log("Current session data:", sessionData);
+
+        const { data: adminData, error } = await supabase
+          .from("users")
+          .select("id, is_admin, is_manager, is_superiormanager")
+          .eq("id", sessionData.userId)
+          .single();
+
+        if (error) {
+          console.error("Failed to get admin data:", error);
+          return null;
+        }
+
+        console.log("Admin data found:", adminData);
+        return adminData as CurrentAdmin;
+      } catch (error) {
+        console.error("Failed to get current admin:", error);
+        return null;
+      }
+    }, []);
+
+  // Get accessible user IDs - STABLE FUNCTION
+  const loadAccessibleUserIds = useCallback(
+    async (admin: CurrentAdmin): Promise<string[]> => {
+      if (!admin) {
+        console.log("No admin provided to loadAccessibleUserIds");
+        return [];
+      }
+
+      console.log("Getting accessible users for admin:", admin);
+
+      // Full admin (is_admin: true, is_superiormanager: false, is_manager: false) - can see everyone
+      if (admin.is_admin && !admin.is_superiormanager && !admin.is_manager) {
+        console.log("Full admin - can see all users");
+        return []; // Empty array means no filter (see all)
+      }
+
+      // Superior manager (is_admin: true, is_superiormanager: true) - can see their managers and their assigned users
+      if (admin.is_admin && admin.is_superiormanager) {
+        console.log("Superior manager loading accessible users for:", admin.id);
+
+        try {
+          // Get managers assigned to this superior manager
+          const { data: managerAssignments, error: managerError } =
+            await supabase
+              .from("user_assignments")
+              .select("assigned_user_id")
+              .eq("manager_id", admin.id);
+
+          if (managerError) {
+            console.error("Error fetching manager assignments:", managerError);
+            return [admin.id];
+          }
+
+          const managerIds =
+            managerAssignments?.map((a) => a.assigned_user_id) || [];
+          console.log("Superior manager's assigned managers:", managerIds);
+
+          if (managerIds.length > 0) {
+            // Verify these are actually managers (not other superior managers or regular users)
+            const { data: verifiedManagers, error: verifyError } =
+              await supabase
+                .from("users")
+                .select("id")
+                .in("id", managerIds)
+                .eq("is_manager", true)
+                .eq("is_superiormanager", false); // Only regular managers, not other superior managers
+
+            if (verifyError) {
+              console.error("Error verifying managers:", verifyError);
+              return [admin.id];
+            }
+
+            const verifiedManagerIds =
+              verifiedManagers?.map((m: any) => m.id) || [];
+            console.log("Verified manager IDs:", verifiedManagerIds);
+
+            if (verifiedManagerIds.length > 0) {
+              // Get users assigned to those verified managers
+              const { data: userAssignments, error: userError } = await supabase
+                .from("user_assignments")
+                .select("assigned_user_id")
+                .in("manager_id", verifiedManagerIds);
+
+              if (userError) {
+                console.error("Error fetching user assignments:", userError);
+                return [admin.id, ...verifiedManagerIds];
+              }
+
+              const userIds =
+                userAssignments?.map((a) => a.assigned_user_id) || [];
+
+              // Filter out any admin/manager users from the assigned users list
+              const { data: verifiedUsers, error: verifyUsersError } =
+                await supabase
+                  .from("users")
+                  .select("id")
+                  .in("id", userIds)
+                  .eq("is_admin", false)
+                  .eq("is_manager", false)
+                  .eq("is_superiormanager", false);
+
+              if (verifyUsersError) {
+                console.error("Error verifying users:", verifyUsersError);
+                return [admin.id, ...verifiedManagerIds];
+              }
+
+              const verifiedUserIds =
+                verifiedUsers?.map((u: any) => u.id) || [];
+              const accessibleIds = [
+                admin.id,
+                ...verifiedManagerIds,
+                ...verifiedUserIds,
+              ];
+              console.log(
+                "Superior manager can access (verified):",
+                accessibleIds
+              );
+              return accessibleIds;
+            }
+          }
+
+          console.log("Superior manager has no verified managers");
+          return [admin.id];
+        } catch (error) {
+          console.error("Error in superior manager logic:", error);
+          return [admin.id];
+        }
+      }
+
+      // Manager (is_manager: true) - can only see assigned users (not other managers)
+      if (admin.is_manager) {
+        console.log("Manager loading accessible users for:", admin.id);
+
+        try {
+          const { data: userAssignments, error: userError } = await supabase
+            .from("user_assignments")
+            .select("assigned_user_id")
+            .eq("manager_id", admin.id);
+
+          if (userError) {
+            console.error(
+              "Error fetching user assignments for manager:",
+              userError
+            );
+            return [admin.id];
+          }
+
+          const assignedUserIds =
+            userAssignments?.map((a) => a.assigned_user_id) || [];
+          console.log("Manager's assigned user IDs:", assignedUserIds);
+
+          if (assignedUserIds.length > 0) {
+            // Verify these are regular users (not managers or admins)
+            const { data: verifiedUsers, error: verifyError } = await supabase
+              .from("users")
+              .select("id")
+              .in("id", assignedUserIds)
+              .eq("is_admin", false)
+              .eq("is_manager", false)
+              .eq("is_superiormanager", false);
+
+            if (verifyError) {
+              console.error("Error verifying assigned users:", verifyError);
+              return [admin.id];
+            }
+
+            const verifiedUserIds = verifiedUsers?.map((u: any) => u.id) || [];
+            const accessibleIds = [admin.id, ...verifiedUserIds];
+            console.log(
+              "Manager can access (verified users only):",
+              accessibleIds
+            );
+            return accessibleIds;
+          }
+
+          console.log("Manager has no verified assigned users");
+          return [admin.id];
+        } catch (error) {
+          console.error("Error in manager logic:", error);
+          return [admin.id];
+        }
+      }
+
+      console.log("No valid admin role found");
+      return [];
+    },
+    []
+  );
+
+  // Check if user has full admin access (is_admin: true, others: false)
+  const hasFullAdminAccess = useMemo(() => {
+    return (
+      currentAdmin?.is_admin === true &&
+      currentAdmin?.is_manager === false &&
+      currentAdmin?.is_superiormanager === false
+    );
+  }, [currentAdmin]);
+
+  // Get admin level description
+  const getAdminLevelDescription = useMemo(() => {
+    if (!currentAdmin) return "Loading permissions...";
+
+    if (
+      currentAdmin.is_admin &&
+      !currentAdmin.is_superiormanager &&
+      !currentAdmin.is_manager
+    ) {
+      return "Full Administrator - Can view all chat sessions";
+    }
+    if (currentAdmin.is_admin && currentAdmin.is_superiormanager) {
+      return "Superior Manager - Can view chat sessions for assigned managers and their users";
+    }
+    if (currentAdmin.is_manager) {
+      return "Manager - Can view chat sessions for assigned users only";
+    }
+    return "No admin permissions";
+  }, [currentAdmin]);
+
   // Force scroll to bottom function
-  const forceScrollToBottom = () => {
+  const forceScrollToBottom = useCallback(() => {
     // Clear any existing scroll timeout
     if (scrollTimeoutRef.current) {
       clearTimeout(scrollTimeoutRef.current);
@@ -77,124 +333,218 @@ export default function LiveChatAdmin() {
         }
       }, delay);
     });
-  };
+  }, []);
 
-  // Fetch chat sessions
-  const fetchSessions = async (silent = false) => {
-    try {
-      const { data, error } = await supabase
-        .from("chat_sessions")
-        .select("*")
-        .order("last_message_at", { ascending: false });
-
-      if (error) throw error;
-
-      // Get unread counts for each session
-      const sessionsWithUnread = await Promise.all(
-        (data || []).map(async (session) => {
-          const { count } = await supabase
-            .from("chat_messages")
-            .select("*", { count: "exact", head: true })
-            .eq("session_id", session.id)
-            .eq("sender_type", "client")
-            .eq("read_by_admin", false);
-
-          return {
-            ...session,
-            unread_count: count || 0,
-          };
-        })
-      );
-
-      // Only update if session count changed (silent updates)
-      if (sessionsWithUnread.length !== lastSessionCountRef.current) {
+  // Fetch chat sessions with hierarchy filtering - STABLE FUNCTION
+  const fetchSessions = useCallback(
+    async (silent = false) => {
+      if (!currentAdmin || !accessibleUserIdsLoaded) {
         console.log(
-          `ADMIN: Found ${sessionsWithUnread.length} sessions (was ${lastSessionCountRef.current})`
+          "Cannot fetch sessions - admin or accessible IDs not ready"
         );
-        setSessions(sessionsWithUnread);
-        lastSessionCountRef.current = sessionsWithUnread.length;
-      } else {
-        // Update silently for unread counts
-        setSessions(sessionsWithUnread);
+        return;
       }
-    } catch (error) {
-      console.error("Error fetching sessions:", error);
-      setIsConnected(false);
-    }
-  };
 
-  // Fetch messages for active session
-  const fetchMessages = async (sessionId: string, silent = false) => {
-    try {
-      const { data, error } = await supabase
-        .from("chat_messages")
-        .select("*")
-        .eq("session_id", sessionId)
-        .order("created_at", { ascending: true });
+      try {
+        console.log("Fetching chat sessions for admin:", currentAdmin);
 
-      if (error) throw error;
+        let query = supabase.from("chat_sessions").select("*");
 
-      const newMessages = data || [];
-
-      // Always update messages and scroll if count changed or if it's the first load
-      if (
-        newMessages.length !== lastMessageCountRef.current ||
-        messages.length === 0
-      ) {
+        // Use cached accessible user IDs
         console.log(
-          `ADMIN: Found ${newMessages.length} messages (was ${lastMessageCountRef.current})`
+          "Using cached accessible user IDs for chat sessions:",
+          accessibleUserIds
         );
 
-        // Check for new client messages for notifications
-        const currentMessageIds = messages.map((m) => m.id);
-        const newClientMessages = newMessages.filter(
-          (msg) =>
-            msg.sender_type === "client" && !currentMessageIds.includes(msg.id)
-        );
-
-        setMessages(newMessages);
-        lastMessageCountRef.current = newMessages.length;
-
-        // Always scroll to bottom when messages are loaded/updated
-        if (newMessages.length > 0 && !isMinimized) {
-          console.log("ADMIN: Messages updated, scrolling to bottom");
-          forceScrollToBottom();
+        if (accessibleUserIds.length > 0) {
+          console.log(
+            "Filtering chat sessions to accessible user IDs:",
+            accessibleUserIds
+          );
+          query = query.in("client_user_id", accessibleUserIds);
+        } else if (
+          currentAdmin.is_admin &&
+          !currentAdmin.is_superiormanager &&
+          !currentAdmin.is_manager
+        ) {
+          // Full admin sees all sessions - no filter needed
+          console.log("Full admin - loading all chat sessions");
+        } else {
+          // No accessible users
+          console.log("No accessible users for chat sessions");
+          query = query.eq(
+            "client_user_id",
+            "00000000-0000-0000-0000-000000000000"
+          ); // No results
         }
 
-        // Show notification for new client messages (only if not silent)
-        if (!silent && newClientMessages.length > 0) {
-          toast({
-            title: "New Message",
-            description: `New message from ${
-              newClientMessages[0].sender_name || "Client"
-            }`,
+        const { data, error } = await query.order("last_message_at", {
+          ascending: false,
+        });
+
+        if (error) throw error;
+
+        // Get unread counts for each accessible session
+        const sessionsWithUnread = await Promise.all(
+          (data || []).map(async (session) => {
+            const { count } = await supabase
+              .from("chat_messages")
+              .select("*", { count: "exact", head: true })
+              .eq("session_id", session.id)
+              .eq("sender_type", "client")
+              .eq("read_by_admin", false);
+
+            return {
+              ...session,
+              unread_count: count || 0,
+            };
+          })
+        );
+
+        // Only update if session count changed (silent updates)
+        if (sessionsWithUnread.length !== lastSessionCountRef.current) {
+          console.log(
+            `ADMIN: Found ${sessionsWithUnread.length} accessible sessions (was ${lastSessionCountRef.current})`
+          );
+          setSessions(sessionsWithUnread);
+          lastSessionCountRef.current = sessionsWithUnread.length;
+        } else {
+          // Update silently for unread counts
+          setSessions(sessionsWithUnread);
+        }
+
+        setIsConnected(true);
+      } catch (error) {
+        console.error("Error fetching sessions:", error);
+        setIsConnected(false);
+        if (!silent) {
+          setMessage({ type: "error", text: "Failed to load chat sessions" });
+        }
+      }
+    },
+    [currentAdmin, accessibleUserIds, accessibleUserIdsLoaded]
+  );
+
+  // Fetch messages for active session with permission check - STABLE FUNCTION
+  const fetchMessages = useCallback(
+    async (sessionId: string, silent = false) => {
+      if (!currentAdmin || !accessibleUserIdsLoaded) {
+        console.log(
+          "Cannot fetch messages - admin or accessible IDs not ready"
+        );
+        return;
+      }
+
+      try {
+        // First check if admin can access this session
+        const session = sessions.find((s) => s.id === sessionId);
+        if (!session) {
+          console.log("Session not found in accessible sessions");
+          return;
+        }
+
+        // Check if admin can access this user's chat
+        const canAccessChat =
+          accessibleUserIds.length === 0 || // Full admin
+          (session.client_user_id &&
+            accessibleUserIds.includes(session.client_user_id)); // User is accessible
+
+        if (!canAccessChat) {
+          setMessage({
+            type: "error",
+            text: "You don't have permission to view this chat session",
           });
+          return;
         }
 
-        // Mark client messages as read by admin
-        const unreadClientMessages = newMessages.filter(
-          (msg) => msg.sender_type === "client" && !msg.read_by_admin
-        );
+        const { data, error } = await supabase
+          .from("chat_messages")
+          .select("*")
+          .eq("session_id", sessionId)
+          .order("created_at", { ascending: true });
 
-        if (unreadClientMessages.length > 0) {
-          await supabase
-            .from("chat_messages")
-            .update({ read_by_admin: true })
-            .in(
-              "id",
-              unreadClientMessages.map((msg) => msg.id)
-            );
+        if (error) throw error;
+
+        const newMessages = data || [];
+
+        // Always update messages and scroll if count changed or if it's the first load
+        if (
+          newMessages.length !== lastMessageCountRef.current ||
+          messages.length === 0
+        ) {
+          console.log(
+            `ADMIN: Found ${newMessages.length} messages (was ${lastMessageCountRef.current})`
+          );
+
+          // Check for new client messages for notifications
+          const currentMessageIds = messages.map((m) => m.id);
+          const newClientMessages = newMessages.filter(
+            (msg) =>
+              msg.sender_type === "client" &&
+              !currentMessageIds.includes(msg.id)
+          );
+
+          setMessages(newMessages);
+          lastMessageCountRef.current = newMessages.length;
+
+          // Always scroll to bottom when messages are loaded/updated
+          if (newMessages.length > 0 && !isMinimized) {
+            console.log("ADMIN: Messages updated, scrolling to bottom");
+            forceScrollToBottom();
+          }
+
+          // Show notification for new client messages (only if not silent)
+          if (!silent && newClientMessages.length > 0) {
+            toast({
+              title: "New Message",
+              description: `New message from ${
+                newClientMessages[0].sender_name || "Client"
+              }`,
+            });
+          }
+
+          // Mark client messages as read by admin
+          const unreadClientMessages = newMessages.filter(
+            (msg) => msg.sender_type === "client" && !msg.read_by_admin
+          );
+
+          if (unreadClientMessages.length > 0) {
+            await supabase
+              .from("chat_messages")
+              .update({ read_by_admin: true })
+              .in(
+                "id",
+                unreadClientMessages.map((msg) => msg.id)
+              );
+          }
+        }
+
+        setIsConnected(true);
+      } catch (error) {
+        console.error("Error fetching messages:", error);
+        setIsConnected(false);
+        if (!silent) {
+          setMessage({ type: "error", text: "Failed to load chat messages" });
         }
       }
-    } catch (error) {
-      console.error("Error fetching messages:", error);
-      setIsConnected(false);
-    }
-  };
+    },
+    [
+      currentAdmin,
+      accessibleUserIds,
+      accessibleUserIdsLoaded,
+      isMinimized,
+      forceScrollToBottom,
+      toast,
+    ]
+  );
 
-  // Send message
-  const sendMessage = async () => {
-    if (!newMessage.trim() || !activeSession) return;
+  // Send message with permission check - STABLE FUNCTION
+  const sendMessage = useCallback(async () => {
+    if (!newMessage.trim() || !activeSession || !currentAdmin) return;
+
+    // Check if admin can send messages to this session
+    // Permission check will be done by the session filtering
+    // If we can see the session, we can send messages to it
 
     const messageText = newMessage.trim();
     setNewMessage("");
@@ -242,35 +592,151 @@ export default function LiveChatAdmin() {
         variant: "destructive",
       });
     }
-  };
+  }, [newMessage, activeSession, currentAdmin, toast]);
 
-  // Close session
-  const closeSession = async (sessionId: string) => {
-    try {
-      const { error } = await supabase
-        .from("chat_sessions")
-        .update({ status: "closed" })
-        .eq("id", sessionId);
-
-      if (error) throw error;
-
-      if (activeSession === sessionId) {
-        setActiveSession(null);
-        setMessages([]);
-        lastMessageCountRef.current = 0;
+  // Close session with permission check - STABLE FUNCTION
+  const closeSession = useCallback(
+    async (sessionId: string) => {
+      if (!currentAdmin) {
+        setMessage({ type: "error", text: "Admin session not found" });
+        return;
       }
 
-      toast({
-        title: "Session Closed",
-        description: "Chat session has been closed",
-      });
-    } catch (error) {
-      console.error("Error closing session:", error);
-    }
-  };
+      try {
+        // Permission check: if we can see the session, we can close it
+        // Session filtering already handles hierarchy permissions
 
-  // Setup polling for sessions every 2 seconds
+        const { error } = await supabase
+          .from("chat_sessions")
+          .update({ status: "closed" })
+          .eq("id", sessionId);
+
+        if (error) throw error;
+
+        if (activeSession === sessionId) {
+          setActiveSession(null);
+          setMessages([]);
+          lastMessageCountRef.current = 0;
+        }
+
+        toast({
+          title: "Session Closed",
+          description: "Chat session has been closed",
+        });
+      } catch (error) {
+        console.error("Error closing session:", error);
+        setMessage({ type: "error", text: "Failed to close session" });
+      }
+    },
+    [currentAdmin, activeSession, toast]
+  );
+
+  // Handle minimize/maximize
+  const handleMinimize = useCallback(() => {
+    setIsMinimized(true);
+  }, []);
+
+  const handleMaximize = useCallback(() => {
+    setIsMinimized(false);
+    // Force scroll when maximizing
+    if (messages.length > 0 && activeSession) {
+      console.log("ADMIN: Maximizing chat, scrolling to bottom");
+      setTimeout(() => forceScrollToBottom(), 100);
+    }
+  }, [messages.length, activeSession, forceScrollToBottom]);
+
+  // Format time functions - STABLE
+  const formatTime = useCallback((timestamp: string) => {
+    return new Date(timestamp).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }, []);
+
+  const formatDate = useCallback((timestamp: string) => {
+    return new Date(timestamp).toLocaleDateString();
+  }, []);
+
+  // Get role badges for user
+  const getRoleBadges = useCallback((session: ChatSession) => {
+    // This would need to be enhanced if we store user role info in chat sessions
+    // For now, we can't determine roles from chat sessions alone
+    return [];
+  }, []);
+
+  // EFFECT 1: Initialize current admin - NO DEPENDENCIES ON OTHER FUNCTIONS
   useEffect(() => {
+    let mounted = true;
+
+    const init = async () => {
+      try {
+        const admin = await getCurrentAdmin();
+        if (mounted) {
+          setCurrentAdmin(admin);
+        }
+      } catch (error) {
+        console.error("Failed to initialize:", error);
+        if (mounted) {
+          setMessage({
+            type: "error",
+            text: "Failed to load admin permissions",
+          });
+        }
+      } finally {
+        if (mounted) {
+          setLoadingPermissions(false);
+        }
+      }
+    };
+
+    init();
+
+    return () => {
+      mounted = false;
+    };
+  }, []); // NO DEPENDENCIES
+
+  // EFFECT 2: Load accessible user IDs when admin changes - STABLE
+  useEffect(() => {
+    let mounted = true;
+
+    if (!currentAdmin) {
+      setAccessibleUserIds([]);
+      setAccessibleUserIdsLoaded(false);
+      return;
+    }
+
+    const loadUserIds = async () => {
+      try {
+        console.log("Loading accessible user IDs for admin:", currentAdmin);
+        const userIds = await loadAccessibleUserIds(currentAdmin);
+        if (mounted) {
+          setAccessibleUserIds(userIds);
+          setAccessibleUserIdsLoaded(true);
+          console.log("Cached accessible user IDs:", userIds);
+        }
+      } catch (error) {
+        console.error("Failed to load accessible users:", error);
+        if (mounted) {
+          setAccessibleUserIds([]);
+          setAccessibleUserIdsLoaded(true);
+        }
+      }
+    };
+
+    loadUserIds();
+
+    return () => {
+      mounted = false;
+    };
+  }, [currentAdmin, loadAccessibleUserIds]); // Only depends on currentAdmin and stable function
+
+  // EFFECT 3: Setup polling for sessions when accessible user IDs are ready - STABLE
+  useEffect(() => {
+    if (!currentAdmin || !accessibleUserIdsLoaded) {
+      return;
+    }
+
     console.log("ADMIN: Starting sessions polling");
 
     // Initial fetch
@@ -287,9 +753,9 @@ export default function LiveChatAdmin() {
         sessionsPollingRef.current = null;
       }
     };
-  }, []);
+  }, [currentAdmin, accessibleUserIdsLoaded, fetchSessions]);
 
-  // Setup polling for messages when active session changes
+  // EFFECT 4: Setup polling for messages when active session changes - STABLE
   useEffect(() => {
     if (!activeSession) {
       // Clean up message polling
@@ -318,9 +784,9 @@ export default function LiveChatAdmin() {
         pollingIntervalRef.current = null;
       }
     };
-  }, [activeSession]);
+  }, [activeSession, fetchMessages]);
 
-  // Real-time subscriptions (as backup to polling)
+  // EFFECT 5: Real-time subscriptions (as backup to polling) - STABLE
   useEffect(() => {
     console.log("ADMIN: Setting up real-time subscriptions");
 
@@ -358,53 +824,11 @@ export default function LiveChatAdmin() {
           console.log("ADMIN: Real-time message received:", payload);
           const newMessage = payload.new as ChatMessage;
 
-          // Update messages if it's for the active session
-          if (activeSession && newMessage.session_id === activeSession) {
-            console.log("ADMIN: Message is for active session, updating UI");
-
-            setMessages((currentMessages) => {
-              // Check if message already exists
-              const exists = currentMessages.find(
-                (msg) => msg.id === newMessage.id
-              );
-              if (exists) {
-                console.log("ADMIN: Message already exists, skipping");
-                return currentMessages;
-              }
-
-              console.log("ADMIN: Adding new message via real-time");
-              const updated = [...currentMessages, newMessage];
-              lastMessageCountRef.current = updated.length;
-
-              // Force scroll to bottom for new messages
-              if (!isMinimized) {
-                forceScrollToBottom();
-              }
-
-              // Mark client messages as read
-              if (newMessage.sender_type === "client") {
-                supabase
-                  .from("chat_messages")
-                  .update({ read_by_admin: true })
-                  .eq("id", newMessage.id);
-              }
-
-              return updated;
-            });
-          }
-
-          // Always refresh sessions for unread counts
-          fetchSessions(true);
-
-          // Show notification for new client messages
-          if (newMessage.sender_type === "client") {
-            toast({
-              title: "New Message",
-              description: `New message from ${
-                newMessage.sender_name || "Client"
-              }`,
-            });
-          }
+          // Just refresh sessions and messages via polling
+          // This prevents complex state updates in real-time handlers
+          console.log(
+            "ADMIN: Real-time message detected, refreshing via polling"
+          );
         }
       )
       .subscribe((status) => {
@@ -416,28 +840,14 @@ export default function LiveChatAdmin() {
       supabase.removeChannel(sessionsChannel);
       supabase.removeChannel(messagesChannel);
     };
-  }, [activeSession, toast, isMinimized]);
+  }, []);
 
-  // Scroll to bottom whenever messages change and not minimized
+  // EFFECT 6: Scroll to bottom whenever messages change and not minimized - STABLE
   useEffect(() => {
     if (messages.length > 0 && !isMinimized && activeSession) {
       forceScrollToBottom();
     }
-  }, [messages, isMinimized, activeSession]);
-
-  // Handle minimize/maximize
-  const handleMinimize = () => {
-    setIsMinimized(true);
-  };
-
-  const handleMaximize = () => {
-    setIsMinimized(false);
-    // Force scroll when maximizing
-    if (messages.length > 0 && activeSession) {
-      console.log("ADMIN: Maximizing chat, scrolling to bottom");
-      setTimeout(() => forceScrollToBottom(), 100);
-    }
-  };
+  }, [messages, isMinimized, activeSession, forceScrollToBottom]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -454,28 +864,124 @@ export default function LiveChatAdmin() {
     };
   }, []);
 
-  const formatTime = (timestamp: string) => {
-    return new Date(timestamp).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+  // Filter sessions based on hierarchy
+  const activeSessions = useMemo(
+    () => sessions.filter((s) => s.status === "active"),
+    [sessions]
+  );
+  const closedSessions = useMemo(
+    () => sessions.filter((s) => s.status === "closed"),
+    [sessions]
+  );
 
-  const formatDate = (timestamp: string) => {
-    return new Date(timestamp).toLocaleDateString();
-  };
+  // Loading state
+  if (loadingPermissions) {
+    return (
+      <Card className="fixed bottom-4 right-4 w-[500px] h-[200px] z-50 flex flex-col shadow-2xl">
+        <CardContent className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F26623] mx-auto mb-4"></div>
+            <p className="text-gray-600 text-sm">Loading chat permissions...</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
-  const activeSessions = sessions.filter((s) => s.status === "active");
-  const closedSessions = sessions.filter((s) => s.status === "closed");
+  // No admin session
+  if (!currentAdmin) {
+    return (
+      <Card className="fixed bottom-4 right-4 w-[500px] h-[300px] z-50 flex flex-col shadow-2xl">
+        <CardHeader>
+          <CardTitle className="flex items-center text-red-600">
+            <AlertTriangle className="w-5 h-5 mr-2" />
+            Chat Access Error
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle className="w-8 h-8 text-red-600" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Admin Session Not Found
+            </h3>
+            <p className="text-gray-600 text-sm">
+              Unable to verify your admin permissions for chat access.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Check if user has any admin access
+  if (!currentAdmin.is_admin && !currentAdmin.is_manager) {
+    return (
+      <Card className="fixed bottom-4 right-4 w-[500px] h-[400px] z-50 flex flex-col shadow-2xl">
+        <CardHeader>
+          <CardTitle className="flex items-center text-red-600">
+            <Shield className="w-5 h-5 mr-2" />
+            Chat Access Denied
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Shield className="w-8 h-8 text-red-600" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Admin Access Required
+            </h3>
+            <p className="text-gray-600 mb-4 text-sm">
+              You need admin or manager permissions to access live chat.
+            </p>
+            <div className="space-y-2 text-sm text-gray-500">
+              <p>Your current permissions:</p>
+              <div className="flex justify-center space-x-2">
+                <Badge
+                  className={
+                    currentAdmin.is_admin
+                      ? "bg-green-100 text-green-800"
+                      : "bg-red-100 text-red-800"
+                  }
+                >
+                  Admin: {currentAdmin.is_admin ? "Yes" : "No"}
+                </Badge>
+                <Badge
+                  className={
+                    currentAdmin.is_manager
+                      ? "bg-blue-100 text-blue-800"
+                      : "bg-gray-100 text-gray-800"
+                  }
+                >
+                  Manager: {currentAdmin.is_manager ? "Yes" : "No"}
+                </Badge>
+                <Badge
+                  className={
+                    currentAdmin.is_superiormanager
+                      ? "bg-purple-100 text-purple-800"
+                      : "bg-gray-100 text-gray-800"
+                  }
+                >
+                  Superior: {currentAdmin.is_superiormanager ? "Yes" : "No"}
+                </Badge>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (isMinimized) {
     return (
-      <Card className="fixed bottom-4 right-4 w-40 z-50">
-        <CardHeader className="pb-1">
+      <Card className="fixed bottom-4 right-4 w-60 z-50">
+        <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm flex items-center">
               <MessageCircle className="w-4 h-4 mr-2" />
-               ({activeSessions.length})
+              Live Chat ({activeSessions.length})
               {isConnected ? (
                 <Wifi className="w-3 h-3 ml-2 text-green-500" />
               ) : (
@@ -485,6 +991,28 @@ export default function LiveChatAdmin() {
             <Button variant="ghost" size="sm" onClick={handleMaximize}>
               <Maximize2 className="w-4 h-4" />
             </Button>
+          </div>
+          <div className="flex items-center space-x-2">
+            {currentAdmin.is_admin &&
+              !currentAdmin.is_superiormanager &&
+              !currentAdmin.is_manager && (
+                <Badge className="bg-red-100 text-red-800 text-xs">
+                  <Shield className="w-2 h-2 mr-1" />
+                  Full Admin
+                </Badge>
+              )}
+            {currentAdmin.is_admin && currentAdmin.is_superiormanager && (
+              <Badge className="bg-purple-100 text-purple-800 text-xs">
+                <Crown className="w-2 h-2 mr-1" />
+                Superior
+              </Badge>
+            )}
+            {currentAdmin.is_manager && (
+              <Badge className="bg-blue-100 text-blue-800 text-xs">
+                <UserCheck className="w-2 h-2 mr-1" />
+                Manager
+              </Badge>
+            )}
           </div>
         </CardHeader>
       </Card>
@@ -516,7 +1044,54 @@ export default function LiveChatAdmin() {
             </Button>
           </div>
         </div>
+
+        {/* Admin Level Display */}
+        <div className="flex items-center space-x-2 mt-2">
+          {currentAdmin.is_admin &&
+            !currentAdmin.is_superiormanager &&
+            !currentAdmin.is_manager && (
+              <Badge className="bg-red-100 text-red-800 text-xs">
+                <Shield className="w-2 h-2 mr-1" />
+                Full Administrator
+              </Badge>
+            )}
+          {currentAdmin.is_admin && currentAdmin.is_superiormanager && (
+            <Badge className="bg-purple-100 text-purple-800 text-xs">
+              <Crown className="w-2 h-2 mr-1" />
+              Superior Manager
+            </Badge>
+          )}
+          {currentAdmin.is_manager && (
+            <Badge className="bg-blue-100 text-blue-800 text-xs">
+              <UserCheck className="w-2 h-2 mr-1" />
+              Manager
+            </Badge>
+          )}
+          <span className="text-xs text-gray-600">
+            {getAdminLevelDescription}
+          </span>
+        </div>
       </CardHeader>
+
+      {message && (
+        <div className="mx-4 mt-2">
+          <Alert
+            className={
+              message.type === "error"
+                ? "border-red-500 bg-red-50"
+                : "border-green-500 bg-green-50"
+            }
+          >
+            <AlertDescription
+              className={
+                message.type === "error" ? "text-red-700" : "text-green-700"
+              }
+            >
+              {message.text}
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
 
       <CardContent className="flex-1 flex flex-col p-0 overflow-hidden">
         <Tabs defaultValue="active" className="flex-1 flex flex-col h-full">
@@ -578,7 +1153,27 @@ export default function LiveChatAdmin() {
                     ))}
                     {activeSessions.length === 0 && (
                       <div className="text-center text-gray-500 text-xs py-8">
-                        No active chats
+                        {currentAdmin.is_manager && (
+                          <div className="space-y-2">
+                            <p>No active chats from your assigned users</p>
+                            <p className="text-xs">
+                              You can only see chats from users assigned to you
+                            </p>
+                          </div>
+                        )}
+                        {currentAdmin.is_admin &&
+                          currentAdmin.is_superiormanager && (
+                            <div className="space-y-2">
+                              <p>No active chats from your hierarchy</p>
+                              <p className="text-xs">
+                                You can see chats from managers you assigned and
+                                their users
+                              </p>
+                            </div>
+                          )}
+                        {currentAdmin.is_admin &&
+                          !currentAdmin.is_superiormanager &&
+                          !currentAdmin.is_manager && <p>No active chats</p>}
                       </div>
                     )}
                   </div>
@@ -686,7 +1281,11 @@ export default function LiveChatAdmin() {
                   </>
                 ) : (
                   <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">
-                    Select a chat to start messaging
+                    <div className="text-center">
+                      <MessageCircle className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                      <p>Select a chat to start messaging</p>
+                      <p className="text-xs mt-2">{getAdminLevelDescription}</p>
+                    </div>
                   </div>
                 )}
               </div>

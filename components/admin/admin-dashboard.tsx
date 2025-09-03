@@ -1001,18 +1001,6 @@ export default function EnhancedAdminDashboard({
                   Manager
                 </Badge>
               )}
-              <div className="flex items-center text-sm text-green-600">
-                <Activity className="w-4 h-4 mr-1" />
-                System Online
-              </div>
-              <Badge variant="outline" className="text-xs">
-                <Monitor className="w-3 h-3 mr-1" />
-                {activeSessions.length} Active Sessions
-              </Badge>
-              <Badge variant="outline" className="text-xs">
-                <Lock className="w-3 h-3 mr-1" />
-                Secure Session
-              </Badge>
               <Button
                 variant="outline"
                 size="sm"
@@ -1331,88 +1319,6 @@ export default function EnhancedAdminDashboard({
                 </CardContent>
               </Card>
             )}
-
-            {/* Debug Information Card - Enhanced with Hierarchy Info */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Database className="w-5 h-5 mr-2" />
-                  Database Query Debug Information
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="p-3 bg-blue-50 rounded-lg">
-                    <h4 className="font-medium text-blue-900">
-                      {hasFullAdminAccess ? "Total Users" : "Your Users"}
-                    </h4>
-                    <p className="text-2xl font-bold text-blue-600">
-                      {hasFullAdminAccess
-                        ? systemStats.totalUsers
-                        : systemStats.accessibleUsers}
-                    </p>
-                    <p className="text-xs text-blue-700">
-                      {hasFullAdminAccess
-                        ? "From users table"
-                        : "Based on hierarchy"}
-                    </p>
-                  </div>
-                  <div className="p-3 bg-green-50 rounded-lg">
-                    <h4 className="font-medium text-green-900">
-                      Total Profiles
-                    </h4>
-                    <p className="text-2xl font-bold text-green-600">
-                      {systemStats.totalProfiles}
-                    </p>
-                    <p className="text-xs text-green-700">
-                      From profiles table
-                    </p>
-                  </div>
-                  <div className="p-3 bg-purple-50 rounded-lg">
-                    <h4 className="font-medium text-purple-900">
-                      {hasFullAdminAccess ? "Total Deposits" : "Your Deposits"}
-                    </h4>
-                    <p className="text-2xl font-bold text-purple-600">
-                      {hasFullAdminAccess
-                        ? systemStats.totalDeposits
-                        : systemStats.accessibleDeposits}
-                    </p>
-                    <p className="text-xs text-purple-700">
-                      {hasFullAdminAccess
-                        ? "All deposit records"
-                        : "Accessible deposits"}
-                    </p>
-                  </div>
-                </div>
-
-                {!hasFullAdminAccess && (
-                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                    <h4 className="font-medium text-blue-800 mb-2">
-                      ℹ️ Hierarchy-Based Access
-                    </h4>
-                    <p className="text-sm text-blue-700 mb-2">
-                      Your statistics are filtered based on your admin level:
-                    </p>
-                    <ul className="text-xs text-blue-600 space-y-1 ml-4">
-                      <li>• You can only see users within your hierarchy</li>
-                      <li>• Statistics reflect your accessible data only</li>
-                      <li>
-                        • All admin operations respect hierarchy permissions
-                      </li>
-                    </ul>
-                  </div>
-                )}
-
-                <div className="text-xs text-gray-500 mt-4">
-                  <p>Last updated: {new Date().toLocaleTimeString()}</p>
-                  <p>
-                    Admin Level: {getAdminLevelDescription} | Accessible Users:{" "}
-                    {hasFullAdminAccess ? "All" : systemStats.accessibleUsers}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-
             {/* Your Current Session Info */}
             <Card>
               <CardHeader>
@@ -1523,67 +1429,6 @@ export default function EnhancedAdminDashboard({
                       No active sessions
                     </p>
                   )}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Enhanced Multi-User Admin Panel Features</CardTitle>
-              </CardHeader>
-              <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <h4 className="font-medium">🔒 Multi-Admin Support</h4>
-                  <p className="text-sm text-gray-600">
-                    Multiple administrators can access simultaneously with
-                    cross-tab session sync
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <h4 className="font-medium">🏗️ Hierarchy Management</h4>
-                  <p className="text-sm text-gray-600">
-                    Three-tier admin system: Full Admin → Superior Manager →
-                    Manager
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <h4 className="font-medium">🌍 Real-time Geolocation</h4>
-                  <p className="text-sm text-gray-600">
-                    Each admin sees their own IP address and location
-                    information in real-time
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <h4 className="font-medium">💳 Deposit Management</h4>
-                  <p className="text-sm text-gray-600">
-                    Create bank and crypto deposits for users with detailed
-                    forms (hierarchy-aware)
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <h4 className="font-medium">⚡ Real-time Updates</h4>
-                  <p className="text-sm text-gray-600">
-                    Clients see deposits instantly when you create them
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <h4 className="font-medium">👥 User Presence Tracking</h4>
-                  <p className="text-sm text-gray-600">
-                    Real-time monitoring of user online/offline status
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <h4 className="font-medium">📊 Activity Management</h4>
-                  <p className="text-sm text-gray-600">
-                    Push account activity entries to users (hierarchy-filtered)
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <h4 className="font-medium">🛡️ Session Security</h4>
-                  <p className="text-sm text-gray-600">
-                    Individual session management with automatic cleanup and
-                    persistence
-                  </p>
                 </div>
               </CardContent>
             </Card>

@@ -92,193 +92,224 @@ export default function MessageManager() {
   const [totalUserCount, setTotalUserCount] = useState(0);
 
   // Get current admin info - STABLE FUNCTION
-  const getCurrentAdmin = useCallback(async (): Promise<CurrentAdmin | null> => {
-    try {
-      const currentSession = localStorage.getItem("current_admin_session");
-      if (!currentSession) {
-        console.log("No current admin session found");
-        return null;
-      }
-
-      const sessionData = JSON.parse(currentSession);
-      console.log("Current session data:", sessionData);
-
-      const { data: adminData, error } = await supabase
-        .from("users")
-        .select("id, is_admin, is_manager, is_superiormanager")
-        .eq("id", sessionData.userId)
-        .single();
-
-      if (error) {
-        console.error("Failed to get admin data:", error);
-        return null;
-      }
-
-      console.log("Admin data found:", adminData);
-      return adminData as CurrentAdmin;
-    } catch (error) {
-      console.error("Failed to get current admin:", error);
-      return null;
-    }
-  }, []);
-
-  // Get accessible user IDs - STABLE FUNCTION
-  const loadAccessibleUserIds = useCallback(async (admin: CurrentAdmin): Promise<string[]> => {
-    if (!admin) {
-      console.log("No admin provided to loadAccessibleUserIds");
-      return [];
-    }
-
-    console.log("Getting accessible users for admin:", admin);
-
-    // Full admin (is_admin: true, is_superiormanager: false, is_manager: false) - can see everyone
-    if (admin.is_admin && !admin.is_superiormanager && !admin.is_manager) {
-      console.log("Full admin - can see all users");
-      return []; // Empty array means no filter (see all)
-    }
-
-    // Superior manager (is_admin: true, is_superiormanager: true) - can see their managers and their assigned users
-    if (admin.is_admin && admin.is_superiormanager) {
-      console.log("Superior manager loading accessible users for:", admin.id);
-      
+  const getCurrentAdmin =
+    useCallback(async (): Promise<CurrentAdmin | null> => {
       try {
-        // Get managers assigned to this superior manager
-        const { data: managerAssignments, error: managerError } = await supabase
-          .from("user_assignments")
-          .select("assigned_user_id")
-          .eq("manager_id", admin.id);
-
-        if (managerError) {
-          console.error("Error fetching manager assignments:", managerError);
-          return [admin.id];
+        const currentSession = localStorage.getItem("current_admin_session");
+        if (!currentSession) {
+          console.log("No current admin session found");
+          return null;
         }
 
-        const managerIds = managerAssignments?.map(a => a.assigned_user_id) || [];
-        console.log("Superior manager's assigned managers:", managerIds);
+        const sessionData = JSON.parse(currentSession);
+        console.log("Current session data:", sessionData);
 
-        if (managerIds.length > 0) {
-          // Verify these are actually managers (not other superior managers or regular users)
-          const { data: verifiedManagers, error: verifyError } = await supabase
-            .from("users")
-            .select("id")
-            .in("id", managerIds)
-            .eq("is_manager", true)
-            .eq("is_superiormanager", false); // Only regular managers, not other superior managers
+        const { data: adminData, error } = await supabase
+          .from("users")
+          .select("id, is_admin, is_manager, is_superiormanager")
+          .eq("id", sessionData.userId)
+          .single();
 
-          if (verifyError) {
-            console.error("Error verifying managers:", verifyError);
+        if (error) {
+          console.error("Failed to get admin data:", error);
+          return null;
+        }
+
+        console.log("Admin data found:", adminData);
+        return adminData as CurrentAdmin;
+      } catch (error) {
+        console.error("Failed to get current admin:", error);
+        return null;
+      }
+    }, []);
+
+  // Get accessible user IDs - STABLE FUNCTION
+  const loadAccessibleUserIds = useCallback(
+    async (admin: CurrentAdmin): Promise<string[]> => {
+      if (!admin) {
+        console.log("No admin provided to loadAccessibleUserIds");
+        return [];
+      }
+
+      console.log("Getting accessible users for admin:", admin);
+
+      // Full admin (is_admin: true, is_superiormanager: false, is_manager: false) - can see everyone
+      if (admin.is_admin && !admin.is_superiormanager && !admin.is_manager) {
+        console.log("Full admin - can see all users");
+        return []; // Empty array means no filter (see all)
+      }
+
+      // Superior manager (is_admin: true, is_superiormanager: true) - can see their managers and their assigned users
+      if (admin.is_admin && admin.is_superiormanager) {
+        console.log("Superior manager loading accessible users for:", admin.id);
+
+        try {
+          // Get managers assigned to this superior manager
+          const { data: managerAssignments, error: managerError } =
+            await supabase
+              .from("user_assignments")
+              .select("assigned_user_id")
+              .eq("manager_id", admin.id);
+
+          if (managerError) {
+            console.error("Error fetching manager assignments:", managerError);
             return [admin.id];
           }
 
-          const verifiedManagerIds = verifiedManagers?.map((m: any) => m.id) || [];
-          console.log("Verified manager IDs:", verifiedManagerIds);
+          const managerIds =
+            managerAssignments?.map((a) => a.assigned_user_id) || [];
+          console.log("Superior manager's assigned managers:", managerIds);
 
-          if (verifiedManagerIds.length > 0) {
-            // Get users assigned to those verified managers
-            const { data: userAssignments, error: userError } = await supabase
-              .from("user_assignments")
-              .select("assigned_user_id")
-              .in("manager_id", verifiedManagerIds);
+          if (managerIds.length > 0) {
+            // Verify these are actually managers (not other superior managers or regular users)
+            const { data: verifiedManagers, error: verifyError } =
+              await supabase
+                .from("users")
+                .select("id")
+                .in("id", managerIds)
+                .eq("is_manager", true)
+                .eq("is_superiormanager", false); // Only regular managers, not other superior managers
 
-            if (userError) {
-              console.error("Error fetching user assignments:", userError);
-              return [admin.id, ...verifiedManagerIds];
+            if (verifyError) {
+              console.error("Error verifying managers:", verifyError);
+              return [admin.id];
             }
 
-            const userIds = userAssignments?.map(a => a.assigned_user_id) || [];
-            
-            // Filter out any admin/manager users from the assigned users list
-            const { data: verifiedUsers, error: verifyUsersError } = await supabase
+            const verifiedManagerIds =
+              verifiedManagers?.map((m: any) => m.id) || [];
+            console.log("Verified manager IDs:", verifiedManagerIds);
+
+            if (verifiedManagerIds.length > 0) {
+              // Get users assigned to those verified managers
+              const { data: userAssignments, error: userError } = await supabase
+                .from("user_assignments")
+                .select("assigned_user_id")
+                .in("manager_id", verifiedManagerIds);
+
+              if (userError) {
+                console.error("Error fetching user assignments:", userError);
+                return [admin.id, ...verifiedManagerIds];
+              }
+
+              const userIds =
+                userAssignments?.map((a) => a.assigned_user_id) || [];
+
+              // Filter out any admin/manager users from the assigned users list
+              const { data: verifiedUsers, error: verifyUsersError } =
+                await supabase
+                  .from("users")
+                  .select("id")
+                  .in("id", userIds)
+                  .eq("is_admin", false)
+                  .eq("is_manager", false)
+                  .eq("is_superiormanager", false);
+
+              if (verifyUsersError) {
+                console.error("Error verifying users:", verifyUsersError);
+                return [admin.id, ...verifiedManagerIds];
+              }
+
+              const verifiedUserIds =
+                verifiedUsers?.map((u: any) => u.id) || [];
+              const accessibleIds = [
+                admin.id,
+                ...verifiedManagerIds,
+                ...verifiedUserIds,
+              ];
+              console.log(
+                "Superior manager can access (verified):",
+                accessibleIds
+              );
+              return accessibleIds;
+            }
+          }
+
+          console.log("Superior manager has no verified managers");
+          return [admin.id];
+        } catch (error) {
+          console.error("Error in superior manager logic:", error);
+          return [admin.id];
+        }
+      }
+
+      // Manager (is_manager: true) - can only see assigned users (not other managers)
+      if (admin.is_manager) {
+        console.log("Manager loading accessible users for:", admin.id);
+
+        try {
+          const { data: userAssignments, error: userError } = await supabase
+            .from("user_assignments")
+            .select("assigned_user_id")
+            .eq("manager_id", admin.id);
+
+          if (userError) {
+            console.error(
+              "Error fetching user assignments for manager:",
+              userError
+            );
+            return [admin.id];
+          }
+
+          const assignedUserIds =
+            userAssignments?.map((a) => a.assigned_user_id) || [];
+          console.log("Manager's assigned user IDs:", assignedUserIds);
+
+          if (assignedUserIds.length > 0) {
+            // Verify these are regular users (not managers or admins)
+            const { data: verifiedUsers, error: verifyError } = await supabase
               .from("users")
               .select("id")
-              .in("id", userIds)
+              .in("id", assignedUserIds)
               .eq("is_admin", false)
               .eq("is_manager", false)
               .eq("is_superiormanager", false);
 
-            if (verifyUsersError) {
-              console.error("Error verifying users:", verifyUsersError);
-              return [admin.id, ...verifiedManagerIds];
+            if (verifyError) {
+              console.error("Error verifying assigned users:", verifyError);
+              return [admin.id];
             }
 
             const verifiedUserIds = verifiedUsers?.map((u: any) => u.id) || [];
-            const accessibleIds = [admin.id, ...verifiedManagerIds, ...verifiedUserIds];
-            console.log("Superior manager can access (verified):", accessibleIds);
+            const accessibleIds = [admin.id, ...verifiedUserIds];
+            console.log(
+              "Manager can access (verified users only):",
+              accessibleIds
+            );
             return accessibleIds;
           }
-        }
-        
-        console.log("Superior manager has no verified managers");
-        return [admin.id];
-      } catch (error) {
-        console.error("Error in superior manager logic:", error);
-        return [admin.id];
-      }
-    }
 
-    // Manager (is_manager: true) - can only see assigned users (not other managers)
-    if (admin.is_manager) {
-      console.log("Manager loading accessible users for:", admin.id);
-      
-      try {
-        const { data: userAssignments, error: userError } = await supabase
-          .from("user_assignments")
-          .select("assigned_user_id")
-          .eq("manager_id", admin.id);
-
-        if (userError) {
-          console.error("Error fetching user assignments for manager:", userError);
+          console.log("Manager has no verified assigned users");
+          return [admin.id];
+        } catch (error) {
+          console.error("Error in manager logic:", error);
           return [admin.id];
         }
-
-        const assignedUserIds = userAssignments?.map(a => a.assigned_user_id) || [];
-        console.log("Manager's assigned user IDs:", assignedUserIds);
-
-        if (assignedUserIds.length > 0) {
-          // Verify these are regular users (not managers or admins)
-          const { data: verifiedUsers, error: verifyError } = await supabase
-            .from("users")
-            .select("id")
-            .in("id", assignedUserIds)
-            .eq("is_admin", false)
-            .eq("is_manager", false)
-            .eq("is_superiormanager", false);
-
-          if (verifyError) {
-            console.error("Error verifying assigned users:", verifyError);
-            return [admin.id];
-          }
-
-          const verifiedUserIds = verifiedUsers?.map((u: any) => u.id) || [];
-          const accessibleIds = [admin.id, ...verifiedUserIds];
-          console.log("Manager can access (verified users only):", accessibleIds);
-          return accessibleIds;
-        }
-        
-        console.log("Manager has no verified assigned users");
-        return [admin.id];
-      } catch (error) {
-        console.error("Error in manager logic:", error);
-        return [admin.id];
       }
-    }
 
-    console.log("No valid admin role found");
-    return [];
-  }, []);
+      console.log("No valid admin role found");
+      return [];
+    },
+    []
+  );
 
   // Check if user has full admin access (is_admin: true, others: false)
   const hasFullAdminAccess = useMemo(() => {
-    return currentAdmin?.is_admin === true && 
-           currentAdmin?.is_manager === false && 
-           currentAdmin?.is_superiormanager === false;
+    return (
+      currentAdmin?.is_admin === true &&
+      currentAdmin?.is_manager === false &&
+      currentAdmin?.is_superiormanager === false
+    );
   }, [currentAdmin]);
 
   // Get admin level description
   const getAdminLevelDescription = useMemo(() => {
     if (!currentAdmin) return "Loading permissions...";
-    
-    if (currentAdmin.is_admin && !currentAdmin.is_superiormanager && !currentAdmin.is_manager) {
+
+    if (
+      currentAdmin.is_admin &&
+      !currentAdmin.is_superiormanager &&
+      !currentAdmin.is_manager
+    ) {
       return "Full Administrator - Can send messages to all users";
     }
     if (currentAdmin.is_admin && currentAdmin.is_superiormanager) {
@@ -293,9 +324,15 @@ export default function MessageManager() {
   // Get role badges for user
   const getRoleBadges = useCallback((user: User) => {
     const roles = [];
-    if (user.is_superiormanager) roles.push({ label: "Superior Manager", color: "bg-purple-100 text-purple-800" });
-    else if (user.is_manager) roles.push({ label: "Manager", color: "bg-blue-100 text-blue-800" });
-    if (user.is_admin) roles.push({ label: "Admin", color: "bg-red-100 text-red-800" });
+    if (user.is_superiormanager)
+      roles.push({
+        label: "Superior Manager",
+        color: "bg-purple-100 text-purple-800",
+      });
+    else if (user.is_manager)
+      roles.push({ label: "Manager", color: "bg-blue-100 text-blue-800" });
+    if (user.is_admin)
+      roles.push({ label: "Admin", color: "bg-red-100 text-red-800" });
     return roles;
   }, []);
 
@@ -310,23 +347,35 @@ export default function MessageManager() {
       setSearching(true);
       try {
         console.log("Searching users with hierarchy for:", userSearch);
-        
+
         const searchLower = userSearch.toLowerCase();
-        
+
         // Build base query
         let query = supabase
           .from("users")
-          .select("id, email, full_name, first_name, last_name, created_at, kyc_status, is_admin, is_manager, is_superiormanager")
+          .select(
+            "id, email, full_name, first_name, last_name, created_at, kyc_status, is_admin, is_manager, is_superiormanager"
+          )
           .or(`email.ilike.%${searchLower}%,full_name.ilike.%${searchLower}%`);
 
         // Use cached accessible user IDs
-        console.log("Search using cached accessible user IDs:", accessibleUserIds);
-        
+        console.log(
+          "Search using cached accessible user IDs:",
+          accessibleUserIds
+        );
+
         if (accessibleUserIds.length > 0) {
           // Filter to only accessible users
-          console.log("Filtering search to accessible user IDs:", accessibleUserIds);
+          console.log(
+            "Filtering search to accessible user IDs:",
+            accessibleUserIds
+          );
           query = query.in("id", accessibleUserIds);
-        } else if (currentAdmin.is_admin && !currentAdmin.is_superiormanager && !currentAdmin.is_manager) {
+        } else if (
+          currentAdmin.is_admin &&
+          !currentAdmin.is_superiormanager &&
+          !currentAdmin.is_manager
+        ) {
           // Full admin sees everyone - no filter needed
           console.log("Full admin search - no filter applied");
         } else {
@@ -356,8 +405,10 @@ export default function MessageManager() {
             is_manager: user.is_manager || false,
             is_superiormanager: user.is_superiormanager || false,
           }));
-          
-          console.log(`Found ${transformedUsers.length} accessible users for search`);
+
+          console.log(
+            `Found ${transformedUsers.length} accessible users for search`
+          );
           setSearchResults(transformedUsers);
         } else {
           console.error("Search error:", error);
@@ -377,7 +428,9 @@ export default function MessageManager() {
   // Fetch total user count based on hierarchy
   const fetchTotalUserCount = useCallback(async () => {
     if (!currentAdmin || !accessibleUserIdsLoaded) {
-      console.log("Cannot fetch user count - admin or accessible IDs not ready");
+      console.log(
+        "Cannot fetch user count - admin or accessible IDs not ready"
+      );
       return;
     }
 
@@ -395,12 +448,14 @@ export default function MessageManager() {
         if (error) throw error;
         setTotalUserCount(data?.length || 0);
         console.log(`Total accessible users: ${data?.length || 0}`);
-      } else if (currentAdmin.is_admin && !currentAdmin.is_superiormanager && !currentAdmin.is_manager) {
+      } else if (
+        currentAdmin.is_admin &&
+        !currentAdmin.is_superiormanager &&
+        !currentAdmin.is_manager
+      ) {
         // Full admin - count all users
         console.log("Full admin - counting all users");
-        const { data, error } = await supabase
-          .from("users")
-          .select("id");
+        const { data, error } = await supabase.from("users").select("id");
 
         if (error) throw error;
         setTotalUserCount(data?.length || 0);
@@ -426,17 +481,25 @@ export default function MessageManager() {
     try {
       console.log("Fetching messages for admin:", currentAdmin);
 
-      let query = supabase
-        .from("user_messages")
-        .select("*");
+      let query = supabase.from("user_messages").select("*");
 
       // Use cached accessible user IDs
-      console.log("Using cached accessible user IDs for messages:", accessibleUserIds);
-      
+      console.log(
+        "Using cached accessible user IDs for messages:",
+        accessibleUserIds
+      );
+
       if (accessibleUserIds.length > 0) {
-        console.log("Filtering messages to accessible user IDs:", accessibleUserIds);
+        console.log(
+          "Filtering messages to accessible user IDs:",
+          accessibleUserIds
+        );
         query = query.in("user_id", accessibleUserIds);
-      } else if (currentAdmin.is_admin && !currentAdmin.is_superiormanager && !currentAdmin.is_manager) {
+      } else if (
+        currentAdmin.is_admin &&
+        !currentAdmin.is_superiormanager &&
+        !currentAdmin.is_manager
+      ) {
         // Full admin sees all messages - no filter needed
         console.log("Full admin - loading all messages");
       } else {
@@ -451,7 +514,9 @@ export default function MessageManager() {
 
       if (error) {
         console.error("Error fetching messages:", error.message || error);
-        setAlert(`Error fetching messages: ${error.message || "Unknown error"}`);
+        setAlert(
+          `Error fetching messages: ${error.message || "Unknown error"}`
+        );
         return;
       }
 
@@ -491,12 +556,18 @@ export default function MessageManager() {
           console.log("Sending to accessible users:", accessibleUserIds);
           const { data, error } = await supabase
             .from("users")
-            .select("id, email, full_name, first_name, last_name, created_at, kyc_status, is_admin, is_manager, is_superiormanager")
+            .select(
+              "id, email, full_name, first_name, last_name, created_at, kyc_status, is_admin, is_manager, is_superiormanager"
+            )
             .in("id", accessibleUserIds);
 
           if (error) throw error;
           targetUsers = data || [];
-        } else if (currentAdmin.is_admin && !currentAdmin.is_superiormanager && !currentAdmin.is_manager) {
+        } else if (
+          currentAdmin.is_admin &&
+          !currentAdmin.is_superiormanager &&
+          !currentAdmin.is_manager
+        ) {
           // Full admin - get all users
           console.log("Full admin - sending to all users");
           let allUsers: User[] = [];
@@ -507,7 +578,9 @@ export default function MessageManager() {
           while (true) {
             const { data, error } = await supabase
               .from("users")
-              .select("id, email, full_name, first_name, last_name, created_at, kyc_status, is_admin, is_manager, is_superiormanager")
+              .select(
+                "id, email, full_name, first_name, last_name, created_at, kyc_status, is_admin, is_manager, is_superiormanager"
+              )
               .range(from, from + batchSize - 1);
 
             if (error) throw error;
@@ -555,16 +628,21 @@ export default function MessageManager() {
             `Message sent to ${successCount} users, ${errorCount} failed`
           );
         } else {
-          setAlert(`Message sent to all ${successCount} accessible users successfully!`);
+          setAlert(
+            `Message sent to all ${successCount} accessible users successfully!`
+          );
         }
       } else {
         // Send to selected users - validate permissions
-        const unauthorizedUsers = selectedUsers.filter(user => 
-          accessibleUserIds.length > 0 && !accessibleUserIds.includes(user.id)
+        const unauthorizedUsers = selectedUsers.filter(
+          (user) =>
+            accessibleUserIds.length > 0 && !accessibleUserIds.includes(user.id)
         );
 
         if (unauthorizedUsers.length > 0 && !hasFullAdminAccess) {
-          setAlert(`You don't have permission to send messages to ${unauthorizedUsers.length} of the selected users`);
+          setAlert(
+            `You don't have permission to send messages to ${unauthorizedUsers.length} of the selected users`
+          );
           return;
         }
 
@@ -609,65 +687,82 @@ export default function MessageManager() {
     } finally {
       setLoading(false);
     }
-  }, [newMessage, selectedUsers, currentAdmin, accessibleUserIds, hasFullAdminAccess, fetchMessages]);
+  }, [
+    newMessage,
+    selectedUsers,
+    currentAdmin,
+    accessibleUserIds,
+    hasFullAdminAccess,
+    fetchMessages,
+  ]);
 
   // Delete message with permission check
-  const deleteMessage = useCallback(async (messageId: string) => {
-    if (!currentAdmin) {
-      setAlert("Admin session not found");
-      return;
-    }
-
-    try {
-      // Get the message to check if admin can delete it
-      const { data: messageData, error: fetchError } = await supabase
-        .from("user_messages")
-        .select("user_id")
-        .eq("id", messageId)
-        .single();
-
-      if (fetchError) throw fetchError;
-
-      // Check if admin can manage this user's messages
-      const canDeleteMessage = accessibleUserIds.length === 0 || // Full admin
-                              accessibleUserIds.includes(messageData.user_id); // User is accessible
-
-      if (!canDeleteMessage) {
-        setAlert("You don't have permission to delete this message");
+  const deleteMessage = useCallback(
+    async (messageId: string) => {
+      if (!currentAdmin) {
+        setAlert("Admin session not found");
         return;
       }
 
-      const { error } = await supabase
-        .from("user_messages")
-        .delete()
-        .eq("id", messageId);
+      try {
+        // Get the message to check if admin can delete it
+        const { data: messageData, error: fetchError } = await supabase
+          .from("user_messages")
+          .select("user_id")
+          .eq("id", messageId)
+          .single();
 
-      if (error) {
+        if (fetchError) throw fetchError;
+
+        // Check if admin can manage this user's messages
+        const canDeleteMessage =
+          accessibleUserIds.length === 0 || // Full admin
+          accessibleUserIds.includes(messageData.user_id); // User is accessible
+
+        if (!canDeleteMessage) {
+          setAlert("You don't have permission to delete this message");
+          return;
+        }
+
+        const { error } = await supabase
+          .from("user_messages")
+          .delete()
+          .eq("id", messageId);
+
+        if (error) {
+          console.error("Error deleting message:", error);
+          setAlert(`Error deleting message: ${error.message}`);
+          return;
+        }
+
+        setAlert("Message deleted successfully!");
+        await fetchMessages();
+      } catch (error: any) {
         console.error("Error deleting message:", error);
-        setAlert(`Error deleting message: ${error.message}`);
-        return;
+        setAlert(`Error deleting message: ${error.message || "Unknown error"}`);
       }
-
-      setAlert("Message deleted successfully!");
-      await fetchMessages();
-    } catch (error: any) {
-      console.error("Error deleting message:", error);
-      setAlert(`Error deleting message: ${error.message || "Unknown error"}`);
-    }
-  }, [currentAdmin, accessibleUserIds, fetchMessages]);
+    },
+    [currentAdmin, accessibleUserIds, fetchMessages]
+  );
 
   // Helper functions
-  const addSelectedUser = useCallback((user: User) => {
-    if (!selectedUsers.find((u) => u.id === user.id)) {
-      setSelectedUsers([...selectedUsers, user]);
-    }
-    setUserSearch("");
-    setSearchResults([]);
-  }, [selectedUsers]);
+  const addSelectedUser = useCallback(
+    (user: User) => {
+      if (!selectedUsers.find((u) => u.id === user.id)) {
+        setSelectedUsers([...selectedUsers, user]);
+      }
+      setUserSearch("");
+      setSearchResults([]);
+    },
+    [selectedUsers]
+  );
 
-  const removeSelectedUser = useCallback((userId: string) => {
-    setSelectedUsers(selectedUsers.filter((u) => u.id !== userId));
-  }, [selectedUsers]);
+  const removeSelectedUser = useCallback(
+    (userId: string) => {
+      setSelectedUsers(selectedUsers.filter((u) => u.id !== userId));
+    },
+    [selectedUsers]
+  );
 
   const getUserDisplayName = useCallback((user: User) => {
     return user.full_name || user.email || `User ${user.id.slice(0, 8)}`;
@@ -702,7 +797,7 @@ export default function MessageManager() {
   // EFFECT 1: Initialize current admin - NO DEPENDENCIES ON OTHER FUNCTIONS
   useEffect(() => {
     let mounted = true;
-    
+
     const init = async () => {
       try {
         const admin = await getCurrentAdmin();
@@ -720,9 +815,9 @@ export default function MessageManager() {
         }
       }
     };
-    
+
     init();
-    
+
     return () => {
       mounted = false;
     };
@@ -731,7 +826,7 @@ export default function MessageManager() {
   // EFFECT 2: Load accessible user IDs when admin changes - STABLE
   useEffect(() => {
     let mounted = true;
-    
+
     if (!currentAdmin) {
       setAccessibleUserIds([]);
       setAccessibleUserIdsLoaded(false);
@@ -755,9 +850,9 @@ export default function MessageManager() {
         }
       }
     };
-    
+
     loadUserIds();
-    
+
     return () => {
       mounted = false;
     };
@@ -766,11 +861,18 @@ export default function MessageManager() {
   // EFFECT 3: Load data when accessible user IDs are ready - STABLE
   useEffect(() => {
     if (currentAdmin && accessibleUserIdsLoaded) {
-      console.log("Loading messages and user count - admin ready and accessible IDs loaded");
+      console.log(
+        "Loading messages and user count - admin ready and accessible IDs loaded"
+      );
       fetchMessages();
       fetchTotalUserCount();
     }
-  }, [currentAdmin, accessibleUserIdsLoaded, fetchMessages, fetchTotalUserCount]); // Stable dependencies
+  }, [
+    currentAdmin,
+    accessibleUserIdsLoaded,
+    fetchMessages,
+    fetchTotalUserCount,
+  ]); // Stable dependencies
 
   // Loading state
   if (loadingPermissions) {
@@ -832,13 +934,31 @@ export default function MessageManager() {
           <div className="space-y-2 text-sm text-gray-500">
             <p>Your current permissions:</p>
             <div className="flex justify-center space-x-2">
-              <Badge className={currentAdmin.is_admin ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}>
+              <Badge
+                className={
+                  currentAdmin.is_admin
+                    ? "bg-green-100 text-green-800"
+                    : "bg-red-100 text-red-800"
+                }
+              >
                 Admin: {currentAdmin.is_admin ? "Yes" : "No"}
               </Badge>
-              <Badge className={currentAdmin.is_manager ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-800"}>
+              <Badge
+                className={
+                  currentAdmin.is_manager
+                    ? "bg-blue-100 text-blue-800"
+                    : "bg-gray-100 text-gray-800"
+                }
+              >
                 Manager: {currentAdmin.is_manager ? "Yes" : "No"}
               </Badge>
-              <Badge className={currentAdmin.is_superiormanager ? "bg-purple-100 text-purple-800" : "bg-gray-100 text-gray-800"}>
+              <Badge
+                className={
+                  currentAdmin.is_superiormanager
+                    ? "bg-purple-100 text-purple-800"
+                    : "bg-gray-100 text-gray-800"
+                }
+              >
                 Superior: {currentAdmin.is_superiormanager ? "Yes" : "No"}
               </Badge>
             </div>
@@ -860,12 +980,14 @@ export default function MessageManager() {
         </CardHeader>
         <CardContent>
           <div className="flex items-center space-x-4">
-            {currentAdmin.is_admin && !currentAdmin.is_superiormanager && !currentAdmin.is_manager && (
-              <Badge className="bg-red-100 text-red-800">
-                <Shield className="w-3 h-3 mr-1" />
-                Full Administrator
-              </Badge>
-            )}
+            {currentAdmin.is_admin &&
+              !currentAdmin.is_superiormanager &&
+              !currentAdmin.is_manager && (
+                <Badge className="bg-red-100 text-red-800">
+                  <Shield className="w-3 h-3 mr-1" />
+                  Full Administrator
+                </Badge>
+              )}
             {currentAdmin.is_admin && currentAdmin.is_superiormanager && (
               <Badge className="bg-purple-100 text-purple-800">
                 <Crown className="w-3 h-3 mr-1" />
@@ -878,7 +1000,9 @@ export default function MessageManager() {
                 Manager
               </Badge>
             )}
-            <span className="text-sm text-gray-600">{getAdminLevelDescription}</span>
+            <span className="text-sm text-gray-600">
+              {getAdminLevelDescription}
+            </span>
           </div>
         </CardContent>
       </Card>
@@ -946,10 +1070,9 @@ export default function MessageManager() {
                   }
                 />
                 <span>
-                  {hasFullAdminAccess 
-                    ? `All Users (${totalUserCount})` 
-                    : `All Accessible Users (${totalUserCount})`
-                  }
+                  {hasFullAdminAccess
+                    ? `All Users (${totalUserCount})`
+                    : `All Accessible Users (${totalUserCount})`}
                 </span>
               </label>
               <label className="flex items-center space-x-2">
@@ -976,9 +1099,12 @@ export default function MessageManager() {
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <Input
                     placeholder={
-                      currentAdmin.is_admin && !currentAdmin.is_superiormanager && !currentAdmin.is_manager
+                      currentAdmin.is_admin &&
+                      !currentAdmin.is_superiormanager &&
+                      !currentAdmin.is_manager
                         ? "Search any user by name or email..."
-                        : currentAdmin.is_admin && currentAdmin.is_superiormanager
+                        : currentAdmin.is_admin &&
+                          currentAdmin.is_superiormanager
                         ? "Search your assigned managers and their users..."
                         : "Search your assigned users..."
                     }
@@ -1017,7 +1143,10 @@ export default function MessageManager() {
                               </div>
                               <div className="flex space-x-1">
                                 {roles.map((role, index) => (
-                                  <Badge key={index} className={`text-xs ${role.color}`}>
+                                  <Badge
+                                    key={index}
+                                    className={`text-xs ${role.color}`}
+                                  >
                                     {role.label}
                                   </Badge>
                                 ))}
@@ -1034,11 +1163,13 @@ export default function MessageManager() {
                             You can only search users assigned to you
                           </p>
                         )}
-                        {currentAdmin.is_admin && currentAdmin.is_superiormanager && (
-                          <p className="text-xs mt-1">
-                            You can only search managers you assigned and their users
-                          </p>
-                        )}
+                        {currentAdmin.is_admin &&
+                          currentAdmin.is_superiormanager && (
+                            <p className="text-xs mt-1">
+                              You can only search managers you assigned and
+                              their users
+                            </p>
+                          )}
                       </div>
                     ) : null}
                   </div>
@@ -1057,14 +1188,17 @@ export default function MessageManager() {
                     </p>
                     {currentAdmin.is_manager && (
                       <p className="text-xs text-blue-600 mt-1">
-                        You can only send messages to users specifically assigned to you
+                        You can only send messages to users specifically
+                        assigned to you
                       </p>
                     )}
-                    {currentAdmin.is_admin && currentAdmin.is_superiormanager && (
-                      <p className="text-xs text-blue-600 mt-1">
-                        You can send messages to managers you assigned and their users
-                      </p>
-                    )}
+                    {currentAdmin.is_admin &&
+                      currentAdmin.is_superiormanager && (
+                        <p className="text-xs text-blue-600 mt-1">
+                          You can send messages to managers you assigned and
+                          their users
+                        </p>
+                      )}
                   </div>
                 )}
 
@@ -1167,7 +1301,9 @@ export default function MessageManager() {
             <MessageSquare className="h-5 w-5 mr-2" />
             Message History
           </CardTitle>
-          <CardDescription>Recent messages sent to accessible users</CardDescription>
+          <CardDescription>
+            Recent messages sent to accessible users
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {messages.length === 0 ? (

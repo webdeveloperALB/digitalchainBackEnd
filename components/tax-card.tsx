@@ -4,42 +4,36 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/lib/supabase";
 import {
   Calculator,
-  Calendar,
   DollarSign,
   FileText,
-  AlertTriangle,
   CheckCircle,
   Clock,
   TrendingUp,
   Building2,
   Receipt,
-  Banknote,
   ChevronRight,
+  Pause,
+  PlusCircle,
 } from "lucide-react";
 
-interface Tax {
+interface TaxRecord {
   id: string;
-  client_id: string;
-  user_id: string | null;
-  tax_type: string;
-  tax_name: string;
-  tax_rate: number;
-  tax_amount: number;
-  taxable_income: number;
-  tax_period: string;
-  due_date: string | null;
-  status: string;
-  description: string | null;
-  tax_year: number;
-  is_active: boolean;
-  is_estimated: boolean;
-  payment_reference: string | null;
+  user_id: string;
+  taxes: number;
+  on_hold: number;
+  paid: number;
   created_at: string;
   updated_at: string;
-  created_by: string | null;
+}
+
+interface TaxStats {
+  pending: { count: number; amount: number };
+  on_hold: { count: number; amount: number };
+  paid: { count: number; amount: number };
 }
 
 interface TaxCardProps {
@@ -53,10 +47,13 @@ interface TaxCardProps {
 }
 
 export default function TaxCard({ userProfile, setActiveTab }: TaxCardProps) {
-  const [taxes, setTaxes] = useState<Tax[]>([]);
+  const [taxRecord, setTaxRecord] = useState<TaxRecord | null>(null);
   const [loading, setLoading] = useState(true);
-  const [totalTaxOwed, setTotalTaxOwed] = useState(0);
-  const [upcomingDue, setUpcomingDue] = useState<Tax | null>(null);
+  const [taxStats, setTaxStats] = useState<TaxStats>({
+    pending: { count: 0, amount: 0 },
+    on_hold: { count: 0, amount: 0 },
+    paid: { count: 0, amount: 0 },
+  });
 
   useEffect(() => {
     fetchTaxes();
@@ -70,45 +67,63 @@ export default function TaxCard({ userProfile, setActiveTab }: TaxCardProps) {
       } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Query taxes using both user_id and client_id for comprehensive coverage
+      // Query the user's tax record
       const { data, error } = await supabase
         .from("taxes")
         .select("*")
-        .or(`user_id.eq.${user.id},client_id.eq.${userProfile.client_id}`)
-        .eq("is_active", true)
-        .order("due_date", { ascending: true });
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
 
       if (error) {
-        console.error("Error fetching taxes:", error);
-        return;
+        // If no record exists, create one
+        if (error.code === "PGRST116") {
+          const { data: newRecord, error: insertError } = await supabase
+            .from("taxes")
+            .insert({
+              user_id: user.id,
+              taxes: 0,
+              on_hold: 0,
+              paid: 0,
+            })
+            .select()
+            .single();
+
+          if (insertError) {
+            console.error("Error creating tax record:", insertError);
+            return;
+          }
+
+          setTaxRecord(newRecord);
+          setTaxStats({
+            pending: { count: 0, amount: 0 },
+            on_hold: { count: 0, amount: 0 },
+            paid: { count: 0, amount: 0 },
+          });
+        } else {
+          console.error("Error fetching taxes:", error);
+          return;
+        }
+      } else {
+        setTaxRecord(data);
+
+        // Calculate statistics from the aggregate data
+        setTaxStats({
+          pending: {
+            count: data.taxes > 0 ? 1 : 0,
+            amount: Number(data.taxes),
+          },
+          on_hold: {
+            count: data.on_hold > 0 ? 1 : 0,
+            amount: Number(data.on_hold),
+          },
+          paid: {
+            count: data.paid > 0 ? 1 : 0,
+            amount: Number(data.paid),
+          },
+        });
       }
-
-      const activeTaxes = data || [];
-      setTaxes(activeTaxes);
-
-      // Calculate total tax owed (pending + overdue)
-      const totalOwed = activeTaxes
-        .filter((tax) => tax.status === "pending" || tax.status === "overdue")
-        .reduce((sum, tax) => sum + Number(tax.tax_amount), 0);
-      setTotalTaxOwed(totalOwed);
-
-      // Find next upcoming due date (only pending taxes with future due dates)
-      const today = new Date();
-      const upcoming = activeTaxes
-        .filter((tax) => {
-          if (tax.status !== "pending") return false;
-          if (!tax.due_date) return false; // Filter out null due dates
-          const dueDate = new Date(tax.due_date);
-          return dueDate >= today;
-        })
-        .sort((a, b) => {
-          // Both due_date values are guaranteed to be non-null here
-          return (
-            new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime()
-          );
-        })[0];
-
-      setUpcomingDue(upcoming || null);
     } catch (error) {
       console.error("Error fetching taxes:", error);
     } finally {
@@ -134,20 +149,7 @@ export default function TaxCard({ userProfile, setActiveTab }: TaxCardProps) {
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
-          console.log("Tax change detected for user:", payload);
-          fetchTaxes();
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "taxes",
-          filter: `client_id=eq.${userProfile.client_id}`,
-        },
-        (payload) => {
-          console.log("Tax change detected for client:", payload);
+          console.log("Tax change detected:", payload);
           fetchTaxes();
         }
       )
@@ -158,53 +160,6 @@ export default function TaxCard({ userProfile, setActiveTab }: TaxCardProps) {
     };
   };
 
-  const getTaxIcon = (taxType: string) => {
-    switch (taxType) {
-      case "income":
-        return <DollarSign className="h-4 w-4" />;
-      case "property":
-        return <Building2 className="h-4 w-4" />;
-      case "sales":
-        return <Receipt className="h-4 w-4" />;
-      case "capital_gains":
-        return <TrendingUp className="h-4 w-4" />;
-      case "corporate":
-        return <Building2 className="h-4 w-4" />;
-      default:
-        return <FileText className="h-4 w-4" />;
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "paid":
-        return "bg-green-100 text-green-800 border-green-200";
-      case "pending":
-        return "bg-yellow-100 text-yellow-800 border-yellow-200";
-      case "overdue":
-        return "bg-red-100 text-red-800 border-red-200";
-      case "processing":
-        return "bg-blue-100 text-blue-800 border-blue-200";
-      default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "paid":
-        return <CheckCircle className="h-3 w-3" />;
-      case "pending":
-        return <Clock className="h-3 w-3" />;
-      case "overdue":
-        return <AlertTriangle className="h-3 w-3" />;
-      case "processing":
-        return <Clock className="h-3 w-3" />;
-      default:
-        return <FileText className="h-3 w-3" />;
-    }
-  };
-
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
@@ -213,8 +168,7 @@ export default function TaxCard({ userProfile, setActiveTab }: TaxCardProps) {
     }).format(amount);
   };
 
-  const formatDate = (dateString: string | null) => {
-    if (!dateString) return "No due date";
+  const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
@@ -222,26 +176,13 @@ export default function TaxCard({ userProfile, setActiveTab }: TaxCardProps) {
     });
   };
 
-  const getDaysUntilDue = (dueDate: string | null) => {
-    if (!dueDate) return null;
-    const today = new Date();
-    const due = new Date(dueDate);
-    const diffTime = due.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays;
-  };
-
-  const getTaxPeriodDisplay = (period: string) => {
-    switch (period) {
-      case "yearly":
-        return "Annual";
-      case "quarterly":
-        return "Quarterly";
-      case "monthly":
-        return "Monthly";
-      default:
-        return period.charAt(0).toUpperCase() + period.slice(1);
-    }
+  const getTotalTaxes = () => {
+    if (!taxRecord) return 0;
+    return (
+      Number(taxRecord.taxes) +
+      Number(taxRecord.on_hold) +
+      Number(taxRecord.paid)
+    );
   };
 
   if (loading) {
@@ -267,7 +208,7 @@ export default function TaxCard({ userProfile, setActiveTab }: TaxCardProps) {
         <CardTitle className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <Calculator className="h-5 w-5" />
-            <span>Tax Overview</span>
+            <span>Tax Management</span>
           </div>
           <Badge className="bg-white/20 text-white border-white/30">
             {new Date().getFullYear()}
@@ -275,134 +216,232 @@ export default function TaxCard({ userProfile, setActiveTab }: TaxCardProps) {
         </CardTitle>
       </CardHeader>
 
-      <CardContent className="p-6 space-y-6">
-        {/* Tax Summary */}
-        <div className="grid grid-cols-1 gap-4">
-          <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">
-                  Total Tax Owed
-                </p>
-                <p className="text-2xl font-bold text-slate-800">
-                  {formatCurrency(totalTaxOwed)}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  {
-                    taxes.filter(
-                      (tax) =>
-                        tax.status === "pending" || tax.status === "overdue"
-                    ).length
-                  }{" "}
-                  obligations
-                </p>
-              </div>
-              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
-                <Banknote className="h-6 w-6 text-red-600" />
-              </div>
-            </div>
-          </div>
+      <CardContent className="p-2">
+        <Tabs defaultValue="overview" className="w-full">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger
+              value="overview"
+              className="flex items-center space-x-2"
+            >
+              <Calculator className="h-4 w-4" />
+              <span>Overview</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="breakdown"
+              className="flex items-center space-x-2"
+            >
+              <FileText className="h-4 w-4" />
+              <span>Breakdown</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="history"
+              className="flex items-center space-x-2"
+            >
+              <Clock className="h-4 w-4" />
+              <span>History</span>
+            </TabsTrigger>
+          </TabsList>
 
-          {upcomingDue && (
-            <div className="bg-white rounded-lg p-4 border border-orange-200 shadow-sm">
-              <div className="flex items-center justify-between">
+          {/* Overview Tab */}
+          <TabsContent value="overview" className="space-y-4 mt-6">
+            <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Next Due</p>
-                  <p className="text-lg font-semibold text-slate-800">
-                    {upcomingDue.tax_name}
-                  </p>
-                  <p className="text-sm text-orange-600 font-medium">
-                    Due {formatDate(upcomingDue.due_date)}
-                    {upcomingDue.due_date &&
-                      getDaysUntilDue(upcomingDue.due_date) !== null &&
-                      getDaysUntilDue(upcomingDue.due_date)! <= 30 && (
-                        <span className="ml-1">
-                          ({getDaysUntilDue(upcomingDue.due_date)} days)
-                        </span>
-                      )}
+                  <p className="text-xl font-bold text-black mt-1">
+                    Tax Managment
                   </p>
                 </div>
-                <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
-                  <Calendar className="h-6 w-6 text-orange-600" />
+                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                  <DollarSign className="h-6 w-6 text-blue-600" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-yellow-50 rounded-lg p-3 border border-yellow-200">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <Clock className="h-4 w-4 text-yellow-600" />
+                    <span className="text-sm font-medium text-yellow-700">
+                      Pending
+                    </span>
+                  </div>
+                  <p className="text-lg font-bold text-yellow-800">
+                    {formatCurrency(taxStats.pending.amount)}
+                  </p>
+                </div>
+
+                <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <Pause className="h-4 w-4 text-blue-600" />
+                    <span className="text-sm font-medium text-blue-700">
+                      On Hold
+                    </span>
+                  </div>
+                  <p className="text-lg font-bold text-blue-800">
+                    {formatCurrency(taxStats.on_hold.amount)}
+                  </p>
+                </div>
+
+                <div className="bg-green-50 rounded-lg p-3 border border-green-200">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                    <span className="text-sm font-medium text-green-700">
+                      Paid
+                    </span>
+                  </div>
+                  <p className="text-lg font-bold text-green-800">
+                    {formatCurrency(taxStats.paid.amount)}
+                  </p>
                 </div>
               </div>
             </div>
-          )}
-        </div>
+          </TabsContent>
 
-        {/* Tax List */}
-        <div className="space-y-3">
-          <h4 className="font-semibold text-gray-800 flex items-center">
-            <FileText className="h-4 w-4 mr-2" />
-            Active Tax Obligations
-          </h4>
-
-          {taxes.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <Calculator className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p className="text-sm">No active tax obligations</p>
-              <p className="text-xs">Your tax information will appear here</p>
-            </div>
-          ) : (
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {taxes.slice(0, 5).map((tax) => (
-                <div
-                  key={tax.id}
-                  className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 transition-colors"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
-                        {getTaxIcon(tax.tax_type)}
-                      </div>
-                      <div>
-                        <p className="font-medium text-sm text-gray-800">
-                          {tax.tax_name}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {(tax.tax_rate * 100).toFixed(2)}% •{" "}
-                          {getTaxPeriodDisplay(tax.tax_period)}
-                          {tax.is_estimated && (
-                            <span className="ml-1 text-blue-600">
-                              • Estimated
-                            </span>
-                          )}
-                        </p>
-                      </div>
+          {/* Breakdown Tab */}
+          <TabsContent value="breakdown" className="space-y-4 mt-6">
+            <div className="space-y-3">
+              <div className="bg-white rounded-lg p-4 border border-yellow-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center">
+                      <Clock className="h-5 w-5 text-yellow-600" />
                     </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-sm text-gray-800">
-                        {formatCurrency(tax.tax_amount)}
+                    <div>
+                      <p className="font-medium text-gray-800">Pending Taxes</p>
+                      <p className="text-sm text-gray-500">
+                        Taxes due and requiring attention
                       </p>
-                      <Badge
-                        className={`text-xs ${getStatusColor(tax.status)}`}
-                      >
-                        {getStatusIcon(tax.status)}
-                        <span className="ml-1 capitalize">{tax.status}</span>
-                      </Badge>
                     </div>
                   </div>
-
-                  {tax.due_date && (
-                    <div className="mt-2 pt-2 border-t border-gray-100">
-                      <div className="flex items-center justify-between text-xs text-gray-500">
-                        <span>Due: {formatDate(tax.due_date)}</span>
-                        <span>Tax Year: {tax.tax_year}</span>
-                      </div>
-                    </div>
-                  )}
+                  <div className="text-right">
+                    <p className="text-xl font-bold text-yellow-700">
+                      {formatCurrency(taxStats.pending.amount)}
+                    </p>
+                    <Badge className="bg-yellow-100 text-yellow-800 text-xs">
+                      Action Required
+                    </Badge>
+                  </div>
                 </div>
-              ))}
+              </div>
 
-              {taxes.length > 5 && (
-                <div className="text-center py-2">
-                  <p className="text-xs text-gray-500">
-                    +{taxes.length - 5} more tax obligations
+              <div className="bg-white rounded-lg p-4 border border-blue-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                      <Pause className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-800">On Hold</p>
+                      <p className="text-sm text-gray-500">
+                        Taxes temporarily on hold
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xl font-bold text-blue-700">
+                      {formatCurrency(taxStats.on_hold.amount)}
+                    </p>
+                    <Badge className="bg-blue-100 text-blue-800 text-xs">
+                      On Hold
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg p-4 border border-green-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                      <CheckCircle className="h-5 w-5 text-green-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-800">Paid Taxes</p>
+                      <p className="text-sm text-gray-500">
+                        Successfully paid tax obligations
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xl font-bold text-green-700">
+                      {formatCurrency(taxStats.paid.amount)}
+                    </p>
+                    <Badge className="bg-green-100 text-green-800 text-xs">
+                      <CheckCircle className="h-3 w-3 mr-1" />
+                      Completed
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* History Tab */}
+          <TabsContent value="history" className="space-y-4 mt-6">
+            <div className="bg-white rounded-lg p-4 border border-gray-200">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">
+                    Tax Record History
                   </p>
+                  <p className="text-xs text-gray-500">
+                    Last updated:{" "}
+                    {taxRecord ? formatDate(taxRecord.updated_at) : "Never"}
+                  </p>
+                </div>
+                <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
+                  <FileText className="h-5 w-5 text-gray-600" />
+                </div>
+              </div>
+
+              {taxRecord ? (
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                    <span className="text-sm text-gray-600">
+                      Record Created:
+                    </span>
+                    <span className="text-sm font-medium">
+                      {formatDate(taxRecord.created_at)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                    <span className="text-sm text-gray-600">
+                      Last Modified:
+                    </span>
+                    <span className="text-sm font-medium">
+                      {formatDate(taxRecord.updated_at)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-2">
+                    <span className="text-sm text-gray-600">
+                      Total Processed:
+                    </span>
+                    <span className="text-sm font-bold text-green-700">
+                      {formatCurrency(getTotalTaxes())}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p className="text-sm">No tax records found</p>
                 </div>
               )}
             </div>
-          )}
+          </TabsContent>
+        </Tabs>
+
+        {/* Quick Actions */}
+        <div className="mt-6 pt-4 border-t border-gray-200">
+          <div className="flex space-x-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.location.reload()}
+              className="flex-1"
+            >
+              <TrendingUp className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
+          </div>
         </div>
       </CardContent>
     </Card>

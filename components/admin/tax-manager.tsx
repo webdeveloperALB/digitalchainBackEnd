@@ -1,60 +1,55 @@
+/*
+  Tax Manager - Simple Three Column Management
+  Only manages: taxes (amount), on_hold (amount), paid (amount)
+*/
+
 "use client";
-import type React from "react";
+
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { supabase } from "@/lib/supabase";
 import {
-  Calculator,
   Users,
-  DollarSign,
-  FileText,
+  Calculator,
   Loader2,
-  Trash2,
-  Edit,
-  Plus,
-  RefreshCw,
+  CheckCircle,
   Search,
-  CheckCircle2,
   X,
+  Plus,
+  Edit,
+  Save,
   Shield,
   Crown,
   UserCheck,
   AlertTriangle,
+  Clock,
+  Pause,
+  DollarSign,
 } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 
 interface User {
   id: string;
-  email: string;
+  client_id: string;
   full_name: string | null;
-  first_name: string | null;
-  last_name: string | null;
-  created_at: string;
-  kyc_status: string;
+  email: string | null;
   is_admin: boolean;
   is_manager: boolean;
   is_superiormanager: boolean;
+}
+
+interface SimpleTax {
+  id: string;
+  user_id: string;
+  taxes: number;
+  on_hold: number;
+  paid: number;
+  created_at: string;
+  updated_at: string;
 }
 
 interface CurrentAdmin {
@@ -64,30 +59,6 @@ interface CurrentAdmin {
   is_superiormanager: boolean;
 }
 
-interface Tax {
-  id: string;
-  client_id: string;
-  user_id: string | null;
-  tax_type: string;
-  tax_name: string;
-  tax_rate: number;
-  tax_amount: number;
-  taxable_income: number;
-  tax_period: string;
-  due_date: string | null;
-  status: string;
-  description: string | null;
-  tax_year: number;
-  is_active: boolean;
-  is_estimated: boolean;
-  payment_reference: string | null;
-  created_at: string;
-  updated_at: string;
-  created_by: string | null;
-  user_full_name?: string;
-  user_email?: string;
-}
-
 export default function TaxManager() {
   // Core state
   const [currentAdmin, setCurrentAdmin] = useState<CurrentAdmin | null>(null);
@@ -95,50 +66,24 @@ export default function TaxManager() {
   const [accessibleUserIdsLoaded, setAccessibleUserIdsLoaded] = useState(false);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
 
-  const [searchResults, setSearchResults] = useState<User[]>([]);
+  // Form state
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [userSearch, setUserSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<User[]>([]);
   const [searching, setSearching] = useState(false);
-  const [taxes, setTaxes] = useState<Tax[]>([]);
   const [loading, setLoading] = useState(false);
-  const [taxesLoading, setTaxesLoading] = useState(false);
   const [message, setMessage] = useState<{ type: string; text: string } | null>(
     null
   );
-  const [editingTax, setEditingTax] = useState<Tax | null>(null);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  // Form states
-  const [taxType, setTaxType] = useState<string>("");
-  const [taxName, setTaxName] = useState<string>("");
-  const [taxAmount, setTaxAmount] = useState<string>("");
-  const [dueDate, setDueDate] = useState<string>("");
-  const [status, setStatus] = useState<string>("pending");
-  const [description, setDescription] = useState<string>("");
-
-  // Tax types - STABLE
-  const taxTypes = useMemo(
-    () => [
-      { value: "income", label: "Income Tax" },
-      { value: "property", label: "Property Tax" },
-      { value: "sales", label: "Sales Tax" },
-      { value: "other", label: "Other Tax" },
-    ],
-    []
-  );
-
-  const taxStatuses = useMemo(
-    () => [
-      {
-        value: "pending",
-        label: "Pending",
-        color: "bg-yellow-100 text-yellow-800",
-      },
-      { value: "paid", label: "Paid", color: "bg-green-100 text-green-800" },
-      { value: "overdue", label: "Overdue", color: "bg-red-100 text-red-800" },
-    ],
-    []
-  );
+  // Tax data
+  const [userTaxData, setUserTaxData] = useState<SimpleTax | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editValues, setEditValues] = useState({
+    taxes: "",
+    on_hold: "",
+    paid: "",
+  });
 
   // Get current admin info - STABLE FUNCTION
   const getCurrentAdmin =
@@ -370,21 +315,6 @@ export default function TaxManager() {
     return "No admin permissions";
   }, [currentAdmin]);
 
-  // Get role badges for user
-  const getRoleBadges = useCallback((user: User) => {
-    const roles = [];
-    if (user.is_superiormanager)
-      roles.push({
-        label: "Superior Manager",
-        color: "bg-purple-100 text-purple-800",
-      });
-    else if (user.is_manager)
-      roles.push({ label: "Manager", color: "bg-blue-100 text-blue-800" });
-    if (user.is_admin)
-      roles.push({ label: "Admin", color: "bg-red-100 text-red-800" });
-    return roles;
-  }, []);
-
   // User search with cached accessible IDs
   useEffect(() => {
     if (!currentAdmin || !accessibleUserIdsLoaded || userSearch.length < 2) {
@@ -403,7 +333,7 @@ export default function TaxManager() {
         let query = supabase
           .from("users")
           .select(
-            "id, email, full_name, first_name, last_name, created_at, kyc_status, is_admin, is_manager, is_superiormanager"
+            "id, email, full_name, is_admin, is_manager, is_superiormanager"
           )
           .or(`email.ilike.%${searchLower}%,full_name.ilike.%${searchLower}%`);
 
@@ -434,22 +364,15 @@ export default function TaxManager() {
         }
 
         const { data, error } = await query
-          .limit(8)
+          .limit(20)
           .order("created_at", { ascending: false });
 
         if (!error && data) {
           const transformedUsers = data.map((user: any) => ({
             id: user.id,
+            client_id: `DCB${user.id.slice(0, 6)}`,
+            full_name: user.full_name || user.email?.split("@")[0] || "Unknown",
             email: user.email,
-            full_name:
-              user.full_name ||
-              `${user.first_name || ""} ${user.last_name || ""}`.trim() ||
-              user.email?.split("@")[0] ||
-              "Unknown",
-            first_name: user.first_name,
-            last_name: user.last_name,
-            created_at: user.created_at,
-            kyc_status: user.kyc_status,
             is_admin: user.is_admin || false,
             is_manager: user.is_manager || false,
             is_superiormanager: user.is_superiormanager || false,
@@ -474,292 +397,139 @@ export default function TaxManager() {
     return () => clearTimeout(timeoutId);
   }, [userSearch, currentAdmin, accessibleUserIds, accessibleUserIdsLoaded]);
 
-  // Setup realtime subscription - STABLE FUNCTION
-  const setupRealtimeSubscription = useCallback(() => {
-    const subscription = supabase
-      .channel("taxes_admin_realtime")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "taxes",
-        },
-        (payload) => {
-          console.log("Tax change detected:", payload);
-          if (selectedUser) {
-            fetchTaxesForUser(selectedUser.id);
-          }
-        }
-      )
-      .subscribe();
+  // Fetch tax data for selected user
+  const fetchTaxData = useCallback(async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("taxes")
+        .select("*")
+        .eq("user_id", userId)
+        .single();
 
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [selectedUser]);
-
-  // Fetch taxes for user - STABLE FUNCTION
-  const fetchTaxesForUser = useCallback(
-    async (userId: string) => {
-      if (!currentAdmin) {
-        console.log("No current admin, cannot fetch taxes");
+      if (error && error.code !== "PGRST116") {
+        console.error("Error fetching tax data:", error);
         return;
       }
 
-      // Check if admin can access this user
-      const canAccessUser =
-        accessibleUserIds.length === 0 || // Full admin
-        accessibleUserIds.includes(userId); // User is accessible
-
-      if (!canAccessUser) {
-        setMessage({
-          type: "error",
-          text: "You don't have permission to view taxes for this user",
+      if (data) {
+        setUserTaxData(data);
+        setEditValues({
+          taxes: data.taxes.toString(),
+          on_hold: data.on_hold.toString(),
+          paid: data.paid.toString(),
         });
-        return;
+      } else {
+        // No tax record exists, create default
+        setUserTaxData({
+          id: "",
+          user_id: userId,
+          taxes: 0,
+          on_hold: 0,
+          paid: 0,
+          created_at: "",
+          updated_at: "",
+        });
+        setEditValues({
+          taxes: "0",
+          on_hold: "0",
+          paid: "0",
+        });
       }
-
-      setTaxesLoading(true);
-      try {
-        if (!selectedUser) return;
-
-        const { data, error } = await supabase
-          .from("taxes")
-          .select("*")
-          .eq("user_id", userId)
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
-
-        const taxesWithUserInfo = (data || []).map((tax) => ({
-          ...tax,
-          user_full_name: selectedUser?.full_name,
-          user_email: selectedUser?.email,
-        }));
-
-        setTaxes(taxesWithUserInfo);
-      } catch (error) {
-        console.error("Error fetching taxes:", error);
-        setMessage({ type: "error", text: "Failed to load tax records" });
-      } finally {
-        setTaxesLoading(false);
-      }
-    },
-    [currentAdmin, selectedUser, accessibleUserIds]
-  );
-
-  // Reset form - STABLE FUNCTION
-  const resetForm = useCallback(() => {
-    setTaxType("");
-    setTaxName("");
-    setTaxAmount("");
-    setDueDate("");
-    setStatus("pending");
-    setDescription("");
-    setEditingTax(null);
+    } catch (error) {
+      console.error("Failed to fetch tax data:", error);
+    }
   }, []);
 
-  // Handle submit - STABLE FUNCTION
-  const handleSubmit = useCallback(
-    async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!selectedUser || !taxType || !taxName || !taxAmount) {
-        setMessage({
-          type: "error",
-          text: "Please fill in all required fields",
-        });
-        return;
-      }
+  // Save tax data
+  const saveTaxData = useCallback(async () => {
+    if (!selectedUser || !currentAdmin) return;
 
-      if (!currentAdmin) {
-        setMessage({ type: "error", text: "Admin session not found" });
-        return;
-      }
+    // Check if admin can manage taxes for this user
+    const canManageTaxes =
+      accessibleUserIds.length === 0 || // Full admin
+      accessibleUserIds.includes(selectedUser.id); // User is accessible
 
-      // Check if admin can manage taxes for this user
-      const canManageTaxes =
-        accessibleUserIds.length === 0 || // Full admin
-        accessibleUserIds.includes(selectedUser.id); // User is accessible
+    if (!canManageTaxes) {
+      setMessage({
+        type: "error",
+        text: "You don't have permission to manage taxes for this user",
+      });
+      return;
+    }
 
-      if (!canManageTaxes) {
-        setMessage({
-          type: "error",
-          text: "You don't have permission to manage taxes for this user",
-        });
-        return;
-      }
+    setLoading(true);
+    try {
+      const taxData = {
+        user_id: selectedUser.id,
+        taxes: parseFloat(editValues.taxes) || 0,
+        on_hold: parseFloat(editValues.on_hold) || 0,
+        paid: parseFloat(editValues.paid) || 0,
+      };
 
-      setLoading(true);
-      setMessage(null);
-
-      try {
-        const {
-          data: { user: currentUser },
-        } = await supabase.auth.getUser();
-
-        const taxAmountNum = Number.parseFloat(taxAmount);
-        const clientId = `DCB${selectedUser.id.slice(0, 6)}`;
-
-        const taxData = {
-          user_id: selectedUser.id,
-          client_id: clientId,
-          tax_type: taxType,
-          tax_name: taxName,
-          tax_rate: 0.0, // Default rate, can be calculated later
-          tax_amount: taxAmountNum,
-          taxable_income: taxAmountNum,
-          tax_period: "yearly",
-          due_date: dueDate || null,
-          status: status,
-          description: description || null,
-          tax_year: new Date().getFullYear(),
-          is_active: true,
-          is_estimated: false,
-          created_by: currentUser?.email || "admin",
-          payment_reference: null,
-        };
-
-        let result;
-        if (editingTax) {
-          result = await supabase
-            .from("taxes")
-            .update(taxData)
-            .eq("id", editingTax.id);
-        } else {
-          result = await supabase.from("taxes").insert([taxData]);
-        }
-
-        if (result.error) throw result.error;
-
-        setMessage({
-          type: "success",
-          text: `Tax ${editingTax ? "updated" : "created"} successfully for ${
-            selectedUser.full_name || selectedUser.email
-          }`,
-        });
-
-        resetForm();
-        setIsDialogOpen(false);
-        fetchTaxesForUser(selectedUser.id);
-      } catch (error: any) {
-        console.error("Error saving tax:", error);
-        setMessage({ type: "error", text: "Failed to save tax record" });
-      } finally {
-        setLoading(false);
-      }
-    },
-    [
-      selectedUser,
-      taxType,
-      taxName,
-      taxAmount,
-      currentAdmin,
-      accessibleUserIds,
-      dueDate,
-      status,
-      description,
-      editingTax,
-      resetForm,
-      fetchTaxesForUser,
-    ]
-  );
-
-  // Handle edit - STABLE FUNCTION
-  const handleEdit = useCallback((tax: Tax) => {
-    setEditingTax(tax);
-    setTaxType(tax.tax_type);
-    setTaxName(tax.tax_name);
-    setTaxAmount(tax.tax_amount.toString());
-    setDueDate(tax.due_date || "");
-    setStatus(tax.status);
-    setDescription(tax.description || "");
-    setIsDialogOpen(true);
-  }, []);
-
-  // Handle delete - STABLE FUNCTION
-  const handleDelete = useCallback(
-    async (taxId: string) => {
-      if (!confirm("Are you sure you want to delete this tax record?")) return;
-
-      if (!currentAdmin) {
-        setMessage({ type: "error", text: "Admin session not found" });
-        return;
-      }
-
-      try {
-        const { error } = await supabase.from("taxes").delete().eq("id", taxId);
-        if (error) throw error;
-
-        setMessage({
-          type: "success",
-          text: "Tax record deleted successfully",
-        });
-        if (selectedUser) {
-          fetchTaxesForUser(selectedUser.id);
-        }
-      } catch (error: any) {
-        console.error("Error deleting tax:", error);
-        setMessage({ type: "error", text: "Failed to delete tax record" });
-      }
-    },
-    [currentAdmin, selectedUser, fetchTaxesForUser]
-  );
-
-  // Update tax status - STABLE FUNCTION
-  const updateTaxStatus = useCallback(
-    async (taxId: string, newStatus: string) => {
-      if (!currentAdmin) {
-        setMessage({ type: "error", text: "Admin session not found" });
-        return;
-      }
-
-      try {
+      if (userTaxData?.id) {
+        // Update existing record
         const { error } = await supabase
           .from("taxes")
-          .update({ status: newStatus })
-          .eq("id", taxId);
+          .update(taxData)
+          .eq("id", userTaxData.id);
+
         if (error) throw error;
+      } else {
+        // Create new record
+        const { error } = await supabase.from("taxes").insert(taxData);
 
-        setMessage({
-          type: "success",
-          text: `Tax status updated to ${newStatus}`,
-        });
-        if (selectedUser) {
-          fetchTaxesForUser(selectedUser.id);
-        }
-      } catch (error: any) {
-        console.error("Error updating tax status:", error);
-        setMessage({ type: "error", text: "Failed to update tax status" });
+        if (error) throw error;
       }
-    },
-    [currentAdmin, selectedUser, fetchTaxesForUser]
-  );
 
-  // Helper functions - STABLE
-  const getStatusColor = useCallback(
-    (status: string) => {
-      const statusObj = taxStatuses.find((s) => s.value === status);
-      return statusObj?.color || "bg-gray-100 text-gray-800";
-    },
-    [taxStatuses]
-  );
+      setMessage({
+        type: "success",
+        text: `Tax data updated successfully for ${
+          selectedUser.full_name || selectedUser.email
+        }`,
+      });
 
+      setEditMode(false);
+      await fetchTaxData(selectedUser.id);
+    } catch (error: any) {
+      console.error("Error saving tax data:", error);
+      setMessage({
+        type: "error",
+        text: `Error: ${error.message || "Failed to save tax data"}`,
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [
+    selectedUser,
+    currentAdmin,
+    accessibleUserIds,
+    editValues,
+    userTaxData,
+    fetchTaxData,
+  ]);
+
+  // Get role badges for user
+  const getRoleBadges = useCallback((user: User) => {
+    const roles = [];
+    if (user.is_superiormanager)
+      roles.push({
+        label: "Superior Manager",
+        color: "bg-purple-100 text-purple-800",
+      });
+    else if (user.is_manager)
+      roles.push({ label: "Manager", color: "bg-blue-100 text-blue-800" });
+    if (user.is_admin)
+      roles.push({ label: "Admin", color: "bg-red-100 text-red-800" });
+    return roles;
+  }, []);
+
+  // Format currency
   const formatCurrency = useCallback((amount: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
       minimumFractionDigits: 2,
     }).format(amount);
-  }, []);
-
-  const formatDate = useCallback((dateString: string | null) => {
-    if (!dateString) return "No due date";
-    return new Date(dateString).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
   }, []);
 
   // EFFECT 1: Initialize current admin - NO DEPENDENCIES ON OTHER FUNCTIONS
@@ -829,23 +599,20 @@ export default function TaxManager() {
     };
   }, [currentAdmin, loadAccessibleUserIds]); // Only depends on currentAdmin and stable function
 
-  // EFFECT 3: Setup realtime subscription - STABLE
+  // EFFECT 3: Fetch tax data when user is selected
   useEffect(() => {
-    const cleanup = setupRealtimeSubscription();
-    return cleanup;
-  }, [setupRealtimeSubscription]);
-
-  // EFFECT 4: Fetch taxes when user selected - STABLE
-  useEffect(() => {
-    if (selectedUser && accessibleUserIdsLoaded) {
-      fetchTaxesForUser(selectedUser.id);
+    if (selectedUser) {
+      fetchTaxData(selectedUser.id);
+    } else {
+      setUserTaxData(null);
+      setEditValues({ taxes: "0", on_hold: "0", paid: "0" });
     }
-  }, [selectedUser, accessibleUserIdsLoaded, fetchTaxesForUser]);
+  }, [selectedUser, fetchTaxData]);
 
   // Loading state
   if (loadingPermissions) {
     return (
-      <Card className="w-full max-w-2xl mx-auto mt-8">
+      <Card>
         <CardContent className="text-center py-8">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F26623] mx-auto mb-4"></div>
           <p className="text-gray-600">Loading admin permissions...</p>
@@ -857,7 +624,7 @@ export default function TaxManager() {
   // No admin session
   if (!currentAdmin) {
     return (
-      <Card className="w-full max-w-2xl mx-auto mt-8">
+      <Card>
         <CardHeader>
           <CardTitle className="flex items-center text-red-600">
             <AlertTriangle className="w-5 h-5 mr-2" />
@@ -882,7 +649,7 @@ export default function TaxManager() {
   // Check if user has any admin access
   if (!currentAdmin.is_admin && !currentAdmin.is_manager) {
     return (
-      <Card className="w-full max-w-2xl mx-auto mt-8">
+      <Card>
         <CardHeader>
           <CardTitle className="flex items-center text-red-600">
             <Shield className="w-5 h-5 mr-2" />
@@ -975,448 +742,397 @@ export default function TaxManager() {
         </CardContent>
       </Card>
 
+      {message && (
+        <Alert
+          className={
+            message.type === "error"
+              ? "border-red-500 bg-red-50"
+              : "border-green-500 bg-green-50"
+          }
+        >
+          <AlertDescription
+            className={
+              message.type === "error" ? "text-red-700" : "text-green-700"
+            }
+          >
+            {message.text}
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <div className="flex items-center">
-              <Calculator className="h-5 w-5 mr-2" />
-              Tax Manager - Hierarchy-Aware Search
-            </div>
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                <Button
-                  onClick={() => {
-                    resetForm();
-                    setIsDialogOpen(true);
-                  }}
-                  disabled={!selectedUser}
-                  className="bg-[#F26623] hover:bg-[#E55A1F]"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Tax
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-md">
-                <DialogHeader>
-                  <DialogTitle>
-                    {editingTax ? "Edit Tax" : "Add New Tax"}
-                  </DialogTitle>
-                  <DialogDescription>
-                    Fill in the basic tax information
-                  </DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <div>
-                    <Label htmlFor="tax-type">Tax Type *</Label>
-                    <Select value={taxType} onValueChange={setTaxType}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select tax type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {taxTypes.map((type) => (
-                          <SelectItem key={type.value} value={type.value}>
-                            {type.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="tax-name">Tax Name *</Label>
-                    <Input
-                      id="tax-name"
-                      value={taxName}
-                      onChange={(e) => setTaxName(e.target.value)}
-                      placeholder="e.g., Federal Income Tax 2024"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="tax-amount">Tax Amount ($) *</Label>
-                    <Input
-                      id="tax-amount"
-                      type="number"
-                      step="0.01"
-                      value={taxAmount}
-                      onChange={(e) => setTaxAmount(e.target.value)}
-                      placeholder="5000.00"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="due-date">Due Date</Label>
-                    <Input
-                      id="due-date"
-                      type="date"
-                      value={dueDate}
-                      onChange={(e) => setDueDate(e.target.value)}
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="status">Status</Label>
-                    <Select value={status} onValueChange={setStatus}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {taxStatuses.map((s) => (
-                          <SelectItem key={s.value} value={s.value}>
-                            {s.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="description">Notes (Optional)</Label>
-                    <Textarea
-                      id="description"
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                      placeholder="Additional notes..."
-                      rows={2}
-                    />
-                  </div>
-
-                  <DialogFooter>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setIsDialogOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      type="submit"
-                      disabled={loading || !taxType || !taxName || !taxAmount}
-                      className="bg-[#F26623] hover:bg-[#E55A1F]"
-                    >
-                      {loading ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          {editingTax ? "Updating..." : "Adding..."}
-                        </>
-                      ) : (
-                        <>{editingTax ? "Update" : "Add Tax"}</>
-                      )}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
+          <CardTitle className="flex items-center">
+            <Calculator className="w-5 h-5 mr-2" />
+            Simple Tax Management - Three Categories Only
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          {message && (
-            <Alert
-              className={`mb-4 ${
-                message.type === "error"
-                  ? "border-red-500 bg-red-50"
-                  : "border-green-500 bg-green-50"
-              }`}
-            >
-              <AlertDescription
-                className={
-                  message.type === "error" ? "text-red-700" : "text-green-700"
-                }
-              >
-                {message.text}
-              </AlertDescription>
-            </Alert>
-          )}
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Hierarchy-aware User Search and Selection */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Search & Select Client</h3>
-
-              {selectedUser ? (
-                <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <CheckCircle2 className="w-5 h-5 text-green-600" />
-                    <div>
-                      <p className="font-medium text-green-800">
-                        {selectedUser.full_name || selectedUser.email}
+        <CardContent className="space-y-4">
+          {/* User Search */}
+          <div className="space-y-2">
+            <Label>Search and Select User *</Label>
+            {selectedUser ? (
+              <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <CheckCircle className="w-5 h-5 text-green-600" />
+                  <div>
+                    <p className="font-medium text-green-800">
+                      {selectedUser.full_name || selectedUser.email}
+                    </p>
+                    <div className="flex items-center space-x-2">
+                      <p className="text-sm text-green-600">
+                        {selectedUser.client_id} • {selectedUser.email}
                       </p>
-                      <div className="flex items-center space-x-2">
-                        <p className="text-sm text-green-600">
-                          DCB{selectedUser.id.slice(0, 6)} •{" "}
-                          {selectedUser.email}
-                        </p>
-                        {getRoleBadges(selectedUser).map((role, index) => (
-                          <Badge
-                            key={index}
-                            className={`text-xs ${role.color}`}
-                          >
-                            {role.label}
-                          </Badge>
-                        ))}
-                      </div>
+                      {getRoleBadges(selectedUser).map((role, index) => (
+                        <Badge key={index} className={`text-xs ${role.color}`}>
+                          {role.label}
+                        </Badge>
+                      ))}
                     </div>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setSelectedUser(null);
-                      setUserSearch("");
-                      setTaxes([]);
-                    }}
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
                 </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                    <Input
-                      placeholder={
-                        currentAdmin.is_admin &&
-                        !currentAdmin.is_superiormanager &&
-                        !currentAdmin.is_manager
-                          ? "Search any user by name or email..."
-                          : currentAdmin.is_admin &&
-                            currentAdmin.is_superiormanager
-                          ? "Search your assigned managers and their users..."
-                          : "Search your assigned users..."
-                      }
-                      value={userSearch}
-                      onChange={(e) => setUserSearch(e.target.value)}
-                      className="pl-10"
-                    />
-                    {searching && (
-                      <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 animate-spin text-gray-400" />
-                    )}
-                  </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setSelectedUser(null);
+                    setUserSearch("");
+                    setUserTaxData(null);
+                    setEditMode(false);
+                  }}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <Input
+                    placeholder={
+                      currentAdmin.is_admin &&
+                      !currentAdmin.is_superiormanager &&
+                      !currentAdmin.is_manager
+                        ? "Search any user by name or email..."
+                        : currentAdmin.is_admin &&
+                          currentAdmin.is_superiormanager
+                        ? "Search your assigned managers and their users..."
+                        : "Search your assigned users..."
+                    }
+                    value={userSearch}
+                    onChange={(e) => setUserSearch(e.target.value)}
+                    className="pl-10"
+                  />
+                  {searching && (
+                    <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 animate-spin text-gray-400" />
+                  )}
+                </div>
 
-                  {userSearch.length >= 2 && (
-                    <div className="border rounded-lg max-h-48 overflow-y-auto">
-                      {searchResults.length > 0 ? (
-                        searchResults.map((user) => {
-                          const roles = getRoleBadges(user);
-                          return (
-                            <div
-                              key={user.id}
-                              className="p-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
-                              onClick={() => {
-                                setSelectedUser(user);
-                                setUserSearch("");
-                                setSearchResults([]);
-                              }}
-                            >
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center space-x-2">
-                                  <Users className="h-4 w-4 text-gray-400" />
-                                  <div>
-                                    <p className="font-medium text-sm">
-                                      {user.full_name ||
-                                        user.email?.split("@")[0] ||
-                                        "Unknown User"}
-                                    </p>
-                                    <p className="text-xs text-gray-500">
-                                      DCB{user.id.slice(0, 6)} • {user.email}
-                                    </p>
-                                  </div>
-                                </div>
-                                <div className="flex space-x-1">
-                                  {roles.map((role, index) => (
-                                    <Badge
-                                      key={index}
-                                      className={`text-xs ${role.color}`}
-                                    >
-                                      {role.label}
-                                    </Badge>
-                                  ))}
+                {userSearch.length >= 2 && (
+                  <div className="border rounded-lg max-h-48 overflow-y-auto">
+                    {searchResults.length > 0 ? (
+                      searchResults.map((user) => {
+                        const roles = getRoleBadges(user);
+                        return (
+                          <div
+                            key={user.id}
+                            className="p-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
+                            onClick={() => {
+                              setSelectedUser(user);
+                              setUserSearch("");
+                              setSearchResults([]);
+                            }}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center space-x-2">
+                                <Users className="h-4 w-4 text-gray-400" />
+                                <div>
+                                  <p className="font-medium text-sm">
+                                    {user.full_name ||
+                                      user.email?.split("@")[0] ||
+                                      "Unknown User"}
+                                  </p>
+                                  <p className="text-xs text-gray-500">
+                                    {user.client_id} • {user.email}
+                                  </p>
                                 </div>
                               </div>
+                              <div className="flex space-x-1">
+                                {roles.map((role, index) => (
+                                  <Badge
+                                    key={index}
+                                    className={`text-xs ${role.color}`}
+                                  >
+                                    {role.label}
+                                  </Badge>
+                                ))}
+                              </div>
                             </div>
-                          );
-                        })
-                      ) : !searching ? (
-                        <div className="p-4 text-center text-gray-500 text-sm">
-                          No clients found matching "{userSearch}"
-                          {currentAdmin.is_manager && (
-                            <p className="text-xs mt-1">
-                              You can only search users assigned to you
-                            </p>
-                          )}
-                          {currentAdmin.is_admin &&
-                            currentAdmin.is_superiormanager && (
-                              <p className="text-xs mt-1">
-                                You can only search managers you assigned and
-                                their users
-                              </p>
-                            )}
-                        </div>
-                      ) : null}
-                    </div>
-                  )}
-
-                  {userSearch.length > 0 && userSearch.length < 2 && (
-                    <p className="text-xs text-gray-500">
-                      Type at least 2 characters to search
-                    </p>
-                  )}
-
-                  {userSearch.length === 0 && (
-                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                      <p className="text-sm text-blue-700">
-                        <strong>Search Scope:</strong>{" "}
-                        {getAdminLevelDescription}
-                      </p>
-                      {currentAdmin.is_manager && (
-                        <p className="text-xs text-blue-600 mt-1">
-                          You can only manage taxes for users specifically
-                          assigned to you
-                        </p>
-                      )}
-                      {currentAdmin.is_admin &&
-                        currentAdmin.is_superiormanager && (
-                          <p className="text-xs text-blue-600 mt-1">
-                            You can manage taxes for managers you assigned and
-                            their users
+                          </div>
+                        );
+                      })
+                    ) : !searching ? (
+                      <div className="p-4 text-center text-gray-500 text-sm">
+                        No users found matching "{userSearch}"
+                        {currentAdmin.is_manager && (
+                          <p className="text-xs mt-1">
+                            You can only search users assigned to you
                           </p>
                         )}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {selectedUser && (
-                <Button
-                  onClick={() => fetchTaxesForUser(selectedUser.id)}
-                  variant="outline"
-                  className="w-full"
-                >
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Refresh
-                </Button>
-              )}
-            </div>
-
-            {/* Tax Records */}
-            <div className="lg:col-span-2 space-y-4">
-              <h3 className="text-lg font-semibold">
-                Tax Records
-                {selectedUser && (
-                  <span className="text-sm font-normal text-gray-500 ml-2">
-                    ({taxes.length})
-                  </span>
+                        {currentAdmin.is_admin &&
+                          currentAdmin.is_superiormanager && (
+                            <p className="text-xs mt-1">
+                              You can only search managers you assigned and
+                              their users
+                            </p>
+                          )}
+                      </div>
+                    ) : null}
+                  </div>
                 )}
-              </h3>
 
-              {!selectedUser ? (
-                <div className="text-center py-8 text-gray-500">
-                  <Calculator className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>Search and select a client to view tax records</p>
-                  <p className="text-xs mt-2">
-                    {currentAdmin.is_admin &&
-                    !currentAdmin.is_superiormanager &&
-                    !currentAdmin.is_manager
-                      ? "You can search any user"
-                      : currentAdmin.is_admin && currentAdmin.is_superiormanager
-                      ? "You can search managers you assigned and their users"
-                      : "You can search users assigned to you"}
+                {userSearch.length > 0 && userSearch.length < 2 && (
+                  <p className="text-xs text-gray-500">
+                    Type at least 2 characters to search
                   </p>
-                </div>
-              ) : taxesLoading ? (
-                <div className="space-y-3">
-                  {[1, 2, 3].map((i) => (
-                    <div
-                      key={i}
-                      className="p-4 border rounded-lg animate-pulse"
-                    >
-                      <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-                      <div className="h-3 bg-gray-200 rounded w-1/2"></div>
-                    </div>
-                  ))}
-                </div>
-              ) : taxes.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No tax records found</p>
-                  <p className="text-xs">Add a new tax record to get started</p>
-                </div>
-              ) : (
-                <div className="space-y-3 max-h-96 overflow-y-auto">
-                  {taxes.map((tax) => (
-                    <div
-                      key={tax.id}
-                      className="p-4 border rounded-lg hover:border-gray-300 transition-colors"
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center space-x-2">
-                          <DollarSign className="h-4 w-4 text-gray-500" />
-                          <h4 className="font-medium">{tax.tax_name}</h4>
-                          <Badge className={getStatusColor(tax.status)}>
-                            {tax.status}
-                          </Badge>
-                        </div>
-                        <div className="flex space-x-1">
-                          <Select
-                            value={tax.status}
-                            onValueChange={(newStatus) =>
-                              updateTaxStatus(tax.id, newStatus)
-                            }
-                          >
-                            <SelectTrigger className="w-24 h-8">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {taxStatuses.map((s) => (
-                                <SelectItem key={s.value} value={s.value}>
-                                  {s.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleEdit(tax)}
-                            className="h-8 w-8 p-0"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleDelete(tax.id)}
-                            className="h-8 w-8 p-0 text-red-600 hover:text-red-800"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
+                )}
 
-                      <div className="grid grid-cols-2 gap-4 text-sm text-gray-600">
-                        <div>
-                          <span className="font-medium">Amount: </span>
-                          {formatCurrency(tax.tax_amount)}
-                        </div>
-                        <div>
-                          <span className="font-medium">Due: </span>
-                          {formatDate(tax.due_date)}
-                        </div>
-                      </div>
-
-                      {tax.description && (
-                        <p className="text-xs text-gray-500 mt-2">
-                          {tax.description}
+                {userSearch.length === 0 && (
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-sm text-blue-700">
+                      <strong>Search Scope:</strong> {getAdminLevelDescription}
+                    </p>
+                    {currentAdmin.is_manager && (
+                      <p className="text-xs text-blue-600 mt-1">
+                        You can only manage taxes for users specifically
+                        assigned to you
+                      </p>
+                    )}
+                    {currentAdmin.is_admin &&
+                      currentAdmin.is_superiormanager && (
+                        <p className="text-xs text-blue-600 mt-1">
+                          You can manage taxes for managers you assigned and
+                          their users
                         </p>
                       )}
-                    </div>
-                  ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Tax Management Interface */}
+          {selectedUser && userTaxData && (
+            <div className="space-y-6 border-t pt-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold flex items-center">
+                  <Calculator className="w-5 h-5 mr-2" />
+                  Tax Data for {selectedUser.full_name || selectedUser.email}
+                </h3>
+                <div className="flex space-x-2">
+                  {!editMode ? (
+                    <Button
+                      onClick={() => setEditMode(true)}
+                      variant="outline"
+                      size="sm"
+                    >
+                      <Edit className="w-4 h-4 mr-2" />
+                      Edit
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        onClick={() => {
+                          setEditMode(false);
+                          if (userTaxData) {
+                            setEditValues({
+                              taxes: userTaxData.taxes.toString(),
+                              on_hold: userTaxData.on_hold.toString(),
+                              paid: userTaxData.paid.toString(),
+                            });
+                          }
+                        }}
+                        variant="outline"
+                        size="sm"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={saveTaxData}
+                        disabled={loading}
+                        size="sm"
+                        className="bg-[#F26623] hover:bg-[#E55A1F]"
+                      >
+                        {loading ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Save className="w-4 h-4 mr-2" />
+                        )}
+                        Save
+                      </Button>
+                    </>
+                  )}
                 </div>
+              </div>
+
+              {/* Three Categories Display/Edit */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Taxes (Amount Owed) */}
+                <Card className="border-yellow-200 bg-yellow-50">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center text-yellow-700">
+                      <Clock className="w-5 h-5 mr-2" />
+                      Taxes
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {editMode ? (
+                      <div className="space-y-2">
+                        <Label htmlFor="taxes">Amount Owed ($)</Label>
+                        <Input
+                          id="taxes"
+                          type="number"
+                          step="0.01"
+                          value={editValues.taxes}
+                          onChange={(e) =>
+                            setEditValues({
+                              ...editValues,
+                              taxes: e.target.value,
+                            })
+                          }
+                          className="font-mono"
+                        />
+                      </div>
+                    ) : (
+                      <div className="text-center">
+                        <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                          <DollarSign className="w-6 h-6 text-yellow-600" />
+                        </div>
+                        <p className="text-2xl font-bold text-yellow-700">
+                          {formatCurrency(userTaxData.taxes)}
+                        </p>
+                        <p className="text-sm text-yellow-600">Amount Owed</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* On Hold (Amount) */}
+                <Card className="border-blue-200 bg-blue-50">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center text-blue-700">
+                      <Pause className="w-5 h-5 mr-2" />
+                      On Hold
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {editMode ? (
+                      <div className="space-y-2">
+                        <Label htmlFor="on_hold">Amount On Hold ($)</Label>
+                        <Input
+                          id="on_hold"
+                          type="number"
+                          step="0.01"
+                          value={editValues.on_hold}
+                          onChange={(e) =>
+                            setEditValues({
+                              ...editValues,
+                              on_hold: e.target.value,
+                            })
+                          }
+                          className="font-mono"
+                        />
+                      </div>
+                    ) : (
+                      <div className="text-center">
+                        <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                          <Pause className="w-6 h-6 text-blue-600" />
+                        </div>
+                        <p className="text-2xl font-bold text-blue-700">
+                          {formatCurrency(userTaxData.on_hold)}
+                        </p>
+                        <p className="text-sm text-blue-600">On Hold</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Paid (Amount) */}
+                <Card className="border-green-200 bg-green-50">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center text-green-700">
+                      <CheckCircle className="w-5 h-5 mr-2" />
+                      Paid Taxes
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {editMode ? (
+                      <div className="space-y-2">
+                        <Label htmlFor="paid">Amount Paid ($)</Label>
+                        <Input
+                          id="paid"
+                          type="number"
+                          step="0.01"
+                          value={editValues.paid}
+                          onChange={(e) =>
+                            setEditValues({
+                              ...editValues,
+                              paid: e.target.value,
+                            })
+                          }
+                          className="font-mono"
+                        />
+                      </div>
+                    ) : (
+                      <div className="text-center">
+                        <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                          <CheckCircle className="w-6 h-6 text-green-600" />
+                        </div>
+                        <p className="text-2xl font-bold text-green-700">
+                          {formatCurrency(userTaxData.paid)}
+                        </p>
+                        <p className="text-sm text-green-600">Total Paid</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Summary */}
+              {!editMode && (
+                <Card className="bg-gray-50">
+                  <CardContent className="pt-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-600">
+                          Tax Summary
+                        </p>
+                        <p className="text-lg font-semibold text-gray-900">
+                          Total Outstanding:{" "}
+                          {formatCurrency(
+                            userTaxData.taxes + userTaxData.on_hold
+                          )}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          Paid to Date: {formatCurrency(userTaxData.paid)}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm text-gray-600">Last Updated</p>
+                        <p className="text-sm font-medium">
+                          {userTaxData.updated_at
+                            ? new Date(
+                                userTaxData.updated_at
+                              ).toLocaleDateString()
+                            : "Never"}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               )}
             </div>
-          </div>
+          )}
         </CardContent>
       </Card>
     </div>
