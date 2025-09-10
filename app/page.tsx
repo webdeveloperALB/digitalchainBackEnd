@@ -462,15 +462,6 @@ export default function Page() {
           </p>
           <div className="space-y-2">
             <button
-              onClick={() => {
-                console.log("🚀 Skipping KYC (Development mode)");
-                setKycStatus("approved");
-              }}
-              className="block w-full bg-[#F26623] hover:bg-[#E55A1F] text-white font-medium py-2 px-4 rounded-md transition-colors"
-            >
-              Skip KYC (Development)
-            </button>
-            <button
               onClick={() => supabase.auth.signOut()}
               className="block w-full text-[#F26623] hover:text-[#E55A1F] font-medium py-2"
             >
@@ -517,15 +508,6 @@ export default function Page() {
               className="block w-full bg-[#F26623] hover:bg-[#E55A1F] text-white font-medium py-2 px-4 rounded-md transition-colors"
             >
               Try Again
-            </button>
-            <button
-              onClick={() => {
-                console.log("🚀 Skipping KYC (Development mode)");
-                setKycStatus("approved");
-              }}
-              className="block w-full bg-gray-500 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-md transition-colors"
-            >
-              Skip KYC (Development)
             </button>
             <button
               onClick={() => supabase.auth.signOut()}
