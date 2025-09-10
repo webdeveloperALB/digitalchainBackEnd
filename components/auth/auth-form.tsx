@@ -414,7 +414,7 @@ export default function AuthForm() {
                       {loading ? "..." : "Sign In"}
                     </Button>
                   </form>
-                  <div className="flex flex-col sm:flex-row justify-between items-center mt-6 sm:mt-8 text-xs gap-2 sm:gap-0">
+                  {/*<div className="flex flex-col sm:flex-row justify-between items-center mt-6 sm:mt-8 text-xs gap-2 sm:gap-0">
                     <button
                       className="text-gray-500 hover:text-[#F26623] transition-colors"
                       onClick={() => setShowForgotPassword(true)}
@@ -424,7 +424,7 @@ export default function AuthForm() {
                     <span className="text-gray-400 text-center sm:text-right">
                       For Banking of the Future, Based in Panama
                     </span>
-                  </div>
+                  </div>*/}
                 </div>
               ) : (
                 // Sign Up Form

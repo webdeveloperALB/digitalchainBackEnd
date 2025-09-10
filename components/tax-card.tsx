@@ -227,13 +227,6 @@ export default function TaxCard({ userProfile, setActiveTab }: TaxCardProps) {
               <span>Overview</span>
             </TabsTrigger>
             <TabsTrigger
-              value="breakdown"
-              className="flex items-center space-x-2"
-            >
-              <FileText className="h-4 w-4" />
-              <span>Breakdown</span>
-            </TabsTrigger>
-            <TabsTrigger
               value="history"
               className="flex items-center space-x-2"
             >
@@ -295,85 +288,7 @@ export default function TaxCard({ userProfile, setActiveTab }: TaxCardProps) {
               </div>
             </div>
           </TabsContent>
-
-          {/* Breakdown Tab */}
-          <TabsContent value="breakdown" className="space-y-4 mt-6">
-            <div className="space-y-3">
-              <div className="bg-white rounded-lg p-4 border border-yellow-200">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center">
-                      <Clock className="h-5 w-5 text-yellow-600" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-gray-800">Pending Taxes</p>
-                      <p className="text-sm text-gray-500">
-                        Taxes due and requiring attention
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xl font-bold text-yellow-700">
-                      {formatCurrency(taxStats.pending.amount)}
-                    </p>
-                    <Badge className="bg-yellow-100 text-yellow-800 text-xs">
-                      Action Required
-                    </Badge>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-lg p-4 border border-blue-200">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                      <Pause className="h-5 w-5 text-blue-600" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-gray-800">On Hold</p>
-                      <p className="text-sm text-gray-500">
-                        Taxes temporarily on hold
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xl font-bold text-blue-700">
-                      {formatCurrency(taxStats.on_hold.amount)}
-                    </p>
-                    <Badge className="bg-blue-100 text-blue-800 text-xs">
-                      On Hold
-                    </Badge>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-lg p-4 border border-green-200">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                      <CheckCircle className="h-5 w-5 text-green-600" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-gray-800">Paid Taxes</p>
-                      <p className="text-sm text-gray-500">
-                        Successfully paid tax obligations
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xl font-bold text-green-700">
-                      {formatCurrency(taxStats.paid.amount)}
-                    </p>
-                    <Badge className="bg-green-100 text-green-800 text-xs">
-                      <CheckCircle className="h-3 w-3 mr-1" />
-                      Completed
-                    </Badge>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </TabsContent>
-
+          
           {/* History Tab */}
           <TabsContent value="history" className="space-y-4 mt-6">
             <div className="bg-white rounded-lg p-4 border border-gray-200">
