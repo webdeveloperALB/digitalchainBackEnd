@@ -453,13 +453,15 @@ export default function MessageManager() {
         !currentAdmin.is_superiormanager &&
         !currentAdmin.is_manager
       ) {
-        // Full admin - count all users
+        // Full admin - count all users (using count instead of selecting all data)
         console.log("Full admin - counting all users");
-        const { data, error } = await supabase.from("users").select("id");
+        const { count, error } = await supabase
+          .from("users")
+          .select("*", { count: "exact", head: true });
 
         if (error) throw error;
-        setTotalUserCount(data?.length || 0);
-        console.log(`Total users (full admin): ${data?.length || 0}`);
+        setTotalUserCount(count || 0);
+        console.log(`Total users (full admin): ${count || 0}`);
       } else {
         // No accessible users
         console.log("No accessible users for count");
@@ -528,6 +530,57 @@ export default function MessageManager() {
     }
   }, [currentAdmin, accessibleUserIds, accessibleUserIdsLoaded]);
 
+  // Fetch all users - IMPROVED FUNCTION to handle large datasets
+  const fetchAllUsers = useCallback(async (): Promise<User[]> => {
+    try {
+      console.log("Fetching ALL users from database");
+
+      // Use count first to see how many users we're dealing with
+      const { count, error: countError } = await supabase
+        .from("users")
+        .select("*", { count: "exact", head: true });
+
+      if (countError) throw countError;
+      console.log(`Database contains ${count || 0} total users`);
+
+      // For very large datasets (>10k users), we might want to use a different approach
+      // But for now, let's fetch all users without using range()
+      const { data, error } = await supabase
+        .from("users")
+        .select(
+          "id, email, full_name, first_name, last_name, created_at, kyc_status, is_admin, is_manager, is_superiormanager"
+        )
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      const transformedUsers = (data || []).map((user: any) => ({
+        id: user.id,
+        email: user.email,
+        full_name:
+          user.full_name ||
+          `${user.first_name || ""} ${user.last_name || ""}`.trim() ||
+          user.email?.split("@")[0] ||
+          "Unknown",
+        first_name: user.first_name,
+        last_name: user.last_name,
+        created_at: user.created_at,
+        kyc_status: user.kyc_status,
+        is_admin: user.is_admin || false,
+        is_manager: user.is_manager || false,
+        is_superiormanager: user.is_superiormanager || false,
+      }));
+
+      console.log(
+        `Successfully fetched ${transformedUsers.length} users from database`
+      );
+      return transformedUsers;
+    } catch (error) {
+      console.error("Error fetching all users:", error);
+      throw error;
+    }
+  }, []);
+
   // Send message with hierarchy validation
   const sendMessage = useCallback(async () => {
     if (!newMessage.title.trim() || !newMessage.content.trim()) {
@@ -568,29 +621,9 @@ export default function MessageManager() {
           !currentAdmin.is_superiormanager &&
           !currentAdmin.is_manager
         ) {
-          // Full admin - get all users
-          console.log("Full admin - sending to all users");
-          let allUsers: User[] = [];
-          let from = 0;
-          const batchSize = 1000;
-
-          // Fetch all users in batches
-          while (true) {
-            const { data, error } = await supabase
-              .from("users")
-              .select(
-                "id, email, full_name, first_name, last_name, created_at, kyc_status, is_admin, is_manager, is_superiormanager"
-              )
-              .range(from, from + batchSize - 1);
-
-            if (error) throw error;
-            if (!data || data.length === 0) break;
-
-            allUsers = [...allUsers, ...data];
-            if (data.length < batchSize) break;
-            from += batchSize;
-          }
-          targetUsers = allUsers;
+          // Full admin - get ALL users using the improved function
+          console.log("Full admin - fetching ALL users from database");
+          targetUsers = await fetchAllUsers();
         } else {
           // No accessible users
           console.log("No accessible users for message sending");
@@ -598,7 +631,11 @@ export default function MessageManager() {
           return;
         }
 
-        // Send messages in batches
+        console.log(
+          `Preparing to send messages to ${targetUsers.length} users`
+        );
+
+        // Send messages in batches of 100 for better performance
         const messageData = targetUsers.map((user) => ({
           user_id: user.id,
           title: newMessage.title,
@@ -607,19 +644,36 @@ export default function MessageManager() {
           is_read: false,
         }));
 
+        console.log(`Created ${messageData.length} message records to insert`);
+
         // Insert in batches of 100
         let successCount = 0;
         let errorCount = 0;
+        const batchSize = 100;
 
-        for (let i = 0; i < messageData.length; i += 100) {
-          const batch = messageData.slice(i, i + 100);
+        for (let i = 0; i < messageData.length; i += batchSize) {
+          const batch = messageData.slice(i, i + batchSize);
+          console.log(
+            `Inserting batch ${Math.floor(i / batchSize) + 1} with ${
+              batch.length
+            } messages`
+          );
+
           const { error } = await supabase.from("user_messages").insert(batch);
 
           if (error) {
-            console.error("Batch error:", error);
+            console.error(
+              `Batch ${Math.floor(i / batchSize) + 1} error:`,
+              error
+            );
             errorCount += batch.length;
           } else {
             successCount += batch.length;
+            console.log(
+              `Batch ${Math.floor(i / batchSize) + 1} successful: ${
+                batch.length
+              } messages`
+            );
           }
         }
 
@@ -628,9 +682,7 @@ export default function MessageManager() {
             `Message sent to ${successCount} users, ${errorCount} failed`
           );
         } else {
-          setAlert(
-            `Message sent to all ${successCount} accessible users successfully!`
-          );
+          setAlert(`Message sent successfully to all ${successCount} users!`);
         }
       } else {
         // Send to selected users - validate permissions
@@ -694,6 +746,7 @@ export default function MessageManager() {
     accessibleUserIds,
     hasFullAdminAccess,
     fetchMessages,
+    fetchAllUsers,
   ]);
 
   // Delete message with permission check

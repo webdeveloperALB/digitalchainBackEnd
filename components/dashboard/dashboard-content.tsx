@@ -1677,8 +1677,8 @@ function DashboardContent({
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
-          <div className="lg:col-span-2 space-y-4 sm:space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8 mb-6 sm:mb-8">
+          <div className="lg:col-span-1 space-y-4 sm:space-y-6">
             {/* Account Activity Card */}
             <Card className="shadow-lg border-0">
               <CardHeader className="bg-[#F5F0F0] border-b p-4 sm:p-6">

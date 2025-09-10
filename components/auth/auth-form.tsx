@@ -309,13 +309,14 @@ export default function AuthForm() {
           {/* Right side with form */}
           <div className="w-full lg:w-3/5 flex flex-col rounded-2xl lg:rounded-r-2xl lg:rounded-l-none overflow-hidden">
             {/* Header */}
-            <div className="flex flex-col sm:flex-row items-center justify-between p-4 sm:p-6 bg-white gap-4 sm:gap-0">
+            <div className="flex flex-col sm:flex-row items-center justify-between px-4 bg-white gap-4 sm:gap-0">
               <div className="flex items-center">
                 <div className="flex items-center space-x-2">
-                  <Building2 className="w-8 h-8 text-[#F26623]" />
-                  <span className="text-xl font-bold text-gray-900">
-                    Digital Chain Bank
-                  </span>
+                  <img
+                    src="/logo.svg"
+                    alt="Logo"
+                    className="w-36 h-36 object-contain"
+                  />
                 </div>
               </div>
               <Button

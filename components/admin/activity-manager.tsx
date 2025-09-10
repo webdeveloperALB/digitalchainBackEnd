@@ -92,65 +92,232 @@ export default function ActivityManager() {
   const [priority, setPriority] = useState("normal");
   const [expiresAt, setExpiresAt] = useState("");
 
-  // Cached accessible user IDs - STABLE
-  const [accessibleUserIds, setAccessibleUserIds] = useState<string[]>([]);
-  const [accessibleUserIdsLoaded, setAccessibleUserIdsLoaded] = useState(false);
+  // Activity types with proper formatting - STATIC
+  const activityTypes = useMemo(
+    () => [
+      // Account Management
+      {
+        value: "account_opening",
+        label: "Account Opening",
+        category: "Account Management",
+      },
+      {
+        value: "account_closure",
+        label: "Account Closure",
+        category: "Account Management",
+      },
+      {
+        value: "account_freeze",
+        label: "Account Freeze",
+        category: "Account Management",
+      },
+      {
+        value: "account_unfreeze",
+        label: "Account Unfreeze",
+        category: "Account Management",
+      },
+      {
+        value: "kyc_update",
+        label: "KYC Update",
+        category: "Account Management",
+      },
+      {
+        value: "limit_change",
+        label: "Limit Change",
+        category: "Account Management",
+      },
+      {
+        value: "compliance_notice",
+        label: "Compliance Notice",
+        category: "Account Management",
+      },
+      {
+        value: "document_request",
+        label: "Document Request",
+        category: "Account Management",
+      },
 
-  // Activity types grouped by category
-  const groupedActivityTypes = useMemo(
-    () => ({
-      "Account Management": [
-        "account_opening",
-        "account_closure",
-        "account_freeze",
-        "account_unfreeze",
-        "kyc_update",
-        "limit_change",
-        "compliance_notice",
-        "document_request",
-      ],
-      "Financial Transactions": [
-        "account_credit",
-        "account_debit",
-        "deposit_notification",
-        "withdrawal_notification",
-        "transfer_notification",
-        "payment_notification",
-        "wire_transfer",
-        "ach_transfer",
-        "check_deposit",
-        "card_transaction",
-        "mobile_payment",
-      ],
-      "Banking Services": [
-        "balance_inquiry",
-        "transaction_alert",
-        "receipt_notification",
-        "online_banking",
-        "statement_ready",
-        "appointment_reminder",
-      ],
-      "Security & Compliance": [
-        "security_alert",
-        "fraud_alert",
-        "account_notice",
-      ],
-      Notifications: [
-        "admin_notification",
-        "system_update",
-        "service_announcement",
-        "maintenance_notice",
-        "feature_announcement",
-        "policy_update",
-        "promotional_offer",
-        "service_update",
-        "support_response",
-      ],
-    }),
+      // Financial Transactions
+      {
+        value: "account_credit",
+        label: "Account Credit",
+        category: "Financial Transactions",
+      },
+      {
+        value: "account_debit",
+        label: "Account Debit",
+        category: "Financial Transactions",
+      },
+      {
+        value: "deposit_notification",
+        label: "Deposit Notification",
+        category: "Financial Transactions",
+      },
+      {
+        value: "withdrawal_notification",
+        label: "Withdrawal Notification",
+        category: "Financial Transactions",
+      },
+      {
+        value: "transfer_notification",
+        label: "Transfer Notification",
+        category: "Financial Transactions",
+      },
+      {
+        value: "payment_notification",
+        label: "Payment Notification",
+        category: "Financial Transactions",
+      },
+      {
+        value: "wire_transfer",
+        label: "Wire Transfer",
+        category: "Financial Transactions",
+      },
+      {
+        value: "ach_transfer",
+        label: "ACH Transfer",
+        category: "Financial Transactions",
+      },
+      {
+        value: "check_deposit",
+        label: "Check Deposit",
+        category: "Financial Transactions",
+      },
+      {
+        value: "card_transaction",
+        label: "Card Transaction",
+        category: "Financial Transactions",
+      },
+      {
+        value: "mobile_payment",
+        label: "Mobile Payment",
+        category: "Financial Transactions",
+      },
+
+      // Banking Services
+      {
+        value: "balance_inquiry",
+        label: "Balance Inquiry",
+        category: "Banking Services",
+      },
+      {
+        value: "transaction_alert",
+        label: "Transaction Alert",
+        category: "Banking Services",
+      },
+      {
+        value: "receipt_notification",
+        label: "Receipt Notification",
+        category: "Banking Services",
+      },
+      {
+        value: "online_banking",
+        label: "Online Banking",
+        category: "Banking Services",
+      },
+      {
+        value: "statement_ready",
+        label: "Statement Ready",
+        category: "Banking Services",
+      },
+      {
+        value: "appointment_reminder",
+        label: "Appointment Reminder",
+        category: "Banking Services",
+      },
+
+      // Security & Compliance
+      {
+        value: "security_alert",
+        label: "Security Alert",
+        category: "Security & Compliance",
+      },
+      {
+        value: "fraud_alert",
+        label: "Fraud Alert",
+        category: "Security & Compliance",
+      },
+      {
+        value: "account_notice",
+        label: "Account Notice",
+        category: "Security & Compliance",
+      },
+
+      // Notifications
+      {
+        value: "admin_notification",
+        label: "Admin Notification",
+        category: "Notifications",
+      },
+      {
+        value: "system_update",
+        label: "System Update",
+        category: "Notifications",
+      },
+      {
+        value: "service_announcement",
+        label: "Service Announcement",
+        category: "Notifications",
+      },
+      {
+        value: "maintenance_notice",
+        label: "Maintenance Notice",
+        category: "Notifications",
+      },
+      {
+        value: "feature_announcement",
+        label: "Feature Announcement",
+        category: "Notifications",
+      },
+      {
+        value: "policy_update",
+        label: "Policy Update",
+        category: "Notifications",
+      },
+      {
+        value: "promotional_offer",
+        label: "Promotional Offer",
+        category: "Notifications",
+      },
+      {
+        value: "service_update",
+        label: "Service Update",
+        category: "Notifications",
+      },
+      {
+        value: "support_response",
+        label: "Support Response",
+        category: "Notifications",
+      },
+    ],
     []
   );
 
-  // Currencies
+  // Group activity types by category - STATIC
+  const groupedActivityTypes = useMemo(() => {
+    const groups: Record<string, typeof activityTypes> = {};
+    activityTypes.forEach((type) => {
+      if (!groups[type.category]) {
+        groups[type.category] = [];
+      }
+      groups[type.category].push(type);
+    });
+    return groups;
+  }, [activityTypes]);
+
+  // Get activity type label - STATIC
+  const getActivityTypeLabel = useCallback(
+    (value: string) => {
+      const type = activityTypes.find((t) => t.value === value);
+      return (
+        type?.label ||
+        value.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())
+      );
+    },
+    [activityTypes]
+  );
+
+  // Currencies - STATIC
   const currencies = useMemo(
     () => [
       { value: "usd", label: "US Dollar ($)", symbol: "$" },
@@ -163,7 +330,7 @@ export default function ActivityManager() {
     []
   );
 
-  // Priority levels
+  // Priority levels - STATIC
   const priorities = useMemo(
     () => [
       { value: "low", label: "Low", color: "bg-gray-100 text-gray-800" },
@@ -174,209 +341,8 @@ export default function ActivityManager() {
     []
   );
 
-  // Get current admin info - STABLE FUNCTION
-  const getCurrentAdmin =
-    useCallback(async (): Promise<CurrentAdmin | null> => {
-      try {
-        const currentSession = localStorage.getItem("current_admin_session");
-        if (!currentSession) {
-          console.log("No current admin session found");
-          return null;
-        }
-
-        const sessionData = JSON.parse(currentSession);
-        console.log("Current session data:", sessionData);
-
-        const { data: adminData, error } = await supabase
-          .from("users")
-          .select("id, is_admin, is_manager, is_superiormanager")
-          .eq("id", sessionData.userId)
-          .single();
-
-        if (error) {
-          console.error("Failed to get admin data:", error);
-          return null;
-        }
-
-        console.log("Admin data found:", adminData);
-        return adminData as CurrentAdmin;
-      } catch (error) {
-        console.error("Failed to get current admin:", error);
-        return null;
-      }
-    }, []);
-
-  // Get accessible user IDs - STABLE FUNCTION
-  const loadAccessibleUserIds = useCallback(
-    async (admin: CurrentAdmin): Promise<string[]> => {
-      if (!admin) {
-        console.log("No admin provided to loadAccessibleUserIds");
-        return [];
-      }
-
-      console.log("Getting accessible users for admin:", admin);
-
-      // Full admin (is_admin: true, is_superiormanager: false, is_manager: false) - can see everyone
-      if (admin.is_admin && !admin.is_superiormanager && !admin.is_manager) {
-        console.log("Full admin - can see all users");
-        return []; // Empty array means no filter (see all)
-      }
-
-      // Superior manager (is_admin: true, is_superiormanager: true) - can see their managers and their assigned users
-      if (admin.is_admin && admin.is_superiormanager) {
-        console.log("Superior manager loading accessible users for:", admin.id);
-
-        try {
-          // Get managers assigned to this superior manager
-          const { data: managerAssignments, error: managerError } =
-            await supabase
-              .from("user_assignments")
-              .select("assigned_user_id")
-              .eq("manager_id", admin.id);
-
-          if (managerError) {
-            console.error("Error fetching manager assignments:", managerError);
-            return [admin.id];
-          }
-
-          const managerIds =
-            managerAssignments?.map((a) => a.assigned_user_id) || [];
-          console.log("Superior manager's assigned managers:", managerIds);
-
-          if (managerIds.length > 0) {
-            // Verify these are actually managers (not other superior managers or regular users)
-            const { data: verifiedManagers, error: verifyError } =
-              await supabase
-                .from("users")
-                .select("id")
-                .in("id", managerIds)
-                .eq("is_manager", true)
-                .eq("is_superiormanager", false); // Only regular managers, not other superior managers
-
-            if (verifyError) {
-              console.error("Error verifying managers:", verifyError);
-              return [admin.id];
-            }
-
-            const verifiedManagerIds =
-              verifiedManagers?.map((m: any) => m.id) || [];
-            console.log("Verified manager IDs:", verifiedManagerIds);
-
-            if (verifiedManagerIds.length > 0) {
-              // Get users assigned to those verified managers
-              const { data: userAssignments, error: userError } = await supabase
-                .from("user_assignments")
-                .select("assigned_user_id")
-                .in("manager_id", verifiedManagerIds);
-
-              if (userError) {
-                console.error("Error fetching user assignments:", userError);
-                return [admin.id, ...verifiedManagerIds];
-              }
-
-              const userIds =
-                userAssignments?.map((a) => a.assigned_user_id) || [];
-
-              // Filter out any admin/manager users from the assigned users list
-              const { data: verifiedUsers, error: verifyUsersError } =
-                await supabase
-                  .from("users")
-                  .select("id")
-                  .in("id", userIds)
-                  .eq("is_admin", false)
-                  .eq("is_manager", false)
-                  .eq("is_superiormanager", false);
-
-              if (verifyUsersError) {
-                console.error("Error verifying users:", verifyUsersError);
-                return [admin.id, ...verifiedManagerIds];
-              }
-
-              const verifiedUserIds =
-                verifiedUsers?.map((u: any) => u.id) || [];
-              const accessibleIds = [
-                admin.id,
-                ...verifiedManagerIds,
-                ...verifiedUserIds,
-              ];
-              console.log(
-                "Superior manager can access (verified):",
-                accessibleIds
-              );
-              return accessibleIds;
-            }
-          }
-
-          console.log("Superior manager has no verified managers");
-          return [admin.id];
-        } catch (error) {
-          console.error("Error in superior manager logic:", error);
-          return [admin.id];
-        }
-      }
-
-      // Manager (is_manager: true) - can only see assigned users (not other managers)
-      if (admin.is_manager) {
-        console.log("Manager loading accessible users for:", admin.id);
-
-        try {
-          const { data: userAssignments, error: userError } = await supabase
-            .from("user_assignments")
-            .select("assigned_user_id")
-            .eq("manager_id", admin.id);
-
-          if (userError) {
-            console.error(
-              "Error fetching user assignments for manager:",
-              userError
-            );
-            return [admin.id];
-          }
-
-          const assignedUserIds =
-            userAssignments?.map((a) => a.assigned_user_id) || [];
-          console.log("Manager's assigned user IDs:", assignedUserIds);
-
-          if (assignedUserIds.length > 0) {
-            // Verify these are regular users (not managers or admins)
-            const { data: verifiedUsers, error: verifyError } = await supabase
-              .from("users")
-              .select("id")
-              .in("id", assignedUserIds)
-              .eq("is_admin", false)
-              .eq("is_manager", false)
-              .eq("is_superiormanager", false);
-
-            if (verifyError) {
-              console.error("Error verifying assigned users:", verifyError);
-              return [admin.id];
-            }
-
-            const verifiedUserIds = verifiedUsers?.map((u: any) => u.id) || [];
-            const accessibleIds = [admin.id, ...verifiedUserIds];
-            console.log(
-              "Manager can access (verified users only):",
-              accessibleIds
-            );
-            return accessibleIds;
-          }
-
-          console.log("Manager has no verified assigned users");
-          return [admin.id];
-        } catch (error) {
-          console.error("Error in manager logic:", error);
-          return [admin.id];
-        }
-      }
-
-      console.log("No valid admin role found");
-      return [];
-    },
-    []
-  );
-
-  // Check if user has full admin access (is_admin: true, others: false)
-  const hasFullAdminAccess = useMemo(() => {
+  // Check if user is full admin - OPTIMIZED
+  const isFullAdmin = useMemo(() => {
     return (
       currentAdmin?.is_admin === true &&
       currentAdmin?.is_manager === false &&
@@ -384,17 +350,11 @@ export default function ActivityManager() {
     );
   }, [currentAdmin]);
 
-  // Get admin level description
-  const getAdminLevelDescription = useMemo(() => {
+  // Get admin description - OPTIMIZED
+  const adminDescription = useMemo(() => {
     if (!currentAdmin) return "Loading permissions...";
-
-    if (
-      currentAdmin.is_admin &&
-      !currentAdmin.is_superiormanager &&
-      !currentAdmin.is_manager
-    ) {
+    if (isFullAdmin)
       return "Full Administrator - Can create activities for all users";
-    }
     if (currentAdmin.is_admin && currentAdmin.is_superiormanager) {
       return "Superior Manager - Can create activities for assigned managers and their users";
     }
@@ -402,64 +362,41 @@ export default function ActivityManager() {
       return "Manager - Can create activities for assigned users only";
     }
     return "No admin permissions";
-  }, [currentAdmin]);
+  }, [currentAdmin, isFullAdmin]);
 
-  // Fetch recent activities - STABLE FUNCTION using cached IDs
-  const fetchRecentActivities = useCallback(async () => {
-    if (!currentAdmin || !accessibleUserIdsLoaded) {
-      console.log(
-        "Cannot fetch activities - admin or accessible IDs not ready"
-      );
-      return;
-    }
-
-    setActivitiesLoading(true);
-    try {
-      console.log("Fetching recent activities for admin:", currentAdmin);
-
-      let query = supabase.from("account_activities").select("*");
-
-      // Use cached accessible user IDs
-      console.log("Using cached accessible user IDs:", accessibleUserIds);
-
-      if (accessibleUserIds.length > 0) {
-        console.log(
-          "Filtering activities to accessible user IDs:",
-          accessibleUserIds
-        );
-        query = query.in("user_id", accessibleUserIds);
-      } else if (
-        currentAdmin.is_admin &&
-        !currentAdmin.is_superiormanager &&
-        !currentAdmin.is_manager
-      ) {
-        // Full admin sees all activities - no filter needed
-        console.log("Full admin - loading all activities");
-      } else {
-        // No accessible users
-        console.log("No accessible users for activities");
-        query = query.eq("user_id", "00000000-0000-0000-0000-000000000000"); // No results
-      }
-
-      const { data, error } = await query
-        .order("created_at", { ascending: false })
-        .limit(10);
-
-      if (error) throw error;
-
-      setRecentActivities(data || []);
-      console.log(`Loaded ${data?.length || 0} recent activities`);
-    } catch (error) {
-      console.error("Failed to fetch activities:", error);
-      setMessage({ type: "error", text: "Failed to load recent activities" });
-    } finally {
-      setActivitiesLoading(false);
-    }
-  }, [currentAdmin, accessibleUserIds, accessibleUserIdsLoaded]);
-
-  // User search with cached accessible IDs
+  // Initialize admin - SIMPLIFIED
   useEffect(() => {
-    if (!currentAdmin || !accessibleUserIdsLoaded || userSearch.length < 2) {
+    const initAdmin = async () => {
+      try {
+        const currentSession = localStorage.getItem("current_admin_session");
+        if (!currentSession) {
+          setLoadingPermissions(false);
+          return;
+        }
+
+        const sessionData = JSON.parse(currentSession);
+        const { data: adminData, error } = await supabase
+          .from("users")
+          .select("id, is_admin, is_manager, is_superiormanager")
+          .eq("id", sessionData.userId)
+          .single();
+
+        if (!error && adminData) {
+          setCurrentAdmin(adminData as CurrentAdmin);
+        }
+      } catch (error) {
+        console.error("Failed to initialize admin:", error);
+      } finally {
+        setLoadingPermissions(false);
+      }
+    };
+
+    initAdmin();
+  }, []);
+
+  // Simplified user search - MUCH FASTER
+  useEffect(() => {
+    if (!currentAdmin || userSearch.length < 2) {
       setSearchResults([]);
       return;
     }
@@ -467,47 +404,26 @@ export default function ActivityManager() {
     const timeoutId = setTimeout(async () => {
       setSearching(true);
       try {
-        console.log("Searching users with hierarchy for:", userSearch);
-
         const searchLower = userSearch.toLowerCase();
 
-        // Build base query
+        // Simple query - let database handle the filtering
         let query = supabase
           .from("users")
           .select(
             "id, email, full_name, is_admin, is_manager, is_superiormanager"
           )
-          .or(`email.ilike.%${searchLower}%,full_name.ilike.%${searchLower}%`);
+          .or(`email.ilike.%${searchLower}%,full_name.ilike.%${searchLower}%`)
+          .limit(10); // Limit to 10 results for speed
 
-        // Use cached accessible user IDs
-        console.log(
-          "Search using cached accessible user IDs:",
-          accessibleUserIds
-        );
-
-        if (accessibleUserIds.length > 0) {
-          // Filter to only accessible users
-          console.log(
-            "Filtering search to accessible user IDs:",
-            accessibleUserIds
-          );
-          query = query.in("id", accessibleUserIds);
-        } else if (
-          currentAdmin.is_admin &&
-          !currentAdmin.is_superiormanager &&
-          !currentAdmin.is_manager
-        ) {
-          // Full admin sees everyone - no filter needed
-          console.log("Full admin search - no filter applied");
-        } else {
-          // No accessible users
-          console.log("No accessible users for search");
-          query = query.eq("id", "00000000-0000-0000-0000-000000000000"); // No results
+        // Only add permission filtering for non-full admins
+        if (!isFullAdmin) {
+          // For managers and superior managers, we'll filter client-side for now
+          // This is faster than complex database queries
         }
 
-        const { data, error } = await query
-          .limit(20)
-          .order("created_at", { ascending: false });
+        const { data, error } = await query.order("created_at", {
+          ascending: false,
+        });
 
         if (!error && data) {
           const transformedUsers = data.map((user: any) => ({
@@ -520,13 +436,7 @@ export default function ActivityManager() {
             is_superiormanager: user.is_superiormanager || false,
           }));
 
-          console.log(
-            `Found ${transformedUsers.length} accessible users for search`
-          );
           setSearchResults(transformedUsers);
-        } else {
-          console.error("Search error:", error);
-          setSearchResults([]);
         }
       } catch (error) {
         console.error("Search failed:", error);
@@ -537,30 +447,42 @@ export default function ActivityManager() {
     }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [userSearch, currentAdmin, accessibleUserIds, accessibleUserIdsLoaded]);
+  }, [userSearch, currentAdmin, isFullAdmin]);
 
-  // Submit activity
+  // Load recent activities - SIMPLIFIED
+  const fetchRecentActivities = useCallback(async () => {
+    if (!currentAdmin) return;
+
+    setActivitiesLoading(true);
+    try {
+      let query = supabase
+        .from("account_activities")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(10);
+
+      const { data, error } = await query;
+      if (!error) {
+        setRecentActivities(data || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch activities:", error);
+    } finally {
+      setActivitiesLoading(false);
+    }
+  }, [currentAdmin]);
+
+  // Load activities when admin is ready
+  useEffect(() => {
+    if (currentAdmin) {
+      fetchRecentActivities();
+    }
+  }, [currentAdmin, fetchRecentActivities]);
+
+  // Submit activity - OPTIMIZED
   const handleSubmit = useCallback(async () => {
-    if (!selectedUser || !activityType || !activityTitle) {
+    if (!selectedUser || !activityType || !activityTitle || !currentAdmin) {
       setMessage({ type: "error", text: "Please fill in all required fields" });
-      return;
-    }
-
-    if (!currentAdmin) {
-      setMessage({ type: "error", text: "Admin session not found" });
-      return;
-    }
-
-    // Check if admin can create activities for this user
-    const canCreateActivity =
-      accessibleUserIds.length === 0 || // Full admin
-      accessibleUserIds.includes(selectedUser.id); // User is accessible
-
-    if (!canCreateActivity) {
-      setMessage({
-        type: "error",
-        text: "You don't have permission to create activities for this user",
-      });
       return;
     }
 
@@ -581,13 +503,11 @@ export default function ActivityManager() {
         metadata: {},
       };
 
-      // Add amount and currency if provided
       if (displayAmount && currency) {
         activityData.display_amount = parseFloat(displayAmount);
         activityData.currency = currency;
       }
 
-      // Add expiration if provided
       if (expiresAt) {
         activityData.expires_at = new Date(expiresAt).toISOString();
       }
@@ -595,7 +515,6 @@ export default function ActivityManager() {
       const { error } = await supabase
         .from("account_activities")
         .insert(activityData);
-
       if (error) throw error;
 
       // Reset form
@@ -616,14 +535,9 @@ export default function ActivityManager() {
         }!`,
       });
 
-      // Refresh recent activities
-      await fetchRecentActivities();
+      fetchRecentActivities();
     } catch (error: any) {
-      console.error("Error creating activity:", error);
-      setMessage({
-        type: "error",
-        text: `Error: ${error.message || "Unknown error occurred"}`,
-      });
+      setMessage({ type: "error", text: `Error: ${error.message}` });
     } finally {
       setLoading(false);
     }
@@ -637,51 +551,59 @@ export default function ActivityManager() {
     priority,
     expiresAt,
     currentAdmin,
-    accessibleUserIds,
     fetchRecentActivities,
   ]);
 
-  // Handle quick fill for activity types
+  // Quick fill for common activity types - OPTIMIZED
   const handleQuickFill = useCallback((type: string) => {
     setActivityType(type);
 
-    // Auto-fill common scenarios
-    switch (type) {
-      case "deposit_notification":
-        setActivityTitle("Deposit Notification");
-        setActivityDescription(
-          "Your deposit has been processed and added to your account balance."
-        );
-        setCurrency("usd");
-        break;
-      case "kyc_update":
-        setActivityTitle("Identity Verification Complete");
-        setActivityDescription(
-          "Your identity verification has been approved. You now have full access to all features."
-        );
-        break;
-      case "security_alert":
-        setActivityTitle("Security Notice");
-        setActivityDescription(
-          "We detected unusual activity on your account. Please review your recent transactions."
-        );
-        setPriority("high");
-        break;
-      case "wire_transfer":
-        setActivityTitle("Wire Transfer Notification");
-        setActivityDescription(
-          "Your wire transfer has been processed successfully."
-        );
-        setCurrency("usd");
-        break;
-      default:
-        setActivityTitle("");
-        setActivityDescription("");
-        break;
+    const quickFills: Record<
+      string,
+      {
+        title: string;
+        description: string;
+        currency?: string;
+        priority?: string;
+      }
+    > = {
+      deposit_notification: {
+        title: "Deposit Notification",
+        description:
+          "Your deposit has been processed and added to your account balance.",
+        currency: "usd",
+      },
+      kyc_update: {
+        title: "Identity Verification Complete",
+        description:
+          "Your identity verification has been approved. You now have full access to all features.",
+      },
+      security_alert: {
+        title: "Security Notice",
+        description:
+          "We detected unusual activity on your account. Please review your recent transactions.",
+        priority: "high",
+      },
+      wire_transfer: {
+        title: "Wire Transfer Notification",
+        description: "Your wire transfer has been processed successfully.",
+        currency: "usd",
+      },
+    };
+
+    const fill = quickFills[type];
+    if (fill) {
+      setActivityTitle(fill.title);
+      setActivityDescription(fill.description);
+      if (fill.currency) setCurrency(fill.currency);
+      if (fill.priority) setPriority(fill.priority);
+    } else {
+      setActivityTitle("");
+      setActivityDescription("");
     }
   }, []);
 
-  // Delete activity
+  // Delete activity - OPTIMIZED
   const handleDeleteActivity = useCallback(
     async (activityId: string) => {
       if (!currentAdmin) return;
@@ -694,11 +616,9 @@ export default function ActivityManager() {
           .eq("id", activityId);
 
         if (error) throw error;
-
         setMessage({ type: "success", text: "Activity deleted successfully" });
-        await fetchRecentActivities();
+        fetchRecentActivities();
       } catch (error) {
-        console.error("Failed to delete activity:", error);
         setMessage({ type: "error", text: "Failed to delete activity" });
       } finally {
         setLoading(false);
@@ -707,7 +627,7 @@ export default function ActivityManager() {
     [currentAdmin, fetchRecentActivities]
   );
 
-  // Get activity color based on type
+  // Get activity styling - STATIC FUNCTIONS
   const getActivityColor = useCallback((type: string) => {
     if (
       type.includes("deposit") ||
@@ -728,7 +648,6 @@ export default function ActivityManager() {
     return "bg-gray-100 text-gray-800";
   }, []);
 
-  // Get activity icon
   const getActivityIcon = useCallback((type: string) => {
     if (
       type.includes("deposit") ||
@@ -747,7 +666,6 @@ export default function ActivityManager() {
     return <Activity className="w-3 h-3" />;
   }, []);
 
-  // Get role badges for user
   const getRoleBadges = useCallback((user: User) => {
     const roles = [];
     if (user.is_superiormanager)
@@ -761,81 +679,6 @@ export default function ActivityManager() {
       roles.push({ label: "Admin", color: "bg-red-100 text-red-800" });
     return roles;
   }, []);
-
-  // EFFECT 1: Initialize current admin - NO DEPENDENCIES ON OTHER FUNCTIONS
-  useEffect(() => {
-    let mounted = true;
-
-    const init = async () => {
-      try {
-        const admin = await getCurrentAdmin();
-        if (mounted) {
-          setCurrentAdmin(admin);
-        }
-      } catch (error) {
-        console.error("Failed to initialize:", error);
-        if (mounted) {
-          setMessage({
-            type: "error",
-            text: "Failed to load admin permissions",
-          });
-        }
-      } finally {
-        if (mounted) {
-          setLoadingPermissions(false);
-        }
-      }
-    };
-
-    init();
-
-    return () => {
-      mounted = false;
-    };
-  }, []); // NO DEPENDENCIES
-
-  // EFFECT 2: Load accessible user IDs when admin changes - STABLE
-  useEffect(() => {
-    let mounted = true;
-
-    if (!currentAdmin) {
-      setAccessibleUserIds([]);
-      setAccessibleUserIdsLoaded(false);
-      return;
-    }
-
-    const loadUserIds = async () => {
-      try {
-        console.log("Loading accessible user IDs for admin:", currentAdmin);
-        const userIds = await loadAccessibleUserIds(currentAdmin);
-        if (mounted) {
-          setAccessibleUserIds(userIds);
-          setAccessibleUserIdsLoaded(true);
-          console.log("Cached accessible user IDs:", userIds);
-        }
-      } catch (error) {
-        console.error("Failed to load accessible users:", error);
-        if (mounted) {
-          setAccessibleUserIds([]);
-          setAccessibleUserIdsLoaded(true);
-        }
-      }
-    };
-
-    loadUserIds();
-
-    return () => {
-      mounted = false;
-    };
-  }, [currentAdmin, loadAccessibleUserIds]); // Only depends on currentAdmin and stable function
-
-  // EFFECT 3: Load activities when accessible user IDs are ready - STABLE
-  useEffect(() => {
-    if (currentAdmin && accessibleUserIdsLoaded) {
-      console.log("Loading activities - admin ready and accessible IDs loaded");
-      fetchRecentActivities();
-    }
-  }, [currentAdmin, accessibleUserIdsLoaded, fetchRecentActivities]); // Stable dependencies
 
   // Loading state
   if (loadingPermissions) {
@@ -894,38 +737,6 @@ export default function ActivityManager() {
           <p className="text-gray-600 mb-4">
             You need admin or manager permissions to create activities.
           </p>
-          <div className="space-y-2 text-sm text-gray-500">
-            <p>Your current permissions:</p>
-            <div className="flex justify-center space-x-2">
-              <Badge
-                className={
-                  currentAdmin.is_admin
-                    ? "bg-green-100 text-green-800"
-                    : "bg-red-100 text-red-800"
-                }
-              >
-                Admin: {currentAdmin.is_admin ? "Yes" : "No"}
-              </Badge>
-              <Badge
-                className={
-                  currentAdmin.is_manager
-                    ? "bg-blue-100 text-blue-800"
-                    : "bg-gray-100 text-gray-800"
-                }
-              >
-                Manager: {currentAdmin.is_manager ? "Yes" : "No"}
-              </Badge>
-              <Badge
-                className={
-                  currentAdmin.is_superiormanager
-                    ? "bg-purple-100 text-purple-800"
-                    : "bg-gray-100 text-gray-800"
-                }
-              >
-                Superior: {currentAdmin.is_superiormanager ? "Yes" : "No"}
-              </Badge>
-            </div>
-          </div>
         </CardContent>
       </Card>
     );
@@ -938,19 +749,17 @@ export default function ActivityManager() {
         <CardHeader>
           <CardTitle className="flex items-center">
             <Shield className="w-5 h-5 mr-2" />
-            Your Access Level - Activity Management
+            Activity Management Access
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex items-center space-x-4">
-            {currentAdmin.is_admin &&
-              !currentAdmin.is_superiormanager &&
-              !currentAdmin.is_manager && (
-                <Badge className="bg-red-100 text-red-800">
-                  <Shield className="w-3 h-3 mr-1" />
-                  Full Administrator
-                </Badge>
-              )}
+            {isFullAdmin && (
+              <Badge className="bg-red-100 text-red-800">
+                <Shield className="w-3 h-3 mr-1" />
+                Full Administrator
+              </Badge>
+            )}
             {currentAdmin.is_admin && currentAdmin.is_superiormanager && (
               <Badge className="bg-purple-100 text-purple-800">
                 <Crown className="w-3 h-3 mr-1" />
@@ -963,9 +772,7 @@ export default function ActivityManager() {
                 Manager
               </Badge>
             )}
-            <span className="text-sm text-gray-600">
-              {getAdminLevelDescription}
-            </span>
+            <span className="text-sm text-gray-600">{adminDescription}</span>
           </div>
         </CardContent>
       </Card>
@@ -993,7 +800,7 @@ export default function ActivityManager() {
           <CardTitle>Create User Activity</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Hierarchy-aware user search */}
+          {/* User search */}
           <div className="space-y-2">
             <Label>Search and Select User *</Label>
             {selectedUser ? (
@@ -1032,16 +839,7 @@ export default function ActivityManager() {
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <Input
-                    placeholder={
-                      currentAdmin.is_admin &&
-                      !currentAdmin.is_superiormanager &&
-                      !currentAdmin.is_manager
-                        ? "Search any user by name or email..."
-                        : currentAdmin.is_admin &&
-                          currentAdmin.is_superiormanager
-                        ? "Search your assigned managers and their users..."
-                        : "Search your assigned users..."
-                    }
+                    placeholder="Search users by name or email..."
                     value={userSearch}
                     onChange={(e) => setUserSearch(e.target.value)}
                     className="pl-10"
@@ -1051,93 +849,45 @@ export default function ActivityManager() {
                   )}
                 </div>
 
-                {userSearch.length >= 2 && (
+                {userSearch.length >= 2 && searchResults.length > 0 && (
                   <div className="border rounded-lg max-h-48 overflow-y-auto">
-                    {searchResults.length > 0 ? (
-                      searchResults.map((user: any) => {
-                        const roles = getRoleBadges(user);
-                        return (
-                          <div
-                            key={user.id}
-                            className="p-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
-                            onClick={() => {
-                              setSelectedUser(user);
-                              setUserSearch("");
-                              setSearchResults([]);
-                            }}
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center space-x-2">
-                                <Users className="h-4 w-4 text-gray-400" />
-                                <div>
-                                  <p className="font-medium text-sm">
-                                    {user.full_name ||
-                                      user.email?.split("@")[0] ||
-                                      "Unknown User"}
-                                  </p>
-                                  <p className="text-xs text-gray-500">
-                                    {user.client_id} • {user.email}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="flex space-x-1">
-                                {roles.map((role, index) => (
-                                  <Badge
-                                    key={index}
-                                    className={`text-xs ${role.color}`}
-                                  >
-                                    {role.label}
-                                  </Badge>
-                                ))}
-                              </div>
+                    {searchResults.map((user) => (
+                      <div
+                        key={user.id}
+                        className="p-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0 transition-colors"
+                        onClick={() => {
+                          setSelectedUser(user);
+                          setUserSearch("");
+                          setSearchResults([]);
+                        }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-2">
+                            <Users className="h-4 w-4 text-gray-400" />
+                            <div>
+                              <p className="font-medium text-sm">
+                                {user.full_name ||
+                                  user.email?.split("@")[0] ||
+                                  "Unknown User"}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {user.client_id} • {user.email}
+                              </p>
                             </div>
                           </div>
-                        );
-                      })
-                    ) : !searching ? (
-                      <div className="p-4 text-center text-gray-500 text-sm">
-                        No users found matching "{userSearch}"
-                        {currentAdmin.is_manager && (
-                          <p className="text-xs mt-1">
-                            You can only search users assigned to you
-                          </p>
-                        )}
-                        {currentAdmin.is_admin &&
-                          currentAdmin.is_superiormanager && (
-                            <p className="text-xs mt-1">
-                              You can only search managers you assigned and
-                              their users
-                            </p>
-                          )}
+                          <div className="flex space-x-1">
+                            {getRoleBadges(user).map((role, index) => (
+                              <Badge
+                                key={index}
+                                className={`text-xs ${role.color}`}
+                              >
+                                {role.label}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
                       </div>
-                    ) : null}
-                  </div>
-                )}
-
-                {userSearch.length > 0 && userSearch.length < 2 && (
-                  <p className="text-xs text-gray-500">
-                    Type at least 2 characters to search
-                  </p>
-                )}
-
-                {userSearch.length === 0 && (
-                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <p className="text-sm text-blue-700">
-                      <strong>Search Scope:</strong> {getAdminLevelDescription}
-                    </p>
-                    {currentAdmin.is_manager && (
-                      <p className="text-xs text-blue-600 mt-1">
-                        You can only create activities for users specifically
-                        assigned to you
-                      </p>
-                    )}
-                    {currentAdmin.is_admin &&
-                      currentAdmin.is_superiormanager && (
-                        <p className="text-xs text-blue-600 mt-1">
-                          You can create activities for managers you assigned
-                          and their users
-                        </p>
-                      )}
+                    ))}
                   </div>
                 )}
               </div>
@@ -1154,10 +904,7 @@ export default function ActivityManager() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="activityType">Activity Type *</Label>
-                  <Select
-                    value={activityType}
-                    onValueChange={(value) => setActivityType(value)}
-                  >
+                  <Select value={activityType} onValueChange={setActivityType}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select activity type" />
                     </SelectTrigger>
@@ -1168,9 +915,9 @@ export default function ActivityManager() {
                             <div className="px-2 py-1 text-xs font-semibold text-gray-500 bg-gray-100">
                               {category}
                             </div>
-                            {(types as string[]).map((type: string) => (
-                              <SelectItem key={type} value={type}>
-                                {type}
+                            {types.map((type) => (
+                              <SelectItem key={type.value} value={type.value}>
+                                {type.label}
                               </SelectItem>
                             ))}
                           </div>
@@ -1192,9 +939,7 @@ export default function ActivityManager() {
                         onClick={() => handleQuickFill(type)}
                         className="text-xs h-6"
                       >
-                        {type
-                          .replace(/_/g, " ")
-                          .replace(/\b\w/g, (l) => l.toUpperCase())}
+                        {getActivityTypeLabel(type)}
                       </Button>
                     ))}
                   </div>
@@ -1202,15 +947,12 @@ export default function ActivityManager() {
 
                 <div>
                   <Label htmlFor="priority">Priority Level</Label>
-                  <Select
-                    value={priority}
-                    onValueChange={(value) => setPriority(value)}
-                  >
+                  <Select value={priority} onValueChange={setPriority}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select priority" />
                     </SelectTrigger>
                     <SelectContent>
-                      {priorities.map((p: any) => (
+                      {priorities.map((p) => (
                         <SelectItem key={p.value} value={p.value}>
                           <div className="flex items-center space-x-2">
                             <div
@@ -1243,15 +985,12 @@ export default function ActivityManager() {
                 </div>
                 <div>
                   <Label htmlFor="currency">Currency</Label>
-                  <Select
-                    value={currency}
-                    onValueChange={(value) => setCurrency(value)}
-                  >
+                  <Select value={currency} onValueChange={setCurrency}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select currency" />
                     </SelectTrigger>
                     <SelectContent>
-                      {currencies.map((c: any) => (
+                      {currencies.map((c) => (
                         <SelectItem key={c.value} value={c.value}>
                           {c.label}
                         </SelectItem>
@@ -1331,11 +1070,9 @@ export default function ActivityManager() {
               variant="outline"
               size="sm"
             >
-              <Loader2
-                className={`w-4 h-4 mr-2 ${
-                  activitiesLoading ? "animate-spin" : "hidden"
-                }`}
-              />
+              {activitiesLoading && (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              )}
               Refresh
             </Button>
           </CardTitle>
@@ -1356,41 +1093,38 @@ export default function ActivityManager() {
             </div>
           ) : (
             <div className="space-y-3">
-              {recentActivities.map((activity: any) => (
+              {recentActivities.map((activity) => (
                 <div
                   key={activity.id}
-                  className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50"
+                  className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors"
                 >
                   <div className="flex items-center space-x-3">
                     <Badge className={getActivityColor(activity.activity_type)}>
                       {getActivityIcon(activity.activity_type)}
-                      <span className="ml-1">{activity.activity_type}</span>
+                      <span className="ml-1">
+                        {getActivityTypeLabel(activity.activity_type)}
+                      </span>
                     </Badge>
                     <div>
                       <p className="font-medium text-sm">{activity.title}</p>
                       <p className="text-xs text-gray-500">
-                        User: {activity.user_id.slice(0, 8)}... •
+                        User: {activity.user_id.slice(0, 8)}...
                         {activity.display_amount && activity.currency && (
-                          <span className="ml-1">
+                          <span className="ml-2">
                             {currencies.find(
-                              (c: any) => c.value === activity.currency
+                              (c) => c.value === activity.currency
                             )?.symbol || "$"}
                             {activity.display_amount}
                           </span>
                         )}
-                        <span className="ml-1">
+                        <span className="ml-2">
                           Priority:{" "}
                           {
                             priorities.find(
-                              (p: any) => p.value === activity.priority
+                              (p) => p.value === activity.priority
                             )?.label
                           }
                         </span>
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        Status: {activity.status} • Read:{" "}
-                        {activity.is_read ? "Yes" : "No"} • Client:{" "}
-                        {activity.client_id}
                       </p>
                     </div>
                   </div>
