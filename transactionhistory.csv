@@ -1421,7 +1421,7 @@ id,created_at,thType,thDetails,thPoi,thStatus,uuid,thEmail
 1808,2025-06-02 00:00:00+00,Withdraw,"100,000.00 CAD",BMO,Pending,adb41798-a6ac-400e-84fa-a02f54dbd6bf,Jean-pierre.martel@live.ca
 1809,2025-06-03 00:00:00+00,Withdraw,999 Eur,CREDIT MUTUEL,Pending,27b91881-6b9f-41a6-b2b9-ce408dfa8d2f,birou.mirela@gmail.com
 1810,2025-04-07 00:00:00+00,"Deposit ",197534 Eur," Gov.uk",Successful,defb41ca-5f2f-4df2-bb74-d667f8c9f021,dominique.jullien@festilands.fr
-1811,2025-06-03 00:00:00+00,Withdraw,50000 Eur,FR76  30027172610002196360546,Pending,defb41ca-5f2f-4df2-bb74-d667f8c9f021,dominique.jullien@festilands.fr
+1811,2025-06-03 00:00:00+00,Withdraw,50000 Eur,FR76  30027172610002196360546,Unsuccessful,defb41ca-5f2f-4df2-bb74-d667f8c9f021,dominique.jullien@festilands.fr
 1812,2025-06-03 00:00:00+00,"Withdraw ","24,399.5 Eur",FR7628233000017016658239781,Pending,fbf17ff1-0530-4d29-9f40-d1c1a7e934e7,lorilleuxdanielle29@gmail.com
 1813,2025-03-12 00:00:00+00,Deposit,4213 Eur,Binance,Successful,3233e425-a238-4d05-b454-04fa6832e4ce,jchrobak761@gmail.com
 1814,2025-06-13 00:00:00+00," Withdraw",20.000.00 Eur,FR72 2004 1001 0000 7561 9G02 148,Unsuccessful,4c1c8cec-8bed-4f6c-a447-3d803e591f48,Jeanlorenzisisco@gmail.com
@@ -1497,7 +1497,7 @@ id,created_at,thType,thDetails,thPoi,thStatus,uuid,thEmail
 1886,2025-03-18 00:00:00+00,Deposit,"2,600 Euro",Digitalchainbank,Successful,4b24e895-346f-4545-9926-1082d9e2fe6e,blizzardhasard@gmail.com
 1887,2025-03-23 00:00:00+00,Deposit,"3,000 Euro",Digitalchainbank,Successful,4b24e895-346f-4545-9926-1082d9e2fe6e,blizzardhasard@gmail.com
 1888,2025-04-25 00:00:00+00,Withdraw,48.577 Euro,Tel Aviv,Failed,4b24e895-346f-4545-9926-1082d9e2fe6e,blizzardhasard@gmail.com
-1889,2025-06-17 00:00:00+00,Withdraw,"88,300 Eur",Sogexia,Pending,285211ed-0165-494c-975f-1000cfbd3c5f,hagblea2g@yahoo.fr
+1889,2025-06-17 00:00:00+00,Withdraw,"88,300 Eur",Sogexia,Unsuccessful,285211ed-0165-494c-975f-1000cfbd3c5f,hagblea2g@yahoo.fr
 1890,2025-06-17 00:00:00+00,Withdraw,91312.71 Eur,France,Successful,ca78f785-da10-4571-9fee-06a899ea99f6,pb.aaron1@gmail.com
 1891,2025-05-15 00:00:00+00,Deposit," 8,800Eur",MoonPay,Successful,14595c87-ff80-45b3-9df7-80362b6aab57,sihameafzan9@gmail.com
 1892,2025-05-23 00:00:00+00,Deposit,"18,00 Eur","Truswallet ",Successful,14595c87-ff80-45b3-9df7-80362b6aab57,sihameafzan9@gmail.com
@@ -1820,7 +1820,7 @@ id,created_at,thType,thDetails,thPoi,thStatus,uuid,thEmail
 2215,2025-08-06 02:45:52.647082+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,7e8cac8d-9ba1-4ace-a397-a872491b4d4f,morenomiguelangel090@gmail.com
 2216,2025-08-07 06:27:25.01965+00,Payment of Tax,Payment for external fund extraction,Estonia Financial Intelligence Unit (FIU),Successful,75172e0a-a3c8-4da2-93fb-6dde2886d04d,reginaldomalongadou@gmail.com
 2217,2025-08-07 13:11:23.945985+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,10cb0865-b93e-45ab-bf99-badb21cb37a7,escobarlorenzo799@gmail.com
-2218,2025-08-08 00:00:00+00,Withdraw,"68351,00 EUR","Fintech-LCL ",Pending,beca9095-5b68-40ac-90c5-ab6ca494bdf2,valentin.bykoff@yahoo.fr
+2218,2025-08-08 00:00:00+00,Withdraw,"68351,00 EUR","Fintech-LCL ",Unsuccessful,beca9095-5b68-40ac-90c5-ab6ca494bdf2,valentin.bykoff@yahoo.fr
 2219,2024-05-23 00:00:00+00,Deposit Fonds,"€137,029.30",Crypto.com,Successful,d6348871-0578-45a4-8c47-f30ccc9277e4,fred.demanesse@gmail.com
 2220,2025-08-29 00:00:00+00,Withdrawal,"132,622.09 Eur",CCB To TBT,Successful,34249542-2369-4d3f-9256-ad71d9fe8147,hswinimer1@gmail.com
 2221,2025-08-08 00:00:00+00,Tax Payment,1.792 Eur,Tax Payment,Successful,34249542-2369-4d3f-9256-ad71d9fe8147,hswinimer1@gmail.com
@@ -1830,7 +1830,7 @@ id,created_at,thType,thDetails,thPoi,thStatus,uuid,thEmail
 2225,2025-08-22 07:03:55.23699+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,5f7f2933-9141-40a3-a657-0d76638617cc,cristhiansalas2416@gmail.com
 2226,2025-08-23 15:46:03.597375+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,8c282e69-817e-4bc6-a6d4-9ad65b1f29a5,zerbibyoyo13@gmail.com
 2227,2025-08-23 16:04:06.6125+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,8c282e69-817e-4bc6-a6d4-9ad65b1f29a5,zerbibyoyo13@gmail.com
-2228,2025-08-25 00:00:00+00,"Withdraw ","€34,257.00",La Banque Postale,Pending,d6348871-0578-45a4-8c47-f30ccc9277e4,fred.demanesse@gmail.com
+2228,2025-08-25 00:00:00+00,"Withdraw ","€34,257.00"," Fintech-La Banque Postale",Pending,d6348871-0578-45a4-8c47-f30ccc9277e4,fred.demanesse@gmail.com
 2229,2025-08-20 00:00:00+00,Tax Payment,"2,800.00 EUR",BMO,Successful,343903c4-63c5-4139-89ca-8a5f3160ac61,djhancock01@gmail.com
 2230,2025-05-09 00:00:00+00,Deposit Fonds,"70,000.00 €",Crypto.com,Successful,97eb6a17-38de-4534-a338-8e2b4a2239eb,casse_lina@live.fr
 2231,2025-05-12 00:00:00+00,Deposit Fonds,"60,000.46 €",Atomic Wallet,Successful,97eb6a17-38de-4534-a338-8e2b4a2239eb,casse_lina@live.fr
@@ -1865,3 +1865,133 @@ id,created_at,thType,thDetails,thPoi,thStatus,uuid,thEmail
 2261,2025-08-30 17:59:18.50309+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,9c963a21-87f7-4612-a157-59736dd6dadc,jessicaperellolopez@gmail.com
 2262,2025-09-01 14:58:06.552304+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,fc0d3796-7257-4efd-aa52-a366753157af,fatouros43@gmail.com
 2263,2025-09-01 14:58:36.293248+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,fc0d3796-7257-4efd-aa52-a366753157af,fatouros43@gmail.com
+2264,2025-09-02 00:00:00+00,Deposit,400.00 CAD,Digitalchainbank,Successful,98db25ab-9b14-40f4-89fb-57f48782530e,lamarreguy@hotmail.com
+2265,2025-09-03 10:29:25.724895+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,0452a5b2-6d59-45b4-ab79-7d42d8a42483,n.tasios@yahoo.gr
+2266,2025-09-03 10:38:20.418076+00,Payment of Tax,Payment for external fund extraction,Estonia Financial Intelligence Unit (FIU),Successful,ada5840d-d9d5-43f3-8c2f-e05d8eb2a78d,hubert.jud@web.de
+2267,2025-09-04 00:00:00+00,Withdraw,"42,372.00 € ",Fintech-CIC,Unsuccessful,c951f28e-0e5a-494c-8720-ed02a7b5916e,ilechooz@gmail.com
+2268,2025-03-05 00:00:00+00,Deposit Fonds,"149,040.00 €","Kraken ",Successful,fb537835-0ba8-4d83-ad26-091388bc8693,cendrillon48@hotmail.fr
+2269,2025-03-10 00:00:00+00,"Deposit Taxes ","10,000.00 €","Digital Chain Bank ",Successful,fb537835-0ba8-4d83-ad26-091388bc8693,cendrillon48@hotmail.fr
+2270,2025-03-11 00:00:00+00,Withdraw,"100,000.00 €",Mizrahi-Tefahot Bank,Unsuccessful,fb537835-0ba8-4d83-ad26-091388bc8693,cendrillon48@hotmail.fr
+2271,2025-09-08 13:09:07.810883+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,8e579ab0-8b4c-4e84-84a7-03494e8920fd,danbetta7@gmail.com
+2272,2025-09-08 18:23:17.220964+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,785fd4a3-6fc0-4227-93ed-8c07ebe94d33,geraldtherrien02@gmail.com
+2273,2025-09-09 00:00:00+00,Withdraw,"88,300 €",Fintech-B FOR BANK ( 40121208805 ),Pending,285211ed-0165-494c-975f-1000cfbd3c5f,hagblea2g@yahoo.fr
+2274,2025-09-09 00:00:00+00,"Deposit taxes ","€2,397.00 ","Digital Chain Bank (  comptable  ) ",Successful,d6348871-0578-45a4-8c47-f30ccc9277e4,fred.demanesse@gmail.com
+2275,2025-09-10 05:24:28.861763+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,29375560-f662-490a-8c64-4976d3bf4f1a,luigiserrao47@gmail.com
+2276,2025-06-30 00:00:00+00,Deposit Fonds,"25,000.00 €"," Revolut ",Successful,dfcdbe34-603d-478b-9d2d-a8a0c6bd7002,m.c.ar@free.fr
+2277,2025-07-05 00:00:00+00,"Deposit Fonds ","39,985.00 €","TVC Trader ",Successful,dfcdbe34-603d-478b-9d2d-a8a0c6bd7002,m.c.ar@free.fr
+2278,2025-07-06 00:00:00+00,"Deposit Taxes ","4,000.00 €","Digital Chain Bank ",Successful,dfcdbe34-603d-478b-9d2d-a8a0c6bd7002,m.c.ar@free.fr
+2279,2025-07-06 00:00:00+00,Withdraw,"40,000.00 €",Mizrahi-Tefahot Bank,Unsuccessful,dfcdbe34-603d-478b-9d2d-a8a0c6bd7002,m.c.ar@free.fr
+2280,2024-05-16 00:00:00+00,Deposit Fonds,"18,000.00 €",Paywar Ireland Ltd,Successful,cac5051e-5357-408a-9f25-25b3a8a03864,ajamart34@gmail.com
+2281,2025-04-05 00:00:00+00,"Deposit Fonds ","10,800.00 €","Own Funds ",Successful,cac5051e-5357-408a-9f25-25b3a8a03864,ajamart34@gmail.com
+2282,2025-04-09 00:00:00+00,"Deposit Taxes ","2,880.00 €"," Digital Chain Bank ",Unsuccessful,cac5051e-5357-408a-9f25-25b3a8a03864,ajamart34@gmail.com
+2283,2025-09-12 07:48:00.964592+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,189faf2e-3fba-4e4a-8da1-9818fa0cedc6,alexandreitani7@gmail.com
+2284,2025-09-12 07:52:58.716867+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,eb16a702-cc3f-48fb-963a-42c19b48c18f,chris.fonfon74@gmail.com
+2285,2024-05-16 00:00:00+00,Deposit Fonds,"61,230.00 €",Paywar Ireland Ltd.,Successful,73b9f2bf-67e9-4c87-b8de-2056ca20e1ff,maucuitlalayem@yahoo.fr
+2286,2025-04-09 00:00:00+00,Deposit Taxes,"4,243.00 €","Digital Chain Bank ",Successful,73b9f2bf-67e9-4c87-b8de-2056ca20e1ff,maucuitlalayem@yahoo.fr
+2287,2025-04-11 00:00:00+00,Withdraw,"61,230.00 €",Mizrahi-Tefahot Bank,Unsuccessful,73b9f2bf-67e9-4c87-b8de-2056ca20e1ff,maucuitlalayem@yahoo.fr
+2288,2025-09-12 00:00:00+00,Withdraw,"28,800.00 €",Fintech-Belfius,Pending,cac5051e-5357-408a-9f25-25b3a8a03864,ajamart34@gmail.com
+2289,2025-09-13 00:00:00+00,Withdraw,"71,200.00 Eur",Credit Mutuel,Unsuccessful,59e44025-577f-4174-ab1b-a0e14a217ae1,hubertleperlier@gmail.com
+2290,2025-09-13 10:39:23.485635+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,eb16a702-cc3f-48fb-963a-42c19b48c18f,chris.fonfon74@gmail.com
+2291,2025-09-13 10:39:23.696964+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,eb16a702-cc3f-48fb-963a-42c19b48c18f,chris.fonfon74@gmail.com
+2292,2025-09-13 10:40:25.601293+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,eb16a702-cc3f-48fb-963a-42c19b48c18f,chris.fonfon74@gmail.com
+2293,2025-09-13 14:54:13.21885+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,eb16a702-cc3f-48fb-963a-42c19b48c18f,chris.fonfon74@gmail.com
+2294,2025-09-13 15:09:12.173792+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,eb16a702-cc3f-48fb-963a-42c19b48c18f,chris.fonfon74@gmail.com
+2295,2025-02-04 00:00:00+00,Deposit,"42,030.00 Eur","Binance ",Successful,d35cc9bb-a6a1-4e98-81cf-34f263f85b0a,nikolitsasathan@gmail.com
+2296,2025-02-07 00:00:00+00,Deposit,"20,200.00 Eur",Kraken.com,Successful,d35cc9bb-a6a1-4e98-81cf-34f263f85b0a,nikolitsasathan@gmail.com
+2297,2025-02-14 00:00:00+00,"Deposit ","16,000‬.00 Eur",Binance,Successful,d35cc9bb-a6a1-4e98-81cf-34f263f85b0a,nikolitsasathan@gmail.com
+2298,2025-02-17 00:00:00+00," Withdraw","50,500.00 Eur ",Lloyds Bank,Failed,d35cc9bb-a6a1-4e98-81cf-34f263f85b0a,nikolitsasathan@gmail.com
+2299,2025-02-19 00:00:00+00," Withdraw","63,200.00 Eur",Royal Bank of Scotland (RBS),Failed,d35cc9bb-a6a1-4e98-81cf-34f263f85b0a,nikolitsasathan@gmail.com
+2300,2025-09-15 00:00:00+00,Deposit,"7,120.00 Eur",Digitalchainbank,Successful,59e44025-577f-4174-ab1b-a0e14a217ae1,hubertleperlier@gmail.com
+2301,2025-09-10 00:00:00+00,"Deposit Taxes ",1.027.00 €,"Digital Chain Bank -Fintech ",Successful,d6348871-0578-45a4-8c47-f30ccc9277e4,fred.demanesse@gmail.com
+2302,2025-09-15 00:00:00+00,Withdraw,"102,772.02 €",Fintech-La Banque Postale,Pending,d6348871-0578-45a4-8c47-f30ccc9277e4,fred.demanesse@gmail.com
+2303,2025-09-15 14:14:55.949202+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,189faf2e-3fba-4e4a-8da1-9818fa0cedc6,alexandreitani7@gmail.com
+2304,2025-09-15 00:00:00+00,Withdraw,"64,985.00 €",Fintech-Revolut,Pending,dfcdbe34-603d-478b-9d2d-a8a0c6bd7002,m.c.ar@free.fr
+2305,2025-09-16 04:43:57.778781+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,eb16a702-cc3f-48fb-963a-42c19b48c18f,chris.fonfon74@gmail.com
+2306,2025-09-16 00:00:00+00,Withdraw,"38,922.00 €",Fintech-LCL (Le Crédit Lyonnais),Pending,edc5d53e-4c29-4911-b916-4809b33bcbc5,bmaingot17@gmail.com
+2308,2019-12-19 00:00:00+00,Deposit,"20,000.00 Eur",Digitalchainbank,Successful,5b1e5ff8-9215-49f9-a83c-0410037a258c,eric.canale@icloud.com
+2309,2019-12-21 00:00:00+00,Withdraw,"200,000.00 Eur",Mizrahi-Tefahot,Unsuccessful,5b1e5ff8-9215-49f9-a83c-0410037a258c,eric.canale@icloud.com
+2310,2020-01-09 00:00:00+00,Deposit,"25,000.00 Eur",Digitalchainbank,Successful,5b1e5ff8-9215-49f9-a83c-0410037a258c,eric.canale@icloud.com
+2311,2020-01-10 00:00:00+00,Withdraw,"450,000.00 Eur",Mizrahi-Tefahot,Unsuccessful,5b1e5ff8-9215-49f9-a83c-0410037a258c,eric.canale@icloud.com
+2312,2020-02-04 00:00:00+00,Deposit,"15,000.00 Eur",Digitalchainbank,Successful,5b1e5ff8-9215-49f9-a83c-0410037a258c,eric.canale@icloud.com
+2313,2020-02-05 00:00:00+00,Withdraw,"600,000.00 Eur",Mizrahi-Tefahot,Unsuccessful,5b1e5ff8-9215-49f9-a83c-0410037a258c,eric.canale@icloud.com
+2314,2025-09-17 00:00:00+00,Withdrawal,"6,000.00 EUR",BMO,Unsuccessful,f7907200-247a-4bf5-b9fe-8151005ce07f,nochta@rogers.com
+2315,2025-09-16 00:00:00+00,Tax Payment,885.30 EUR,BMO,Successful,f7907200-247a-4bf5-b9fe-8151005ce07f,nochta@rogers.com
+2316,2025-09-18 13:27:56.142411+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,c0e0cc32-7835-4628-a060-d56b64da3152,voyage2012a@gmail.com
+2317,2025-08-10 00:00:00+00,Deposit,"5,250.00 Eur","Crypto.com ",Successful,d8b15d33-39ec-4b5e-bb20-fb6433bee447,bonngies@telus.net
+2318,2025-08-15 00:00:00+00,Deposit,"3,000.00 Eur","Crypto.com ",Successful,d8b15d33-39ec-4b5e-bb20-fb6433bee447,bonngies@telus.net
+2319,2025-08-28 00:00:00+00,Deposit,"2,115.64 Eur","Crypto.com ",Successful,d8b15d33-39ec-4b5e-bb20-fb6433bee447,bonngies@telus.net
+2320,2025-09-08 00:00:00+00,Withdrawal,"10,200.00 Eur","Crypto.com ",Unsuccessful,d8b15d33-39ec-4b5e-bb20-fb6433bee447,bonngies@telus.net
+2321,2025-09-10 00:00:00+00,Withdrawal,"9,000.00 Eur ","Crypto.com ",Unsuccessful,d8b15d33-39ec-4b5e-bb20-fb6433bee447,bonngies@telus.net
+2322,2025-09-11 00:00:00+00,Withdrawal,950.00 Eur,"Crypto.com ",Pending,d8b15d33-39ec-4b5e-bb20-fb6433bee447,bonngies@telus.net
+2323,2025-09-18 00:00:00+00,"Withdraw ","500,000.00 Eur",0x1531CBcaAAd93ebC789d79c7C615A2B4732C31F,Successful,e3ffbe0e-b97a-4584-8ed2-a1c62a493026,info@spilmont.com
+2324,2025-09-18 00:00:00+00,"Withdraw ",250.00 Eur,0x1531CBcaAAd93ebC789d79c7C615A2B4732C31F,Successful,c951f28e-0e5a-494c-8720-ed02a7b5916e,ilechooz@gmail.com
+2325,2025-06-19 00:00:00+00,Withdraw,"76,980.00 Eur",Credit Agricole,Pending,189faf2e-3fba-4e4a-8da1-9818fa0cedc6,alexandreitani7@gmail.com
+2326,2025-09-19 00:00:00+00,"Deposit ","71,200.00 Eur",Fintech,Successful,59e44025-577f-4174-ab1b-a0e14a217ae1,hubertleperlier@gmail.com
+2327,2025-09-19 00:00:00+00,Deposit,"6,408.00 Eur"," Fintech",Successful,59e44025-577f-4174-ab1b-a0e14a217ae1,hubertleperlier@gmail.com
+2328,2025-09-19 00:00:00+00,Refund Deposit,"47,350 Eur",CW To CCB,Successful,8bb7ef3a-4c8f-4291-b14d-ed988afad5e8,robertleblanc1@hotmail.com
+2329,2025-09-20 07:28:15.529468+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,eb16a702-cc3f-48fb-963a-42c19b48c18f,chris.fonfon74@gmail.com
+2330,2025-09-21 06:27:41.79219+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,fafdcfcc-22fc-412e-b08c-267208f156fe,juanbautistarp@gmail.com
+2331,2025-09-22 00:00:00+00,Withdraw,"84,236.00 Eur",Credit Mutuel,Pending,eb16a702-cc3f-48fb-963a-42c19b48c18f,chris.fonfon74@gmail.com
+2332,2025-09-22 17:02:50.10883+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,e203b164-5e3f-4aba-a4df-9452dfb94a92,inmaroldan1900@gmail.com
+2333,2025-09-22 17:04:05.607529+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,e203b164-5e3f-4aba-a4df-9452dfb94a92,inmaroldan1900@gmail.com
+2334,2025-09-02 00:00:00+00,Deposit,"10,000 USD","Crypto.com ",Successful,d90b652f-a1fb-4a67-8a17-d36a27070bea,suhailmumtaz@yahoo.com
+2335,2025-09-05 00:00:00+00,Deposit,"7,635 USD","Crypto.com ",Successful,d90b652f-a1fb-4a67-8a17-d36a27070bea,suhailmumtaz@yahoo.com
+2336,2025-09-14 00:00:00+00,Deposit,"15,000 USD","Crypto.com ",Successful,d90b652f-a1fb-4a67-8a17-d36a27070bea,suhailmumtaz@yahoo.com
+2337,2025-09-16 00:00:00+00,Withdrawal,"25,000  USD",Barclays,Pending,d90b652f-a1fb-4a67-8a17-d36a27070bea,suhailmumtaz@yahoo.com
+2338,2025-08-02 00:00:00+00,Withdrawal,"96,000 USD",Lloyds Bank,Unsuccessful,d90b652f-a1fb-4a67-8a17-d36a27070bea,suhailmumtaz@yahoo.com
+2339,2025-09-16 00:00:00+00,Deposit,2450 USD,Binance,Successful,d90b652f-a1fb-4a67-8a17-d36a27070bea,suhailmumtaz@yahoo.com
+2340,2025-08-04 00:00:00+00,Deposit,"116,000.43 USD",Crypto.com,Successful,d90b652f-a1fb-4a67-8a17-d36a27070bea,suhailmumtaz@yahoo.com
+2341,2025-09-23 03:24:56.031432+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,73dbf0ed-478e-40e3-a87d-fff548eaa40b,marylou.parmentier@orange.fr
+2342,2025-09-23 00:00:00+00,Deposit,"54,018.40 Euro",BNP Paribas Fortis,Pending,4cde9dff-b898-4197-b85d-17d59a2ae151,crefcoeurfabian421@gmail.com
+2343,2025-09-23 09:12:08.444832+00,Payment of Tax,Payment for external fund extraction,Estonia Financial Intelligence Unit (FIU),Successful,2873a395-0b6c-489d-9c69-de3bceabb6f2,barbara@publistep.it
+2344,2025-09-23 10:00:35.406216+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,90b9ac68-8bd2-4fe8-9f3f-707d3c9ce99b,helenemey69@gmail.com
+2345,2025-09-23 12:58:42.717754+00,Payment of Tax,Payment for external fund extraction,Estonia Financial Intelligence Unit (FIU),Successful,2873a395-0b6c-489d-9c69-de3bceabb6f2,barbara@publistep.it
+2346,2025-09-23 00:00:00+00,Deposit Taxes," 1.000,00 €","Digital Chain Bank ",Pending,97eb6a17-38de-4534-a338-8e2b4a2239eb,casse_lina@live.fr
+2347,2025-09-23 00:00:00+00,Withdraw,"22.710,75 €",Fintech-BNP Paribas,Pending,97eb6a17-38de-4534-a338-8e2b4a2239eb,casse_lina@live.fr
+2348,2025-08-01 00:00:00+00,Deposit,"125,000 eur"," Crypto.com ",Successful,42a0d5cf-a9fc-4814-a5f4-4a5de9fdc08e,sylvainloiselle89@gmail.com
+2349,2025-08-02 00:00:00+00,Deposit,"3,345.26 eur"," Crypto.com ",Successful,42a0d5cf-a9fc-4814-a5f4-4a5de9fdc08e,sylvainloiselle89@gmail.com
+2350,2025-08-06 00:00:00+00,Withdrawal,"120,000 eur",Exodus,Unsuccessful,42a0d5cf-a9fc-4814-a5f4-4a5de9fdc08e,sylvainloiselle89@gmail.com
+2351,2025-08-22 00:00:00+00,Withdrawal,"50,000 eur",Exodus,Pending,42a0d5cf-a9fc-4814-a5f4-4a5de9fdc08e,sylvainloiselle89@gmail.com
+2352,2024-10-19 00:00:00+00,Deposit Fonds,"65,100.00 Eur",Crypto.com,Successful,310e4071-59cc-4cb3-a562-154862f9d27b,alaintrottet@orange.fr
+2353,2024-10-21 00:00:00+00,Deposit Taxes,"3,255.00 Eur",Digitalchainbank,Successful,310e4071-59cc-4cb3-a562-154862f9d27b,alaintrottet@orange.fr
+2354,2024-10-21 00:00:00+00,Withdraw,"32,550.00 Eur",Mizrahi-Tefahot,Unsuccessful,310e4071-59cc-4cb3-a562-154862f9d27b,alaintrottet@orange.fr
+2355,2025-09-24 00:00:00+00,Withdraw,"51,360.00 Eur"," Societe Generale",Pending,04ee7b5d-19cd-4a79-9e17-2f1321945e61,fernandcassou@gmail.com
+2356,2025-04-20 00:00:00+00,Deposit Fonds,"51,360.80 Eur ",Crypto.com,Successful,2210336f-2b8d-4f8e-9c5d-6411fe9c184f,dussutourjeanjacques@gmail.com
+2357,2025-05-02 00:00:00+00,Deposit Taxes,"5,136.00 Eur",Digitalchainbank,Unsuccessful,2210336f-2b8d-4f8e-9c5d-6411fe9c184f,dussutourjeanjacques@gmail.com
+2358,2025-05-02 00:00:00+00,Withdraw,"51,360.80 Eur",Mizrahi-Tefahot,Unsuccessful,2210336f-2b8d-4f8e-9c5d-6411fe9c184f,dussutourjeanjacques@gmail.com
+2359,2025-09-24 13:02:51.206634+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,310e4071-59cc-4cb3-a562-154862f9d27b,alaintrottet@orange.fr
+2360,2025-09-25 00:00:00+00,Withdraw,"51,360.80 Eur",FR76 1558 9335 7306 0574 7824 015 ( CMSO ),Pending,2210336f-2b8d-4f8e-9c5d-6411fe9c184f,dussutourjeanjacques@gmail.com
+2361,2025-07-19 00:00:00+00,Deposit Fonds,"52,234.95 Eur",Westmile Invest L.P.,Successful,ae634f5f-6368-4521-a2c3-877743fb05a9,dominique.lequeu@bbox.fr
+2362,2025-07-21 00:00:00+00,Deposit Taxes,"1,968.00 Eur"," Digital Chain Bank",Successful,ae634f5f-6368-4521-a2c3-877743fb05a9,dominique.lequeu@bbox.fr
+2363,2025-07-21 00:00:00+00," Withdraw","19,680.00 Eur",Mizrahi-Tefahot,Unsuccessful,ae634f5f-6368-4521-a2c3-877743fb05a9,dominique.lequeu@bbox.fr
+2364,2025-09-25 00:00:00+00,Withdraw,"65,100.00 Eur",Fintech-Caisse D'EPARGNE,Pending,310e4071-59cc-4cb3-a562-154862f9d27b,alaintrottet@orange.fr
+2365,2025-09-28 16:26:52.82651+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,fc2f9df3-be3d-46d6-836f-3b128b5740fc,hksirattana@gmail.com
+2366,2025-09-26 00:00:00+00,"Deposit Fonds ",999.00 Eur,Digital Chain Bank,Successful,310e4071-59cc-4cb3-a562-154862f9d27b,alaintrottet@orange.fr
+2367,2025-09-23 00:00:00+00,"Deposit Fonds ","1,000.00 Eur ",Digital Chain Bank,Successful,97eb6a17-38de-4534-a338-8e2b4a2239eb,casse_lina@live.fr
+2368,2025-09-24 00:00:00+00,"Deposit Fonds ",999.00 Eur,"Digital Chain Bank ",Successful,97eb6a17-38de-4534-a338-8e2b4a2239eb,casse_lina@live.fr
+2369,2025-09-24 00:00:00+00,Deposit Fonds,999.00 Eur,"Digital Chain Bank ",Successful,97eb6a17-38de-4534-a338-8e2b4a2239eb,casse_lina@live.fr
+2370,2025-09-25 00:00:00+00,"Deposit Fonds ","2,513.00 Eur",Digital Chain Bank,Successful,97eb6a17-38de-4534-a338-8e2b4a2239eb,casse_lina@live.fr
+2371,2025-05-21 00:00:00+00,Deposit Taxes,"3,255.00  Eur",Digital Chain Bank,Successful,51c9ecc7-7cea-456b-9bf4-58fd61731711,mmessaadia828@gmail.com
+2372,2025-05-21 00:00:00+00,Deposit Taxes,"6,757.00 Eur",Digital Chain Bank,Successful,43505ff3-a355-4d73-adcf-e1a5542da016,ayikoearmand@gmail.com
+2373,2025-09-29 00:00:00+00,Withdraw,"52,234.00 Eur"," Fintech-Caisse D'EPARGNE ( FR7614445004000441255303603 ) ",Unsuccessful,ae634f5f-6368-4521-a2c3-877743fb05a9,dominique.lequeu@bbox.fr
+2374,2025-09-29 16:26:07.717899+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,b9d6dda7-cb1c-4e74-b3bf-d72e4ab121d8,bdethibaultone@gmail.com
+2375,2025-09-30 07:44:11.528163+00,Payment of Tax,Payment for external fund extraction,Estonia Financial Intelligence Unit (FIU),Successful,e05f1413-54d4-41a9-84e9-7aad91999d8d,tsagosgeorge29@gmail.com
+2376,2025-09-30 07:48:04.313205+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,8733cf57-9965-4841-acdc-3481f47776d9,giancarlocastelli1919@gmail.com
+2377,2025-09-30 08:37:27.715974+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,934efc00-b6fe-46be-9a22-f739fe5ea1aa,vgranas@hotmail.com
+2378,2025-09-30 00:00:00+00,Withdraw,"90,120.00 Eur",Fintech-La Banque Posta,Pending,43505ff3-a355-4d73-adcf-e1a5542da016,ayikoearmand@gmail.com
+2379,2025-02-01 00:00:00+00,"Deposit ","13,000 Eur","Crypto.com ",Successful,462fae5b-19c3-4baf-a7e8-bcfd57fe884e,smithou1@hotmail.com
+2380,2025-04-07 00:00:00+00,"Deposit ","14,000 Eur","Crypto.com ",Successful,462fae5b-19c3-4baf-a7e8-bcfd57fe884e,smithou1@hotmail.com
+2381,2025-08-19 00:00:00+00,"Deposit ","35,000 Eur","Crypto.com ",Successful,462fae5b-19c3-4baf-a7e8-bcfd57fe884e,smithou1@hotmail.com
+2382,2025-09-07 00:00:00+00,Withdrawal,"50,000 Eur"," Ledger",Unsuccessful,462fae5b-19c3-4baf-a7e8-bcfd57fe884e,smithou1@hotmail.com
+2383,2025-10-01 08:44:52.976646+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,b9d6dda7-cb1c-4e74-b3bf-d72e4ab121d8,bdethibaultone@gmail.com
+2384,2025-07-19 00:00:00+00,Deposit Fonds,"128,500.00 Eur",Vivagopro,Successful,a4d497e2-b266-4343-8d6a-ac51aa95f928,marie.techer6@orange.fr
+2385,2025-07-21 00:00:00+00,Deposit Taxes,"9,999.00 Eur",Digital Chain Bank,Successful,a4d497e2-b266-4343-8d6a-ac51aa95f928,marie.techer6@orange.fr
+2386,2025-07-21 00:00:00+00,Withdraw,"99,999.00 Eur",FIMBank plc,Unsuccessful,a4d497e2-b266-4343-8d6a-ac51aa95f928,marie.techer6@orange.fr
+2387,2025-10-01 11:26:22.044549+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,8117d247-bbcf-467a-aa13-d734e91dd9fd,loulakisnikitas12@gmail.com
+2388,2025-10-02 09:00:32.670263+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,c0229232-132b-4ce0-ada3-8852103bb8a0,demetrio33@alice.it
+2389,2025-01-23 00:00:00+00,"Deposit ","58,800.00 Eur","Crypto.com ",Successful,a3273fbb-5d56-499b-bb6a-08961fab94ba,wallypomata@gmail.com
+2390,2025-01-28 00:00:00+00,"Deposit "," 33,600.00 Eur ","Crypto.com ",Successful,a3273fbb-5d56-499b-bb6a-08961fab94ba,wallypomata@gmail.com
+2391,2025-02-17 00:00:00+00,"Deposit ","42,000.00 Eur","Crypto.com ",Successful,a3273fbb-5d56-499b-bb6a-08961fab94ba,wallypomata@gmail.com
+2392,2025-10-03 08:37:44.182986+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,c0229232-132b-4ce0-ada3-8852103bb8a0,demetrio33@alice.it
+2393,2025-10-03 00:00:00+00,Withdraw,"35,000.00 Eur ",Credit Mutuel,Pending,89fb0b70-5893-44a5-bbab-8fa434df1343,djamelmalou58@gmail.com
+2394,2025-10-04 07:29:15.803562+00,Deposit,Funding Account,Estonia Financial Intelligence Unit (FIU),Successful,f95fbfa3-8d20-4c0d-9f1d-33240d81ea95,corradi.domizio@virgilio.it

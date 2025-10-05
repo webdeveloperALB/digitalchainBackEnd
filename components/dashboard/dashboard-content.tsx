@@ -1602,15 +1602,7 @@ function DashboardContent({
         <div className="mb-6 sm:mb-8">
           <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 leading-tight">
             Welcome, {displayName}!
-            {isNewUser && (
-              <Sparkles className="inline-block ml-2 h-5 w-5 sm:h-6 sm:w-6 text-[#F26623]" />
-            )}
           </h1>
-          <p className="text-sm sm:text-base text-gray-600 mt-1">
-            {isNewUser
-              ? "Thank you for joining Digital Chain Bank! Here's your new account overview"
-              : "Here's your account overview and recent activity"}
-          </p>
         </div>
 
         {error && (
