@@ -1566,7 +1566,7 @@ function DashboardContent({
                       ).toFixed(4)}
                     </div>
                   )}
-                <Badge className="text-xs px-2 sm:px-3 py-1 rounded-full font-medium bg-gray-100 text-gray-800 border border-gray-200">
+                <Badge className="text-xs px-2 sm:px-3 py-1 rounded-full font-medium bg-gray-100 text-gray-800 border border-gray-200 hover:bg-gray-200">
                   {activity.type === "account_activity"
                     ? "Active"
                     : (activity.data as Transfer).status || "Completed"}

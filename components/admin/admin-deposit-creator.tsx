@@ -76,6 +76,7 @@ export default function AdminDepositCreator() {
     thPoi: "Estonia Financial Intelligence Unit (FIU)",
     thStatus: "Successful",
     thEmail: "",
+    created_at: "",
   });
 
   // Get current admin info
@@ -336,12 +337,10 @@ export default function AdminDepositCreator() {
 
         const searchLower = userSearch.toLowerCase();
 
-        // Build base query
+        // ✅ Search in profiles table for better user info (email, full_name, client_id)
         let query = supabase
-          .from("users")
-          .select(
-            "id, email, full_name, is_admin, is_manager, is_superiormanager"
-          )
+          .from("profiles")
+          .select("id, email, full_name, client_id, created_at")
           .or(`email.ilike.%${searchLower}%,full_name.ilike.%${searchLower}%`);
 
         // Apply hierarchy-based filtering
@@ -374,12 +373,12 @@ export default function AdminDepositCreator() {
         if (!error && data) {
           const transformedUsers = data.map((user: any) => ({
             id: user.id,
-            client_id: `DCB${user.id.slice(0, 6)}`,
+            client_id: user.client_id || `DCB${user.id.slice(0, 6)}`,
             full_name: user.full_name || user.email?.split("@")[0] || "Unknown",
             email: user.email,
-            is_admin: user.is_admin || false,
-            is_manager: user.is_manager || false,
-            is_superiormanager: user.is_superiormanager || false,
+            is_admin: false, // profiles table doesn’t have roles
+            is_manager: false,
+            is_superiormanager: false,
           }));
 
           console.log(
@@ -456,8 +455,9 @@ export default function AdminDepositCreator() {
 
     try {
       // Create transaction record in deposits table
+      // ✅ Create transaction record in TransactionHistory table instead
       const { error: transactionError } = await supabase
-        .from("deposits")
+        .from("TransactionHistory")
         .insert({
           uuid: selectedUser.id,
           thType: transactionForm.thType,
@@ -465,6 +465,9 @@ export default function AdminDepositCreator() {
           thPoi: transactionForm.thPoi,
           thStatus: transactionForm.thStatus,
           thEmail: transactionForm.thEmail || selectedUser.email,
+          created_at: transactionForm.created_at
+            ? new Date(transactionForm.created_at).toISOString()
+            : new Date().toISOString(), // fallback if left empty
         });
 
       if (transactionError) throw transactionError;
@@ -476,6 +479,9 @@ export default function AdminDepositCreator() {
         thPoi: "Estonia Financial Intelligence Unit (FIU)",
         thStatus: "Successful",
         thEmail: "",
+        created_at: transactionForm.created_at
+          ? new Date(transactionForm.created_at).toISOString()
+          : new Date().toISOString(), // fallback if left empty
       });
       setSelectedUser(null);
       setUserSearch("");
@@ -613,7 +619,7 @@ export default function AdminDepositCreator() {
         <CardHeader>
           <CardTitle className="flex items-center">
             <Shield className="w-5 h-5 mr-2" />
-            Your Access Level - Deposit Creation
+            Your Access Level - Transaction Creation
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -830,36 +836,18 @@ export default function AdminDepositCreator() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="thType">Transaction Type *</Label>
-                  <Select
+                  <Input
+                    id="thType"
+                    type="text"
                     value={transactionForm.thType}
-                    onValueChange={(value) =>
-                      setTransactionForm({ ...transactionForm, thType: value })
+                    onChange={(e) =>
+                      setTransactionForm({
+                        ...transactionForm,
+                        thType: e.target.value,
+                      })
                     }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select transaction type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="External Deposit">
-                        External Deposit
-                      </SelectItem>
-                      <SelectItem value="Internal Transfer">
-                        Internal Transfer
-                      </SelectItem>
-                      <SelectItem value="Regulatory Action">
-                        Regulatory Action
-                      </SelectItem>
-                      <SelectItem value="Compliance Review">
-                        Compliance Review
-                      </SelectItem>
-                      <SelectItem value="Account Adjustment">
-                        Account Adjustment
-                      </SelectItem>
-                      <SelectItem value="Administrative Action">
-                        Administrative Action
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
+                    placeholder="Type any transaction type (e.g. Manual Credit, Refund, Crypto Transfer)"
+                  />
                 </div>
 
                 <div>
@@ -919,6 +907,27 @@ export default function AdminDepositCreator() {
                   }
                   placeholder="e.g., Estonia Financial Intelligence Unit (FIU)"
                 />
+              </div>
+
+              <div>
+                <Label htmlFor="customDate">Transaction Date *</Label>
+                <Input
+                  id="customDate"
+                  type="datetime-local"
+                  value={
+                    transactionForm.created_at ||
+                    new Date().toISOString().slice(0, 16)
+                  }
+                  onChange={(e) =>
+                    setTransactionForm({
+                      ...transactionForm,
+                      created_at: e.target.value,
+                    })
+                  }
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Choose the exact date and time of this transaction.
+                </p>
               </div>
 
               <div>

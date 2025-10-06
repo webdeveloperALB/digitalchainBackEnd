@@ -1069,7 +1069,7 @@ export default function EnhancedAdminDashboard({
             </TabsTrigger>
             <TabsTrigger value="deposits" className="flex items-center">
               <Download className="w-4 h-4 mr-2" />
-              Deposits
+              Transactions
             </TabsTrigger>
             <TabsTrigger value="presence" className="flex items-center">
               <Wifi className="w-4 h-4 mr-2" />
