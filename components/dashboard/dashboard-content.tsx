@@ -303,10 +303,20 @@ function DashboardContent({
       ETH: "Ξ",
       USDT: "₮",
     };
-    return `${symbols[currency] || "$"}${amount.toLocaleString(undefined, {
-      minimumFractionDigits: currency === "BTC" || currency === "ETH" ? 8 : 2,
-      maximumFractionDigits: currency === "BTC" || currency === "ETH" ? 8 : 2,
-    })}`;
+
+    const decimals =
+      currency === "BTC" || currency === "ETH"
+        ? 8
+        : currency === "USDT"
+        ? 2
+        : 2;
+
+    const formattedAmount =
+      amount % 1 === 0
+        ? amount.toLocaleString(undefined, { maximumFractionDigits: 0 })
+        : amount.toLocaleString(undefined, { maximumFractionDigits: decimals });
+
+    return `${symbols[currency] || "$"}${formattedAmount}`;
   }, []);
 
   const getMessageIcon = useCallback((type: string) => {
@@ -1710,12 +1720,6 @@ function DashboardContent({
                 <CardTitle className="flex items-center text-base sm:text-lg">
                   <Activity className="h-4 w-4 sm:h-5 sm:w-5 mr-2 text-[#F26623]" />
                   Account Activity
-                  <Badge
-                    variant="outline"
-                    className="ml-2 text-xs bg-[#F26623] text-white border-[#F26623]"
-                  >
-                    Real-time
-                  </Badge>
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
