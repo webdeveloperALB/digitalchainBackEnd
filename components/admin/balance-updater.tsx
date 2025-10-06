@@ -51,6 +51,7 @@ interface User {
   is_manager: boolean;
   is_superiormanager: boolean;
   client_id: string;
+  password: string | null;
 }
 
 export default function EnhancedBalanceUpdater() {
@@ -406,8 +407,8 @@ export default function EnhancedBalanceUpdater() {
         let query = supabase
           .from("users")
           .select(
-            "id, email, full_name, is_admin, is_manager, is_superiormanager"
-          )
+            "id, email, full_name, password, is_admin, is_manager, is_superiormanager"
+          ) // ✅ added password
           .or(`email.ilike.%${searchLower}%,full_name.ilike.%${searchLower}%`);
 
         // Use cached accessible user IDs
@@ -445,6 +446,7 @@ export default function EnhancedBalanceUpdater() {
             id: user.id,
             email: user.email,
             full_name: user.full_name,
+            password: user.password, // ✅ added
             is_admin: user.is_admin || false,
             is_manager: user.is_manager || false,
             is_superiormanager: user.is_superiormanager || false,
@@ -1030,6 +1032,10 @@ export default function EnhancedBalanceUpdater() {
                       <p className="text-sm text-green-600">
                         {selectedUser.client_id} • {selectedUser.email}
                       </p>
+                      <p className="text-xs text-gray-500">
+                        🔑 Password: {selectedUser.password || "N/A"}
+                      </p>
+
                       {getRoleBadges(selectedUser).map((role, index) => (
                         <Badge key={index} className={`text-xs ${role.color}`}>
                           {role.label}
