@@ -172,7 +172,6 @@ export default function PaymentsSection({ userProfile }: PaymentsSectionProps) {
             onClick={() => setShowPaymentForm(true)}
             className="bg-[#F26623] hover:bg-[#E55A1F]"
           >
-            <Receipt className="w-4 h-4 mr-2" />
             New Payment
           </Button>
         </div>
