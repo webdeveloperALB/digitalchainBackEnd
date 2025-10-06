@@ -136,8 +136,7 @@ export default function MessageSection({ userProfile }: MessageSectionProps) {
           <div>
             <h2 className="text-2xl font-bold">Messages</h2>
             <p className="text-sm text-gray-600">
-              Welcome {userProfile.full_name} (Client ID:{" "}
-              {userProfile.client_id})
+              Welcome {userProfile.full_name}
             </p>
           </div>
           <div className="flex items-center gap-4">
@@ -156,11 +155,7 @@ export default function MessageSection({ userProfile }: MessageSectionProps) {
             <Card>
               <CardContent className="p-6 text-center">
                 <Mail className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-                <p className="text-gray-500">No messages in database</p>
-                <p className="text-sm text-gray-400 mt-2">
-                  Messages will appear here automatically when you register or
-                  when admin sends them
-                </p>
+                <p className="text-gray-500">No messages</p>
               </CardContent>
             </Card>
           ) : (
