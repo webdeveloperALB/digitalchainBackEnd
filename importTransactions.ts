@@ -14,7 +14,7 @@ interface CsvTransaction {
   thDetails: string;
   thPoi: string;
   thStatus: string;
-  uuid: string; // ignored, we’ll use real UUIDs
+  uuid: string; // original file has it, but we’ll override it with the real one from users
   thEmail: string;
 }
 
@@ -26,7 +26,7 @@ function capitalizeFirst(str: string): string {
 async function main() {
   const transactions: CsvTransaction[] = [];
 
-  // 1️⃣ Read transactionhistory.csv
+  // 1️⃣ Read CSV
   await new Promise<void>((resolve, reject) => {
     fs.createReadStream("transactionhistory.csv") // <-- name your file exactly
       .pipe(csv())
@@ -42,65 +42,46 @@ async function main() {
         });
       })
       .on("end", () => {
-        console.log(`✅ Loaded ${transactions.length} transactions from CSV`);
+        console.log(`✅ Loaded ${transactions.length} rows from CSV`);
         resolve();
       })
       .on("error", reject);
   });
 
-// 2️⃣ Fetch ALL user UUIDs (handle pagination)
-console.log("🔍 Fetching all user UUIDs from Supabase...");
-
-const emailToUuid: Record<string, string> = {};
-const PAGE_SIZE = 1000;
-let from = 0;
-let to = PAGE_SIZE - 1;
-
-while (true) {
-  const { data: batch, error } = await supabase
+  // 2️⃣ Fetch all user UUIDs (for matching by email)
+  console.log("🔍 Fetching user UUIDs from database...");
+  const { data: allUsers, error: usersError } = await supabase
     .from("users")
-    .select("id, email")
-    .range(from, to);
+    .select("id, email");
 
-  if (error) {
-    console.error("❌ Error fetching users:", error.message);
-    break;
+  if (usersError) {
+    console.error("❌ Error fetching users:", usersError.message);
+    process.exit(1);
   }
 
-  if (!batch || batch.length === 0) break; // no more rows
-
-  batch.forEach((u) => {
+  const emailToUuid: Record<string, string> = {};
+  allUsers?.forEach((u) => {
     if (u.email) emailToUuid[u.email.toLowerCase()] = u.id;
   });
 
-  console.log(`📦 Fetched ${batch.length} users (${Object.keys(emailToUuid).length} total)`);
+  console.log(`✅ Loaded ${Object.keys(emailToUuid).length} user UUIDs`);
 
-  if (batch.length < PAGE_SIZE) break; // reached last page
-
-  from += PAGE_SIZE;
-  to += PAGE_SIZE;
-}
-
-console.log(`✅ Loaded total ${Object.keys(emailToUuid).length} user UUIDs`);
-
-
-  console.log(`✅ Found ${Object.keys(emailToUuid).length} users in database`);
-
-  // 3️⃣ Insert transaction history records
+  // 3️⃣ Process and insert transactions
   let imported = 0;
   let skipped = 0;
   const CHUNK_SIZE = 100;
 
   for (let i = 0; i < transactions.length; i += CHUNK_SIZE) {
     const chunk = transactions.slice(i, i + CHUNK_SIZE);
+
     const insertBatch = [];
 
     for (const t of chunk) {
       const email = (t.thEmail || "").trim().toLowerCase();
-      const realUuid = emailToUuid[email];
+      const uuid = emailToUuid[email];
 
-      if (!realUuid) {
-        console.warn(`⚠️ Skipping row: email not found (${t.thEmail})`);
+      if (!uuid) {
+        console.warn(`⚠️  Skipping row: email not found (${t.thEmail})`);
         skipped++;
         continue;
       }
@@ -113,7 +94,7 @@ console.log(`✅ Loaded total ${Object.keys(emailToUuid).length} user UUIDs`);
         thDetails: capitalizeFirst(t.thDetails),
         thPoi: capitalizeFirst(t.thPoi),
         thStatus: capitalizeFirst(t.thStatus),
-        uuid: realUuid,
+        uuid,
         thEmail: t.thEmail,
       });
     }
@@ -124,14 +105,15 @@ console.log(`✅ Loaded total ${Object.keys(emailToUuid).length} user UUIDs`);
         console.error("❌ Insert error:", error.message);
       } else {
         imported += insertBatch.length;
-        console.log(`✅ Inserted ${insertBatch.length} records (total ${imported})`);
+        console.log(`✅ Inserted ${insertBatch.length} records (total: ${imported})`);
       }
     }
 
-    await new Promise((r) => setTimeout(r, 400)); // throttle for safety
+    // Small delay to avoid hitting Supabase rate limits
+    await new Promise((res) => setTimeout(res, 400));
   }
 
-  console.log(`🎉 Done! Imported ${imported}, Skipped ${skipped}`);
+  console.log(`🎉 Import complete! Imported: ${imported}, Skipped: ${skipped}`);
 }
 
 main().catch((err) => console.error("💥 Fatal error:", err));

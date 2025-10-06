@@ -12,7 +12,7 @@ import { supabase } from "@/lib/supabase";
 import Sidebar from "./sidebar";
 import DashboardContent from "./dashboard-content";
 import AccountsSection from "./accounts-section";
-import DepositsSection from "./deposits-section";
+import DepositsSection from "./transaction-history";
 import PaymentsSection from "./payments-section";
 import CardSection from "./card-section";
 import SupportSection from "./support-section";
