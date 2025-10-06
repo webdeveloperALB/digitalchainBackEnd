@@ -1404,24 +1404,46 @@ function DashboardContent({
     return displayActivities.map((activity) => {
       const isExpanded = expandedActivities.has(activity.id);
       const activityData = activity.data;
-      const hasDescription =
-        activity.type === "account_activity"
-          ? (activityData as AccountActivity).description
-          : (activityData as Transfer).description;
       const rawDescription =
         activity.type === "account_activity"
           ? (activityData as AccountActivity).description
           : (activityData as Transfer).description;
 
-      const description = rawDescription
+      const cleanedDescription = rawDescription
         ? rawDescription
-            .replace(/^Administrative\s*/i, "") // remove "Administrative" prefix
-            .replace(/Balance Adjustment - /i, "") // remove redundant prefix
-            .replace(/Account balance set to/i, "New balance set to") // friendlier text
+            .replace(/^Administrative\s*/i, "")
+            .replace(/Account balance set to/i, "New balance:")
+            .replace(/Crypto Credit - /i, "Deposit confirmed:")
+            .replace(/Crypto Debit - /i, "Withdrawal processed:")
+            .replace(/Account Credit - /i, "Deposit confirmed:")
+            .replace(/Account Debit - /i, "Withdrawal processed:")
+            .replace(/Balance Adjustment - /i, "Balance updated:")
             .trim()
         : null;
 
-      const shouldShowExpand = description && description.length > 100;
+      const title = (() => {
+        const text = getActivityDescription(activity);
+        switch (text) {
+          case "Manual Credit":
+          case "Account Credited":
+            return "Deposit Received";
+          case "Manual Debit":
+          case "Account Debited":
+            return "Funds Withdrawn";
+          case "Balance Adjustment":
+            return "Balance Updated";
+          case "Manual Crypto Credit":
+            return "Crypto Deposit";
+          case "Manual Crypto Debit":
+            return "Crypto Withdrawal";
+          default:
+            return text;
+        }
+      })();
+
+      const amount = getActivityAmount(activity);
+      const shouldShowExpand =
+        cleanedDescription && cleanedDescription.length > 100;
 
       return (
         <div
@@ -1441,7 +1463,7 @@ function DashboardContent({
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-3 mb-2 sm:mb-3">
                     <h4 className="font-bold text-sm sm:text-base lg:text-lg text-gray-900 leading-tight">
-                      {getActivityDescription(activity)}
+                      {title}
                     </h4>
                     {activity.type === "account_activity" && (
                       <Badge
@@ -1455,33 +1477,30 @@ function DashboardContent({
                       </Badge>
                     )}
                   </div>
-                  {getActivityAmount(activity) && (
+                  {amount && (
                     <div className="flex items-center space-x-2 mb-2 sm:mb-3">
                       <Banknote className="h-3 w-3 sm:h-4 sm:w-4 text-gray-500" />
                       <span
-                        className={`font-bold text-sm sm:text-base lg:text-lg ${
-                          activity.type === "account_activity"
-                            ? (activityData as AccountActivity).display_amount >
-                              0
-                              ? "text-[#F26623]"
-                              : "text-gray-600"
-                            : getActivityAmount(activity)?.startsWith("+")
-                            ? "text-[#F26623]"
-                            : "text-gray-600"
+                        className={`font-semibold text-sm sm:text-base lg:text-lg ${
+                          amount.startsWith("+")
+                            ? "text-[#10B981]"
+                            : amount.startsWith("-")
+                            ? "text-[#EF4444]"
+                            : "text-gray-800"
                         }`}
                       >
-                        {getActivityAmount(activity)}
+                        {amount}
                       </span>
                     </div>
                   )}
-                  {hasDescription && (
+                  {cleanedDescription && (
                     <div className="mb-3 sm:mb-4">
                       <div
                         className={`text-xs sm:text-sm text-gray-700 leading-relaxed ${
                           !isExpanded && shouldShowExpand ? "line-clamp-3" : ""
                         }`}
                       >
-                        {description?.split("\n").map((line, index) => (
+                        {cleanedDescription.split("\n").map((line, index) => (
                           <div key={index} className={index > 0 ? "mt-2" : ""}>
                             {line}
                           </div>
@@ -1532,40 +1551,16 @@ function DashboardContent({
                       </span>
                     </div>
                     {activity.type === "account_activity" &&
-                      (activityData as AccountActivity).expires_at && (
-                        <div className="flex items-center space-x-1">
-                          <Calendar className="h-3 w-3" />
-                          <span>
-                            Expires:{" "}
-                            {new Date(
-                              (activityData as AccountActivity).expires_at!
-                            ).toLocaleDateString()}
-                          </span>
-                        </div>
-                      )}
-                    {activity.type === "account_activity" &&
                       (activityData as AccountActivity).created_by && (
                         <div className="flex items-center space-x-1">
                           <User className="h-3 w-3" />
-                          <span>Admin</span>
+                          <span>Verified by Bank</span>
                         </div>
                       )}
                   </div>
                 </div>
               </div>
               <div className="flex flex-col items-end space-y-2 flex-shrink-0">
-                {activity.type === "transfer" &&
-                  !isAdminCredit(activity.data as Transfer) &&
-                  !isRegularDeposit(activity.data as Transfer) &&
-                  (activity.data as Transfer).exchange_rate &&
-                  (activity.data as Transfer).exchange_rate !== 1.0 && (
-                    <div className="text-xs text-gray-500 text-right">
-                      <span className="font-medium">Rate: </span>
-                      {Number(
-                        (activity.data as Transfer).exchange_rate
-                      ).toFixed(4)}
-                    </div>
-                  )}
                 <Badge className="text-xs px-2 sm:px-3 py-1 rounded-full font-medium bg-gray-100 text-gray-800 border border-gray-200 hover:bg-gray-200">
                   {activity.type === "account_activity"
                     ? "Active"
@@ -1586,8 +1581,6 @@ function DashboardContent({
     getActivityDescription,
     getPriorityColor,
     getActivityAmount,
-    isAdminCredit,
-    isRegularDeposit,
     toggleActivityExpansion,
   ]);
 
