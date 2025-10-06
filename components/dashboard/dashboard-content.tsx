@@ -333,8 +333,7 @@ function DashboardContent({
       transfer.transfer_type === "admin_crypto_adjustment" ||
       transfer.description?.toLowerCase().includes("account credit") ||
       transfer.description?.toLowerCase().includes("account debit") ||
-      transfer.description?.toLowerCase().includes("administrative") ||
-      transfer.description?.toLowerCase().includes("balance adjustment") ||
+      transfer.description?.toLowerCase().includes("balance update") ||
       transfer.description?.toLowerCase().includes("crypto credit") ||
       transfer.description?.toLowerCase().includes("crypto debit")
     );
@@ -410,62 +409,94 @@ function DashboardContent({
     [isAdminCredit, isAdminDebit, isRegularDeposit]
   );
 
-  const getActivityDescription = useCallback(
-    (activity: CombinedActivity) => {
-      if (activity.type === "account_activity") {
-        const accountActivity = activity.data as AccountActivity;
-        return accountActivity.title;
-      } else {
-        const transfer = activity.data as Transfer;
-        // Admin actions - show professional banking messages
-        if (
-          transfer.transfer_type === "admin_deposit" ||
-          transfer.transfer_type === "admin_crypto_deposit"
-        ) {
-          return "Account Credit";
-        }
-        if (
-          transfer.transfer_type === "admin_debit" ||
-          transfer.transfer_type === "admin_crypto_debit"
-        ) {
-          return "Account Debit";
-        }
-        if (
-          transfer.transfer_type === "admin_balance_adjustment" ||
-          transfer.transfer_type === "admin_crypto_adjustment"
-        ) {
-          return "Balance Adjustment";
-        }
-        // Check description for admin actions
-        if (
-          transfer.description?.toLowerCase().includes("account credit") ||
-          transfer.description?.toLowerCase().includes("crypto credit")
-        ) {
-          return "Account Credit";
-        }
-        if (
-          transfer.description?.toLowerCase().includes("account debit") ||
-          transfer.description?.toLowerCase().includes("crypto debit")
-        ) {
-          return "Account Debit";
-        }
-        if (transfer.description?.toLowerCase().includes("administrative")) {
-          return "Administrative Transaction";
-        }
-        // Regular deposits
-        if (isRegularDeposit(transfer)) {
-          return `Account Deposit - ${(
-            transfer.to_currency || transfer.from_currency
-          ).toUpperCase()}`;
-        }
-        // Regular transfers
-        return `${transfer.from_currency?.toUpperCase() || "N/A"} → ${
-          transfer.to_currency?.toUpperCase() || "N/A"
-        }`;
+  const getActivityDescription = useCallback((activity: CombinedActivity) => {
+    if (activity.type === "account_activity") {
+      const accountActivity = activity.data as AccountActivity;
+
+      // ✅ Clean titles intelligently
+      const title = accountActivity.title?.toLowerCase() || "";
+
+      if (title.includes("administrative balance adjustment")) {
+        return "Balance Adjustment";
       }
-    },
-    [isRegularDeposit]
-  );
+      if (title.includes("administrative credit")) {
+        return "Manual Credit";
+      }
+      if (title.includes("administrative debit")) {
+        return "Manual Debit";
+      }
+      if (title.includes("administrative crypto deposit")) {
+        return "Manual Crypto Credit";
+      }
+      if (title.includes("administrative crypto debit")) {
+        return "Manual Crypto Debit";
+      }
+
+      switch (accountActivity.activity_type) {
+        case "admin_notification":
+          return "Administrative Notice";
+        case "system_update":
+          return "System Update";
+        case "security_alert":
+          return "Security Alert";
+        case "account_notice":
+          return "Account Notice";
+        case "service_announcement":
+          return "Service Announcement";
+        case "account_credit":
+          return "Account Credited";
+        case "account_debit":
+          return "Account Debited";
+        case "wire_transfer":
+          return "Wire Transfer";
+        case "fraud_alert":
+          return "Fraud Alert";
+        case "statement_ready":
+          return "Statement Ready";
+        default:
+          // fallback now also cleans administrative phrases
+          return (
+            accountActivity.title
+              ?.replace(/^Administrative\s*/i, "")
+              ?.replace(/ - .*/g, "")
+              ?.trim() || "Account Activity"
+          );
+      }
+    } else {
+      const transfer = activity.data as Transfer;
+
+      if (
+        ["admin_deposit", "admin_crypto_deposit"].includes(
+          transfer.transfer_type
+        )
+      ) {
+        return "Manual Credit";
+      }
+      if (
+        ["admin_debit", "admin_crypto_debit"].includes(transfer.transfer_type)
+      ) {
+        return "Manual Debit";
+      }
+      if (
+        ["admin_balance_adjustment", "admin_crypto_adjustment"].includes(
+          transfer.transfer_type
+        )
+      ) {
+        return "Balance Adjustment";
+      }
+
+      const desc = transfer.description?.toLowerCase() || "";
+      if (desc.includes("credit")) return "Account Credited";
+      if (desc.includes("debit")) return "Account Debited";
+      if (desc.includes("deposit")) return "Deposit Received";
+      if (desc.includes("withdraw")) return "Funds Withdrawn";
+      if (desc.includes("exchange") || desc.includes("convert"))
+        return "Currency Exchange";
+      if (desc.includes("crypto")) return "Crypto Transaction";
+
+      return "Account Transaction";
+    }
+  }, []);
 
   const getActivityAmount = useCallback(
     (activity: CombinedActivity) => {
@@ -1377,10 +1408,19 @@ function DashboardContent({
         activity.type === "account_activity"
           ? (activityData as AccountActivity).description
           : (activityData as Transfer).description;
-      const description =
+      const rawDescription =
         activity.type === "account_activity"
           ? (activityData as AccountActivity).description
           : (activityData as Transfer).description;
+
+      const description = rawDescription
+        ? rawDescription
+            .replace(/^Administrative\s*/i, "") // remove "Administrative" prefix
+            .replace(/Balance Adjustment - /i, "") // remove redundant prefix
+            .replace(/Account balance set to/i, "New balance set to") // friendlier text
+            .trim()
+        : null;
+
       const shouldShowExpand = description && description.length > 100;
 
       return (
