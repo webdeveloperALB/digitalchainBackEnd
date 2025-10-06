@@ -494,24 +494,34 @@ export default function LiveChatClient({
 
   if (isMinimized) {
     return (
-      <div className="fixed bottom-4 right-4 w-80 z-50 bg-white border rounded-lg shadow-lg">
-        <div className="p-3">
+      <div className="fixed bottom-2 right-4 w-72 z-50 bg-white border rounded-lg shadow-md">
+        <div className="p-2">
           <div className="flex items-center justify-between">
-            <div className="flex items-center text-sm font-medium">
-              <MessageCircle className="w-4 h-4 mr-2 text-[#F26623]" />
-              Live Chat Support
+            <div className="flex items-center text-xs font-medium">
+              <MessageCircle className="w-3.5 h-3.5 mr-1.5 text-[#F26623]" />
+              Live Chat
               {isConnected ? (
-                <Wifi className="w-3 h-3 ml-2 text-green-500" />
+                <Wifi className="w-2.5 h-2.5 ml-1.5 text-green-500" />
               ) : (
-                <WifiOff className="w-3 h-3 ml-2 text-gray-400" />
+                <WifiOff className="w-2.5 h-2.5 ml-1.5 text-gray-400" />
               )}
             </div>
-            <div className="flex items-center space-x-1">
-              <Button variant="ghost" size="sm" onClick={handleMaximize}>
-                <Maximize2 className="w-4 h-4" />
+            <div className="flex items-center space-x-0.5">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0"
+                onClick={handleMaximize}
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
               </Button>
-              <Button variant="ghost" size="sm" onClick={endChatSession}>
-                <X className="w-4 h-4" />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0"
+                onClick={endChatSession}
+              >
+                <X className="w-3.5 h-3.5" />
               </Button>
             </div>
           </div>
@@ -522,7 +532,8 @@ export default function LiveChatClient({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md h-[600px] flex flex-col p-0">
+      <DialogContent className="max-w-md h-[420px] flex flex-col p-0">
+
         <DialogHeader className="p-4 pb-2 flex-shrink-0">
           <div className="flex items-center justify-between">
             <DialogTitle className="flex items-center text-base">
@@ -537,7 +548,7 @@ export default function LiveChatClient({
             </DialogTitle>
             <div className="flex items-center space-x-1">
               <Button variant="ghost" size="sm" onClick={handleMinimize}>
-                <Minimize2 className="w-4 h-4 mr-6" />
+                <Minimize2 className="w-4 h-4 mr-10 mb-5" />
               </Button>
             </div>
           </div>
