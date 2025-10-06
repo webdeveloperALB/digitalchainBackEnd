@@ -532,7 +532,7 @@ export default function LiveChatClient({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md h-[420px] flex flex-col p-0">
+      <DialogContent className="max-w-md h-[500px] flex flex-col p-0">
 
         <DialogHeader className="p-4 pb-2 flex-shrink-0">
           <div className="flex items-center justify-between">
