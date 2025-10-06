@@ -725,7 +725,7 @@ export default function TransfersSection({
                   </div>
                   New Transfer
                   {liveRates.lastUpdated > 0 && (
-                    <Badge className="bg-green-100 text-green-800 text-xs">
+                    <Badge className="bg-green-100 text-green-800 text-xs hover:bg-green-200 border-green-200 flex items-center gap-1">
                       <TrendingUp className="w-3 h-3 mr-1" />
                       Live Rates
                     </Badge>

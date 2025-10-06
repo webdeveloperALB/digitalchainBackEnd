@@ -183,22 +183,25 @@ const BalanceCard = memo(
     balance: number;
     formatCurrency: (amount: number, currency: string) => string;
   }) => (
-    <Card className="hover:shadow-lg transition-shadow bg-[#F26623] relative overflow-hidden">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-4 sm:p-6">
+    <Card className="hover:shadow-md transition-all duration-200 bg-[#F26623] relative overflow-hidden h-[120px] sm:h-[140px]">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 p-3 sm:p-4">
         <CardTitle className="text-xs sm:text-sm text-white font-medium capitalize">
           {currency === "usd" ? "USD" : currency === "euro" ? "EUR" : "CAD"}{" "}
           Balance
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-4 sm:p-6 pt-0">
-        <div className="text-lg sm:text-xl lg:text-2xl font-bold text-white">
+      <CardContent className="p-3 sm:p-4 pt-0">
+        <div className="text-base sm:text-lg font-bold text-white leading-tight">
           {formatCurrency(balance, currency)}
         </div>
-        <p className="text-xs text-muted-foreground text-white mt-1">{`${currency.toUpperCase()} account`}</p>
+        <p className="text-xs text-white/80 mt-1">
+          {currency.toUpperCase()} account
+        </p>
       </CardContent>
     </Card>
   )
 );
+
 
 const CryptoCard = memo(
   ({
@@ -214,9 +217,9 @@ const CryptoCard = memo(
 
     return (
       <Card
-        className={`hover:shadow-lg transition-shadow relative overflow-hidden ${config.bgColor} ${config.borderColor} border-2`}
+        className={`hover:shadow-md transition-all duration-200 relative overflow-hidden ${config.bgColor} ${config.borderColor} border rounded-lg h-[120px] sm:h-[140px]`}
       >
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-4 sm:p-6">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 p-3 sm:p-4">
           <CardTitle
             className={`text-xs sm:text-sm font-medium ${config.color}`}
           >
@@ -225,14 +228,14 @@ const CryptoCard = memo(
           <Image
             src={config.iconUrl || "/placeholder.svg"}
             alt={`${config.name} icon`}
-            width={36}
-            height={36}
-            className={`w-10 h-10 sm:w-10 sm:h-10 ${config.color}`}
+            width={28}
+            height={28}
+            className={`w-7 h-7 sm:w-8 sm:h-8 ${config.color}`}
           />
         </CardHeader>
-        <CardContent className="p-4 sm:p-6 pt-0">
+        <CardContent className="p-3 sm:p-4 pt-0">
           <div
-            className={`text-lg sm:text-xl lg:text-2xl font-bold ${config.color}`}
+            className={`text-base sm:text-lg font-bold leading-tight ${config.color}`}
           >
             {formatCurrency(balance, cryptoCurrency)}
           </div>
@@ -244,6 +247,7 @@ const CryptoCard = memo(
     );
   }
 );
+
 
 function DashboardContent({
   userProfile,
