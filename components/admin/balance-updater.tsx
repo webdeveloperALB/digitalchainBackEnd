@@ -607,7 +607,7 @@ export default function EnhancedBalanceUpdater() {
             exchange_rate: 1.0,
             status: "completed",
             transfer_type: "admin_balance_adjustment",
-            description: `Administrative Balance Adjustment - Account balance set to ${amountValue.toLocaleString()} ${currency.toUpperCase()}`,
+            description: `Account Balance Adjustment - Account balance set to ${amountValue.toLocaleString()} ${currency.toUpperCase()}`,
           };
 
           const transferResult = await createTransferRecord(transferData);

@@ -145,15 +145,15 @@ export default function ClientDepositsView() {
       case "successful":
       case "completed":
       case "approved":
-        return "text-green-600 bg-green-50 border-green-200";
+        return "text-green-600 bg-green-50 border-green-200 hover:bg-green-100";
       case "pending":
       case "processing":
       case "under review":
-        return "text-yellow-600 bg-yellow-50 border-yellow-200";
+        return "text-yellow-600 bg-yellow-50 border-yellow-200 hover:bg-yellow-100";
       case "failed":
       case "rejected":
       case "cancelled":
-        return "text-red-600 bg-red-50 border-red-200";
+        return "text-red-600 bg-red-50 border-red-200 hover:bg-red-100";
       default:
         return "text-gray-600 bg-gray-50 border-gray-200";
     }
@@ -245,9 +245,6 @@ export default function ClientDepositsView() {
                         </div>
                         <p className="text-gray-500 text-sm">
                           Processed: {new Date(tx.created_at).toLocaleString()}
-                        </p>
-                        <p className="text-gray-500 text-sm">
-                          Email: {tx.thEmail}
                         </p>
                       </div>
 
