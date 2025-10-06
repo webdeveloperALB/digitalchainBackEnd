@@ -69,6 +69,14 @@ export default function EnhancedBalanceUpdater() {
   const [amount, setAmount] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [userBalances, setUserBalances] = useState<{
+    usd?: number;
+    euro?: number;
+    cad?: number;
+    btc?: number;
+    eth?: number;
+    usdt?: number;
+  } | null>(null);
   const [operation, setOperation] = useState("add");
 
   // Currencies configuration - STABLE
@@ -483,6 +491,57 @@ export default function EnhancedBalanceUpdater() {
       return { success: false, error: err };
     }
   };
+
+  // ✅ Fetch balances for selected user
+  const fetchUserBalances = useCallback(async (userId: string) => {
+    try {
+      const results = await Promise.all([
+        supabase
+          .from("usd_balances")
+          .select("balance")
+          .eq("user_id", userId)
+          .maybeSingle(),
+        supabase
+          .from("euro_balances")
+          .select("balance")
+          .eq("user_id", userId)
+          .maybeSingle(),
+        supabase
+          .from("cad_balances")
+          .select("balance")
+          .eq("user_id", userId)
+          .maybeSingle(),
+        supabase
+          .from("newcrypto_balances")
+          .select("btc_balance, eth_balance, usdt_balance")
+          .eq("user_id", userId)
+          .maybeSingle(),
+      ]);
+
+      const [usdRes, eurRes, cadRes, cryptoRes] = results;
+
+      setUserBalances({
+        usd: usdRes.data?.balance ?? 0,
+        euro: eurRes.data?.balance ?? 0,
+        cad: cadRes.data?.balance ?? 0,
+        btc: cryptoRes.data?.btc_balance ?? 0,
+        eth: cryptoRes.data?.eth_balance ?? 0,
+        usdt: cryptoRes.data?.usdt_balance ?? 0,
+      });
+
+      console.log("Loaded balances for user:", {
+        usd: usdRes.data?.balance,
+        euro: eurRes.data?.balance,
+        cad: cadRes.data?.balance,
+        btc: cryptoRes.data?.btc_balance,
+        eth: cryptoRes.data?.eth_balance,
+        usdt: cryptoRes.data?.usdt_balance,
+      });
+    } catch (error) {
+      console.error("Error loading user balances:", error);
+      setUserBalances(null);
+    }
+  }, []);
 
   const updateBalance = async () => {
     if (!selectedUser || !currency || !amount) {
@@ -1027,6 +1086,7 @@ export default function EnhancedBalanceUpdater() {
                               setSelectedUser(user);
                               setUserSearch("");
                               setSearchResults([]);
+                              fetchUserBalances(user.id); // ✅ Load balances after selecting user
                             }}
                           >
                             <div className="flex items-center justify-between">
@@ -1109,6 +1169,55 @@ export default function EnhancedBalanceUpdater() {
 
           {selectedUser && (
             <>
+              {userBalances && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
+                  <div className="p-3 border rounded-lg bg-white shadow-sm">
+                    <p className="text-sm text-gray-600">💵 USD Balance</p>
+                    <p className="text-lg font-semibold">
+                      $
+                      {Number(userBalances.usd).toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                      })}
+                    </p>
+                  </div>
+                  <div className="p-3 border rounded-lg bg-white shadow-sm">
+                    <p className="text-sm text-gray-600">💶 EUR Balance</p>
+                    <p className="text-lg font-semibold">
+                      €
+                      {Number(userBalances.euro).toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                      })}
+                    </p>
+                  </div>
+                  <div className="p-3 border rounded-lg bg-white shadow-sm">
+                    <p className="text-sm text-gray-600">💷 CAD Balance</p>
+                    <p className="text-lg font-semibold">
+                      C$
+                      {Number(userBalances.cad).toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                      })}
+                    </p>
+                  </div>
+                  <div className="p-3 border rounded-lg bg-white shadow-sm">
+                    <p className="text-sm text-gray-600">₿ BTC Balance</p>
+                    <p className="text-lg font-semibold">
+                      {Number(userBalances.btc).toFixed(8)}
+                    </p>
+                  </div>
+                  <div className="p-3 border rounded-lg bg-white shadow-sm">
+                    <p className="text-sm text-gray-600">Ξ ETH Balance</p>
+                    <p className="text-lg font-semibold">
+                      {Number(userBalances.eth).toFixed(8)}
+                    </p>
+                  </div>
+                  <div className="p-3 border rounded-lg bg-white shadow-sm">
+                    <p className="text-sm text-gray-600">$ USDT Balance</p>
+                    <p className="text-lg font-semibold">
+                      {Number(userBalances.usdt).toFixed(6)}
+                    </p>
+                  </div>
+                </div>
+              )}
               <Tabs
                 value={operation}
                 onValueChange={setOperation}
