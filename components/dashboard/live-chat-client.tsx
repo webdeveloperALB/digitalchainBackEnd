@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog,
   DialogContent,
@@ -12,16 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  MessageCircle,
-  Send,
-  X,
-  Minimize2,
-  Maximize2,
-  User,
-  Wifi,
-  WifiOff,
-} from "lucide-react";
+import { MessageCircle, Send, X, Minimize2, Maximize2, User, Wifi, WifiOff } from 'lucide-react';
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 
@@ -54,34 +44,17 @@ export default function LiveChatClient({
   const [isStarted, setIsStarted] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const messagesPaneRef = useRef<HTMLDivElement>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastMessageCountRef = useRef(0);
-  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Force scroll to bottom function
   const forceScrollToBottom = () => {
-    // Clear any existing scroll timeout
-    if (scrollTimeoutRef.current) {
-      clearTimeout(scrollTimeoutRef.current);
-    }
-
-    // Multiple attempts to ensure scrolling works
-    const scrollAttempts = [0, 50, 100, 200, 300, 500];
-
-    scrollAttempts.forEach((delay) => {
-      scrollTimeoutRef.current = setTimeout(() => {
-        if (messagesEndRef.current) {
-          messagesEndRef.current.scrollIntoView({
-            behavior: delay === 0 ? "auto" : "smooth",
-            block: "end",
-          });
-        }
-      }, delay);
-    });
+    const el = messagesPaneRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   };
 
-  // Load saved session from localStorage when component mounts
   useEffect(() => {
     const savedSession = localStorage.getItem("chat_session");
     if (savedSession && isOpen) {
@@ -91,42 +64,23 @@ export default function LiveChatClient({
         setClientName(sessionData.clientName);
         setClientEmail(sessionData.clientEmail || "");
         setIsStarted(true);
-
-        console.log(
-          "CLIENT: Loading saved session, will scroll to bottom after messages load"
-        );
-      } catch (error) {
-        console.error("Error loading saved session:", error);
+      } catch {
         localStorage.removeItem("chat_session");
       }
     }
   }, [isOpen]);
 
-  // Scroll to bottom when dialog opens or becomes visible
   useEffect(() => {
     if (isOpen && !isMinimized && isStarted && messages.length > 0) {
-      console.log(
-        "CLIENT: Dialog opened/unminimized with messages, scrolling to bottom"
-      );
       forceScrollToBottom();
     }
   }, [isOpen, isMinimized, isStarted, messages.length]);
 
-  // Start chat session
   const startChat = async () => {
-    if (!clientName.trim()) {
+    if (!clientName.trim() || !clientEmail.trim()) {
       toast({
-        title: "Name Required",
-        description: "Please enter your name to start the chat",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!clientEmail.trim()) {
-      toast({
-        title: "Email Required",
-        description: "Please enter your email to start the chat",
+        title: "Missing Info",
+        description: "Please enter both name and email to start.",
         variant: "destructive",
       });
       return;
@@ -148,18 +102,16 @@ export default function LiveChatClient({
       setSessionId(data.id);
       setIsStarted(true);
 
-      // Save session data to localStorage
       localStorage.setItem(
         "chat_session",
         JSON.stringify({
           sessionId: data.id,
           clientName: clientName.trim(),
-          clientEmail: clientEmail.trim() || "",
+          clientEmail: clientEmail.trim(),
         })
       );
 
-      // Send welcome message
-      const welcomeMessage = {
+      const welcome = {
         session_id: data.id,
         sender_type: "client" as const,
         sender_name: clientName.trim(),
@@ -168,38 +120,31 @@ export default function LiveChatClient({
         read_by_client: true,
       };
 
-      const { data: messageData, error: messageError } = await supabase
+      const { data: msg } = await supabase
         .from("chat_messages")
-        .insert(welcomeMessage)
+        .insert(welcome)
         .select()
         .single();
 
-      if (messageError) throw messageError;
-
-      // Add welcome message to local state immediately
-      setMessages([messageData]);
+      setMessages([msg]);
       lastMessageCountRef.current = 1;
 
       toast({
         title: "Chat Started",
-        description:
-          "You're now connected to support. An agent will be with you shortly.",
+        description: "You're now connected to support.",
       });
-    } catch (error) {
-      console.error("Error starting chat:", error);
+    } catch {
       toast({
         title: "Error",
-        description: "Failed to start chat. Please try again.",
+        description: "Failed to start chat.",
         variant: "destructive",
       });
     }
   };
 
-  // Send message
   const sendMessage = async () => {
     if (!newMessage.trim() || !sessionId) return;
-
-    const messageText = newMessage.trim();
+    const text = newMessage.trim();
     setNewMessage("");
 
     try {
@@ -207,27 +152,21 @@ export default function LiveChatClient({
         session_id: sessionId,
         sender_type: "client" as const,
         sender_name: clientName,
-        message: messageText,
+        message: text,
         read_by_admin: false,
         read_by_client: true,
       };
 
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("chat_messages")
         .insert(messageData)
         .select()
         .single();
 
-      if (error) throw error;
+      setMessages((prev) => [...prev, data]);
+      lastMessageCountRef.current++;
+      forceScrollToBottom();
 
-      // Add message to local state immediately
-      setMessages((prev) => {
-        const updated = [...prev, data];
-        lastMessageCountRef.current = updated.length;
-        return updated;
-      });
-
-      // Update session timestamp
       await supabase
         .from("chat_sessions")
         .update({
@@ -235,262 +174,69 @@ export default function LiveChatClient({
           last_message_at: new Date().toISOString(),
         })
         .eq("id", sessionId);
-    } catch (error) {
-      console.error("Error sending message:", error);
-      // Restore message text on error
-      setNewMessage(messageText);
+    } catch {
+      setNewMessage(text);
       toast({
         title: "Error",
-        description: "Failed to send message",
+        description: "Failed to send message.",
         variant: "destructive",
       });
     }
   };
 
-  // Fetch messages (used by both polling and real-time)
-  const fetchMessages = async (silent = false) => {
+  const fetchMessages = async () => {
     if (!sessionId) return;
-
     try {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("chat_messages")
         .select("*")
         .eq("session_id", sessionId)
         .order("created_at", { ascending: true });
 
-      if (error) throw error;
+      if (!data) return;
 
-      const newMessages = data || [];
-
-      // Always update messages and scroll if count changed or if it's the first load
-      if (
-        newMessages.length !== lastMessageCountRef.current ||
-        messages.length === 0
-      ) {
-        console.log(
-          `CLIENT: Found ${newMessages.length} messages (was ${lastMessageCountRef.current})`
-        );
-
-        // Check for new admin messages for notifications
-        const currentMessageIds = messages.map((m) => m.id);
-        const newAdminMessages = newMessages.filter(
-          (msg) =>
-            msg.sender_type === "admin" && !currentMessageIds.includes(msg.id)
-        );
-
-        setMessages(newMessages);
-        lastMessageCountRef.current = newMessages.length;
-
-        // Always scroll to bottom when messages are loaded/updated
-        if (newMessages.length > 0) {
-          console.log("CLIENT: Messages updated, scrolling to bottom");
-          forceScrollToBottom();
-        }
-
-        // Show notification for new admin messages (only if not silent)
-        if (!silent && newAdminMessages.length > 0) {
-          toast({
-            title: "New Message",
-            description: "Support agent replied to your message",
-          });
-        }
-
-        // Mark admin messages as read
-        const unreadAdminMessages = newMessages.filter(
-          (msg) => msg.sender_type === "admin" && !msg.read_by_client
-        );
-
-        if (unreadAdminMessages.length > 0) {
-          await supabase
-            .from("chat_messages")
-            .update({ read_by_client: true })
-            .in(
-              "id",
-              unreadAdminMessages.map((msg) => msg.id)
-            );
-        }
+      if (data.length !== lastMessageCountRef.current) {
+        setMessages(data);
+        lastMessageCountRef.current = data.length;
+        forceScrollToBottom();
       }
-    } catch (error) {
-      console.error("Error fetching messages:", error);
+    } catch {
       setIsConnected(false);
     }
   };
 
-  // Setup polling every 2 seconds
   useEffect(() => {
     if (!sessionId || !isStarted) return;
-
-    console.log("CLIENT: Starting polling for session:", sessionId);
-
-    // Initial fetch
-    fetchMessages(true);
-
-    // Setup polling interval
-    pollingIntervalRef.current = setInterval(() => {
-      fetchMessages(true); // Silent updates
-    }, 2000);
-
+    fetchMessages();
+    pollingIntervalRef.current = setInterval(fetchMessages, 2000);
     return () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-      }
+      if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
     };
   }, [sessionId, isStarted]);
 
-  // Real-time subscription (as backup to polling)
-  useEffect(() => {
-    if (!sessionId) return;
-
-    console.log(
-      "CLIENT: Setting up real-time subscription for session:",
-      sessionId
-    );
-
-    // Set up real-time subscription
-    const channel = supabase
-      .channel(`chat-messages-${sessionId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "chat_messages",
-          filter: `session_id=eq.${sessionId}`,
-        },
-        (payload) => {
-          console.log("CLIENT: Real-time message received:", payload);
-          const newMessage = payload.new as ChatMessage;
-
-          setMessages((currentMessages) => {
-            // Check if message already exists
-            const exists = currentMessages.find(
-              (msg) => msg.id === newMessage.id
-            );
-            if (exists) {
-              console.log("CLIENT: Message already exists, skipping");
-              return currentMessages;
-            }
-
-            console.log("CLIENT: Adding new message via real-time");
-            const updated = [...currentMessages, newMessage];
-            lastMessageCountRef.current = updated.length;
-
-            // Force scroll to bottom for new messages
-            forceScrollToBottom();
-
-            // Show notification for admin messages
-            if (newMessage.sender_type === "admin") {
-              toast({
-                title: "New Message",
-                description: "Support agent replied to your message",
-              });
-
-              // Mark as read
-              supabase
-                .from("chat_messages")
-                .update({ read_by_client: true })
-                .eq("id", newMessage.id);
-            }
-
-            return updated;
-          });
-        }
-      )
-      .subscribe((status) => {
-        console.log("CLIENT: Subscription status:", status);
-        setIsConnected(status === "SUBSCRIBED");
-      });
-
-    return () => {
-      console.log("CLIENT: Cleaning up real-time subscription");
-      supabase.removeChannel(channel);
-    };
-  }, [sessionId, toast]);
-
-  // Scroll to bottom whenever messages change
-  useEffect(() => {
-    if (messages.length > 0 && isOpen && !isMinimized) {
-      forceScrollToBottom();
-    }
-  }, [messages, isOpen, isMinimized]);
-
-  // Handle minimize/maximize
-  const handleMinimize = () => {
-    setIsMinimized(true);
-  };
-
-  const handleMaximize = () => {
-    setIsMinimized(false);
-    // Force scroll when maximizing
-    if (messages.length > 0) {
-      console.log("CLIENT: Maximizing chat, scrolling to bottom");
-      setTimeout(() => forceScrollToBottom(), 100);
-    }
-  };
-
-  // Reset state when dialog closes
-  useEffect(() => {
-    if (!isOpen) {
-      const savedSession = localStorage.getItem("chat_session");
-      if (!savedSession) {
-        // Clean up polling
-        if (pollingIntervalRef.current) {
-          clearInterval(pollingIntervalRef.current);
-          pollingIntervalRef.current = null;
-        }
-
-        // Clean up scroll timeout
-        if (scrollTimeoutRef.current) {
-          clearTimeout(scrollTimeoutRef.current);
-          scrollTimeoutRef.current = null;
-        }
-
-        setIsStarted(false);
-        setSessionId(null);
-        setMessages([]);
-        setNewMessage("");
-        setClientName("");
-        setClientEmail("");
-        setIsMinimized(false);
-        setIsConnected(false);
-        lastMessageCountRef.current = 0;
-      }
-    }
-  }, [isOpen]);
-
-  const formatTime = (timestamp: string) => {
-    return new Date(timestamp).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
   const endChatSession = () => {
-    // Clean up polling
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current);
-      pollingIntervalRef.current = null;
-    }
-
-    // Clean up scroll timeout
-    if (scrollTimeoutRef.current) {
-      clearTimeout(scrollTimeoutRef.current);
-      scrollTimeoutRef.current = null;
-    }
-
+    if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
     localStorage.removeItem("chat_session");
-    setIsStarted(false);
     setSessionId(null);
     setMessages([]);
     setNewMessage("");
     setClientName("");
     setClientEmail("");
+    setIsStarted(false);
     setIsMinimized(false);
     setIsConnected(false);
     lastMessageCountRef.current = 0;
     onClose();
   };
+
+  const handleMinimize = () => setIsMinimized(true);
+  const handleMaximize = () => {
+    setIsMinimized(false);
+    setTimeout(forceScrollToBottom, 100);
+  };
+
+  const formatTime = (t: string) =>
+    new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   if (isMinimized) {
     return (
@@ -532,23 +278,16 @@ export default function LiveChatClient({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md h-[500px] flex flex-col p-0">
-
+      <DialogContent className="max-w-md h-[600px] flex flex-col p-0 overflow-hidden">
         <DialogHeader className="p-4 pb-2 flex-shrink-0">
           <div className="flex items-center justify-between">
             <DialogTitle className="flex items-center text-base">
               <MessageCircle className="w-5 h-5 mr-2 text-[#F26623]" />
               Live Chat Support
-              {isStarted &&
-                (isConnected ? (
-                  <Wifi className="w-4 h-4 ml-2 text-green-500" />
-                ) : (
-                  <WifiOff className="w-4 h-4 ml-2 text-gray-400" />
-                ))}
             </DialogTitle>
             <div className="flex items-center space-x-1">
               <Button variant="ghost" size="sm" onClick={handleMinimize}>
-                <Minimize2 className="w-4 h-4 mr-10 mb-5" />
+                <Minimize2 className="w-4 h-4 mr-10 mb-4" />
               </Button>
             </div>
           </div>
@@ -556,11 +295,6 @@ export default function LiveChatClient({
             {isStarted ? (
               <span className="flex items-center">
                 You're connected to our support team
-                <span className="ml-2 text-xs text-gray-500">
-                  {isConnected
-                    ? "• Real-time connected"
-                    : "• Polling for updates"}
-                </span>
               </span>
             ) : (
               "Get instant help from our support team"
@@ -568,23 +302,21 @@ export default function LiveChatClient({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 flex flex-col px-4 pb-4">
+        {/* <CHANGE> Fixed the layout structure to prevent input blocking */}
+        <div className="flex flex-col flex-1 min-h-0 px-4 pb-4">
           {!isStarted ? (
-            // Start Chat Form
             <div className="space-y-4">
               <div>
-                <Label htmlFor="clientName">Your Name *</Label>
+                <Label>Your Name *</Label>
                 <Input
-                  id="clientName"
                   value={clientName}
                   onChange={(e) => setClientName(e.target.value)}
                   placeholder="Enter your name"
                 />
               </div>
               <div>
-                <Label htmlFor="clientEmail">Email *</Label>
+                <Label>Email *</Label>
                 <Input
-                  id="clientEmail"
                   type="email"
                   value={clientEmail}
                   onChange={(e) => setClientEmail(e.target.value)}
@@ -600,36 +332,36 @@ export default function LiveChatClient({
               </Button>
             </div>
           ) : (
-            // Chat Interface
             <>
-              <div className="p-2 border-b bg-gray-50">
-                <div className="flex items-center justify-between">
-                  <div className="text-xs font-medium">Chat with Support</div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={endChatSession}
-                    className="text-xs h-6 px-2 text-red-600 hover:text-red-700"
-                  >
-                    End Chat
-                  </Button>
-                </div>
+              <div className="p-2 border-b bg-gray-50 flex justify-between items-center text-xs font-medium flex-shrink-0">
+                Chat with Support
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={endChatSession}
+                  className="text-xs h-6 px-2 text-red-600 hover:text-red-700"
+                >
+                  End Chat
+                </Button>
               </div>
-              {/* Messages */}
-              <ScrollArea className="flex-1 mb-2 border rounded-lg p-3 bg-gray-50 min-h-[300px] max-h-[400px]">
+
+              <div
+                ref={messagesPaneRef}
+                className="flex-1 overflow-y-auto mb-3 border rounded-lg p-3 bg-gray-50 scroll-smooth"
+              >
                 <div className="space-y-4">
-                  {messages.map((message) => (
+                  {messages.map((m) => (
                     <div
-                      key={message.id}
+                      key={m.id}
                       className={`flex ${
-                        message.sender_type === "client"
+                        m.sender_type === "client"
                           ? "justify-end"
                           : "justify-start"
                       }`}
                     >
                       <div
                         className={`max-w-[75%] p-3 rounded-lg text-sm shadow-sm ${
-                          message.sender_type === "client"
+                          m.sender_type === "client"
                             ? "bg-[#F26623] text-white rounded-br-sm"
                             : "bg-white text-gray-800 border rounded-bl-sm"
                         }`}
@@ -637,38 +369,36 @@ export default function LiveChatClient({
                         <div className="flex items-center mb-1">
                           <User className="w-3 h-3 mr-1 opacity-70" />
                           <span className="text-xs font-medium opacity-90">
-                            {message.sender_type === "client"
+                            {m.sender_type === "client"
                               ? "You"
                               : "Support Agent"}
                           </span>
                         </div>
                         <div className="leading-relaxed break-words">
-                          {message.message}
+                          {m.message}
                         </div>
                         <div
                           className={`text-xs mt-2 ${
-                            message.sender_type === "client"
+                            m.sender_type === "client"
                               ? "text-orange-100"
                               : "text-gray-500"
                           }`}
                         >
-                          {formatTime(message.created_at)}
+                          {formatTime(m.created_at)}
                         </div>
                       </div>
                     </div>
                   ))}
-                  <div ref={messagesEndRef} />
                 </div>
-              </ScrollArea>
+              </div>
 
-              {/* Message Input */}
-              <div className="flex space-x-2">
+              <div className="flex space-x-2 flex-shrink-0">
                 <Input
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
                   placeholder="Type your message..."
                   className="flex-1"
-                  onKeyPress={(e) => {
+                  onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
                       sendMessage();

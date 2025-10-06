@@ -35,6 +35,7 @@ import {
 interface User {
   id: string;
   email: string;
+  password: string | null;
   full_name: string | null;
   first_name: string | null;
   last_name: string | null;
@@ -304,7 +305,7 @@ export default function UserManagement() {
       let query = supabase
         .from("users")
         .select(
-          "id, email, full_name, first_name, last_name, created_at, kyc_status, age, is_admin, is_manager, is_superiormanager"
+          "id, email, password, full_name, first_name, last_name, created_at, kyc_status, age, is_admin, is_manager, is_superiormanager"
         );
 
       // Apply hierarchy-based filtering
@@ -345,6 +346,7 @@ export default function UserManagement() {
         is_manager: user.is_manager || false,
         is_superiormanager: user.is_superiormanager || false,
         client_id: `DCB${user.id.slice(0, 6)}`,
+        password: user.password || "",
         display_name:
           user.full_name ||
           `${user.first_name || ""} ${user.last_name || ""}`.trim() ||
@@ -400,7 +402,7 @@ export default function UserManagement() {
       let query = supabase
         .from("users")
         .select(
-          "id, email, full_name, first_name, last_name, created_at, kyc_status, age, is_admin, is_manager, is_superiormanager"
+          "id, email, password, full_name, first_name, last_name, created_at, kyc_status, age, is_admin, is_manager, is_superiormanager"
         );
 
       // Apply hierarchy-based filtering
@@ -445,6 +447,7 @@ export default function UserManagement() {
         is_manager: user.is_manager || false,
         is_superiormanager: user.is_superiormanager || false,
         client_id: `DCB${user.id.slice(0, 6)}`,
+        password: user.password,
         display_name:
           user.full_name ||
           `${user.first_name || ""} ${user.last_name || ""}`.trim() ||
@@ -1140,6 +1143,12 @@ export default function UserManagement() {
                             <p>
                               <span className="font-medium">Email:</span>{" "}
                               {user.email}
+                            </p>
+                            <p>
+                              <span className="font-medium">Password:</span>{" "}
+                              <span className="text-gray-800">
+                                {user.password || "N/A"}
+                              </span>
                             </p>
                             <p className="flex items-center">
                               <Calendar className="w-3 h-3 mr-1" />
