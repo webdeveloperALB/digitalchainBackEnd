@@ -292,67 +292,6 @@ export default function UserPresenceTracker() {
 
   return (
     <div className="space-y-6">
-      {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">
-                  Online Users
-                </p>
-                <p className="text-2xl font-bold text-green-600">
-                  {onlineCount}
-                </p>
-              </div>
-              <Wifi className="h-8 w-8 text-green-500" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">
-                  Offline Users
-                </p>
-                <p className="text-2xl font-bold text-gray-600">
-                  {totalUsers - onlineCount}
-                </p>
-              </div>
-              <WifiOff className="h-8 w-8 text-gray-500" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Total Users</p>
-                <p className="text-2xl font-bold text-blue-600">{totalUsers}</p>
-              </div>
-              <Users className="h-8 w-8 text-blue-500" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Countries</p>
-                <p className="text-2xl font-bold text-purple-600">
-                  {Object.keys(countryStats).length}
-                </p>
-              </div>
-              <Globe className="h-8 w-8 text-purple-500" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
       {/* Country Statistics */}
       {Object.keys(countryStats).length > 0 && (
         <Card>

@@ -800,9 +800,6 @@ export default function SecureAdminPage() {
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            <Badge variant="outline" className="text-white border-white">
-              Secure Session
-            </Badge>
             <Button
               variant="outline"
               onClick={handleLogout}
