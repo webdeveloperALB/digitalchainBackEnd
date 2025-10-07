@@ -246,11 +246,6 @@ export default function LiveChatClient({
             <div className="flex items-center text-xs font-medium">
               <MessageCircle className="w-3.5 h-3.5 mr-1.5 text-[#F26623]" />
               Live Chat
-              {isConnected ? (
-                <Wifi className="w-2.5 h-2.5 ml-1.5 text-green-500" />
-              ) : (
-                <WifiOff className="w-2.5 h-2.5 ml-1.5 text-gray-400" />
-              )}
             </div>
             <div className="flex items-center space-x-0.5">
               <Button
