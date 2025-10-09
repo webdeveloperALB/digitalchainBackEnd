@@ -397,16 +397,17 @@ export default function TaxManager() {
     return () => clearTimeout(timeoutId);
   }, [userSearch, currentAdmin, accessibleUserIds, accessibleUserIdsLoaded]);
 
-  // Fetch tax data for selected user
   const fetchTaxData = useCallback(async (userId: string) => {
     try {
       const { data, error } = await supabase
         .from("taxes")
         .select("*")
         .eq("user_id", userId)
-        .single();
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      if (error && error.code !== "PGRST116") {
+      if (error) {
         console.error("Error fetching tax data:", error);
         return;
       }
@@ -419,7 +420,6 @@ export default function TaxManager() {
           paid: data.paid.toString(),
         });
       } else {
-        // No tax record exists, create default
         setUserTaxData({
           id: "",
           user_id: userId,
@@ -429,25 +429,19 @@ export default function TaxManager() {
           created_at: "",
           updated_at: "",
         });
-        setEditValues({
-          taxes: "0",
-          on_hold: "0",
-          paid: "0",
-        });
+        setEditValues({ taxes: "0", on_hold: "0", paid: "0" });
       }
     } catch (error) {
       console.error("Failed to fetch tax data:", error);
     }
   }, []);
 
-  // Save tax data
   const saveTaxData = useCallback(async () => {
     if (!selectedUser || !currentAdmin) return;
 
-    // Check if admin can manage taxes for this user
     const canManageTaxes =
-      accessibleUserIds.length === 0 || // Full admin
-      accessibleUserIds.includes(selectedUser.id); // User is accessible
+      accessibleUserIds.length === 0 ||
+      accessibleUserIds.includes(selectedUser.id);
 
     if (!canManageTaxes) {
       setMessage({
@@ -464,22 +458,15 @@ export default function TaxManager() {
         taxes: parseFloat(editValues.taxes) || 0,
         on_hold: parseFloat(editValues.on_hold) || 0,
         paid: parseFloat(editValues.paid) || 0,
+        updated_at: new Date().toISOString(),
       };
 
-      if (userTaxData?.id) {
-        // Update existing record
-        const { error } = await supabase
-          .from("taxes")
-          .update(taxData)
-          .eq("id", userTaxData.id);
+      // ✅ UPSERT ensures we don't duplicate rows
+      const { error } = await supabase
+        .from("taxes")
+        .upsert(taxData, { onConflict: "user_id" });
 
-        if (error) throw error;
-      } else {
-        // Create new record
-        const { error } = await supabase.from("taxes").insert(taxData);
-
-        if (error) throw error;
-      }
+      if (error) throw error;
 
       setMessage({
         type: "success",
@@ -489,6 +476,7 @@ export default function TaxManager() {
       });
 
       setEditMode(false);
+      await new Promise((r) => setTimeout(r, 300)); // small delay
       await fetchTaxData(selectedUser.id);
     } catch (error: any) {
       console.error("Error saving tax data:", error);
@@ -499,14 +487,7 @@ export default function TaxManager() {
     } finally {
       setLoading(false);
     }
-  }, [
-    selectedUser,
-    currentAdmin,
-    accessibleUserIds,
-    editValues,
-    userTaxData,
-    fetchTaxData,
-  ]);
+  }, [selectedUser, currentAdmin, accessibleUserIds, editValues, fetchTaxData]);
 
   // Get role badges for user
   const getRoleBadges = useCallback((user: User) => {
