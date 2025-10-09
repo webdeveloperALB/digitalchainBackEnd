@@ -362,11 +362,6 @@ export default function UserManagement() {
       );
       const balances = await Promise.all(balancePromises);
       setUserBalances(balances);
-
-      setMessage({
-        type: "success",
-        text: `Loaded ${transformedUsers.length} users based on your permissions`,
-      });
     } catch (error) {
       console.error("Failed to load users:", error);
       setMessage({
@@ -1335,54 +1330,6 @@ export default function UserManagement() {
           )}
         </CardContent>
       </Card>
-
-      {/* Assignment Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Your Managed Users
-            </CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{users.length}</div>
-            <p className="text-xs text-muted-foreground">
-              Users you can manage
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Available Managers
-            </CardTitle>
-            <UserCheck className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{availableManagers.length}</div>
-            <p className="text-xs text-muted-foreground">
-              Managers you can assign to
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Assignable Users
-            </CardTitle>
-            <UserPlus className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{assignableUsers.length}</div>
-            <p className="text-xs text-muted-foreground">
-              Users available for assignment
-            </p>
-          </CardContent>
-        </Card>
-      </div>
     </div>
   );
 }

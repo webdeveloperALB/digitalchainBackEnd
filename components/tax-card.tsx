@@ -244,15 +244,11 @@ export default function TaxCard({ userProfile, setActiveTab }: TaxCardProps) {
                     Tax Managment
                   </p>
                 </div>
-                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                  <DollarSign className="h-6 w-6 text-blue-600" />
-                </div>
               </div>
 
               <div className="grid grid-cols-3 gap-3">
                 <div className="bg-yellow-50 rounded-lg p-3 border border-yellow-200">
                   <div className="flex items-center space-x-2 mb-2">
-                    <Clock className="h-4 w-4 text-yellow-600" />
                     <span className="text-sm font-medium text-yellow-700">
                       Pending
                     </span>
@@ -264,7 +260,6 @@ export default function TaxCard({ userProfile, setActiveTab }: TaxCardProps) {
 
                 <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
                   <div className="flex items-center space-x-2 mb-2">
-                    <Pause className="h-4 w-4 text-blue-600" />
                     <span className="text-sm font-medium text-blue-700">
                       On Hold
                     </span>
@@ -276,7 +271,6 @@ export default function TaxCard({ userProfile, setActiveTab }: TaxCardProps) {
 
                 <div className="bg-green-50 rounded-lg p-3 border border-green-200">
                   <div className="flex items-center space-x-2 mb-2">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
                     <span className="text-sm font-medium text-green-700">
                       Paid
                     </span>
