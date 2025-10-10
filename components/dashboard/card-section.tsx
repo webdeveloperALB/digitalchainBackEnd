@@ -524,8 +524,8 @@ export default function CardSection({ userProfile }: CardSectionProps) {
                           <div className="flex items-center">
                             <Lock className="w-4 h-4 text-yellow-600 mr-2" />
                             <p className="text-sm text-yellow-800">
-                              Card details will be available once approved by
-                              admin
+                              Card details will be available once verified by
+                              our financial department.
                             </p>
                           </div>
                         </div>
