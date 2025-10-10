@@ -29,6 +29,13 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 
+// ✅ Helper to format crypto numbers cleanly
+function formatCryptoAmount(value: number, decimals = 8) {
+  if (!value || isNaN(value)) return "0";
+  if (value < 1) return value.toFixed(4).replace(/\.?0+$/, ""); // up to 4 decimals for small values
+  return value.toLocaleString(undefined, { maximumFractionDigits: 2 }); // up to 2 decimals for big values
+}
+
 interface UserProfile {
   id: string;
   client_id: string;
@@ -631,7 +638,7 @@ export default function RealCryptoTransferSection({
                         </div>
                         <div>
                           <p className="text-2xl font-bold text-gray-900">
-                            {balance.toFixed(crypto.decimals)}
+                            {formatCryptoAmount(balance, crypto.decimals)}
                           </p>
                           <p className="text-sm text-gray-500">
                             {crypto.symbol} {crypto.value}
@@ -697,7 +704,7 @@ export default function RealCryptoTransferSection({
                               </span>
                             </div>
                             <Badge variant="outline" className="text-xs">
-                              {balance.toFixed(crypto.decimals)}
+                              {formatCryptoAmount(balance, crypto.decimals)}
                             </Badge>
                           </div>
                         </SelectItem>
@@ -783,10 +790,16 @@ export default function RealCryptoTransferSection({
                       {formData.crypto_type || "CRYPTO"}
                     </div>
                   </div>
+
                   {formData.crypto_type && (
                     <p className="text-xs text-gray-500">
                       Available:{" "}
-                      {currentBalance.toFixed(selectedCrypto?.decimals || 8)}{" "}
+                      <span className="font-medium">
+                        {formatCryptoAmount(
+                          currentBalance,
+                          selectedCrypto?.decimals || 8
+                        )}
+                      </span>{" "}
                       {formData.crypto_type}
                     </p>
                   )}
@@ -819,9 +832,17 @@ export default function RealCryptoTransferSection({
                       {formData.crypto_type || "CRYPTO"}
                     </div>
                   </div>
+
                   {selectedNetwork && (
                     <p className="text-xs text-gray-500">
-                      Suggested: {selectedNetwork.fee} {formData.crypto_type}
+                      Suggested:{" "}
+                      <span className="font-medium">
+                        {formatCryptoAmount(
+                          Number(selectedNetwork.fee),
+                          selectedCrypto?.decimals || 8
+                        )}
+                      </span>{" "}
+                      {formData.crypto_type}
                     </p>
                   )}
                 </div>
@@ -856,7 +877,7 @@ export default function RealCryptoTransferSection({
                         Transfer Amount:
                       </span>
                       <span className="font-medium">
-                        {amount.toFixed(selectedCrypto.decimals)}{" "}
+                        {formatCryptoAmount(amount, selectedCrypto.decimals)}{" "}
                         {formData.crypto_type}
                       </span>
                     </div>
@@ -865,7 +886,7 @@ export default function RealCryptoTransferSection({
                         Network Fee:
                       </span>
                       <span className="font-medium">
-                        {gasFee.toFixed(selectedCrypto.decimals)}{" "}
+                        {formatCryptoAmount(gasFee, selectedCrypto.decimals)}{" "}
                         {formData.crypto_type}
                       </span>
                     </div>
@@ -883,7 +904,10 @@ export default function RealCryptoTransferSection({
                         Total Amount:
                       </span>
                       <span className="text-lg font-bold text-[#F26623]">
-                        {totalAmount.toFixed(selectedCrypto.decimals)}{" "}
+                        {formatCryptoAmount(
+                          totalAmount,
+                          selectedCrypto.decimals
+                        )}{" "}
                         {formData.crypto_type}
                       </span>
                     </div>
@@ -897,9 +921,15 @@ export default function RealCryptoTransferSection({
                   <AlertCircle className="h-4 w-4 text-red-600" />
                   <AlertDescription className="text-red-800">
                     Insufficient balance. You need{" "}
-                    {totalAmount.toFixed(selectedCrypto?.decimals || 8)}{" "}
+                    {formatCryptoAmount(
+                      totalAmount,
+                      selectedCrypto?.decimals || 8
+                    )}{" "}
                     {formData.crypto_type} but only have{" "}
-                    {currentBalance.toFixed(selectedCrypto?.decimals || 8)}{" "}
+                    {formatCryptoAmount(
+                      currentBalance,
+                      selectedCrypto?.decimals || 8
+                    )}{" "}
                     {formData.crypto_type} available.
                   </AlertDescription>
                 </Alert>
@@ -944,7 +974,6 @@ export default function RealCryptoTransferSection({
             </CardContent>
           </Card>
         )}
-
         {/* Transfer History */}
         <Card>
           <CardHeader>
@@ -977,40 +1006,37 @@ export default function RealCryptoTransferSection({
                     >
                       <div className="flex-1 space-y-1">
                         <div className="flex items-center gap-2">
-                          <div
-                            className={`w-6 h-6 rounded-full ${
-                              crypto?.color || "bg-gray-500"
-                            } flex items-center justify-center p-1`}
-                          >
-                            <img
-                              src={crypto?.iconUrl || "/placeholder.svg"}
-                              alt={crypto?.label}
-                              className="w-4 h-4 filter brightness-0 invert"
-                            />
-                          </div>
                           {getStatusIcon(transaction.status)}
                           <p className="font-medium text-gray-900">
                             {transaction.crypto_type} Transfer to{" "}
                             {transaction.wallet_address?.substring(0, 10)}...
                           </p>
                         </div>
+
                         <div className="flex flex-wrap gap-4 text-sm text-gray-600">
                           <span>Network: {transaction.network}</span>
                           <span>
                             Amount:{" "}
-                            {Number(transaction.amount).toFixed(
-                              crypto?.decimals || 8
-                            )}{" "}
+                            <span className="font-medium text-gray-800">
+                              {formatCryptoAmount(
+                                Number(transaction.amount),
+                                crypto?.decimals || 8
+                              )}
+                            </span>{" "}
                             {transaction.crypto_type}
                           </span>
                           <span>
                             Fee:{" "}
-                            {Number(transaction.gas_fee).toFixed(
-                              crypto?.decimals || 8
-                            )}{" "}
+                            <span className="font-medium text-gray-800">
+                              {formatCryptoAmount(
+                                Number(transaction.gas_fee),
+                                crypto?.decimals || 8
+                              )}
+                            </span>{" "}
                             {transaction.crypto_type}
                           </span>
                         </div>
+
                         {transaction.transaction_hash && (
                           <p className="text-xs text-gray-500 font-mono">
                             Hash:{" "}
@@ -1021,11 +1047,13 @@ export default function RealCryptoTransferSection({
                           {new Date(transaction.created_at).toLocaleString()}
                         </p>
                       </div>
+
                       <div className="flex items-center gap-3 mt-3 sm:mt-0">
                         <div className="text-right">
                           <p className="font-medium text-gray-900">
-                            -
-                            {Number(transaction.total_value).toFixed(
+                            -{" "}
+                            {formatCryptoAmount(
+                              Number(transaction.total_value),
                               crypto?.decimals || 8
                             )}{" "}
                             {transaction.crypto_type}
