@@ -21,6 +21,11 @@ import CryptoSection from "./crypto-section-fixed";
 import MessageSection from "./message-section-database";
 import LoansSection from "./loans-section";
 import { useRouter } from "next/navigation";
+if (process.env.NODE_ENV === "production") {
+  console.log = () => {};
+  console.warn = () => {};
+  console.error = () => {};
+}
 
 interface UserProfile {
   id: string;

@@ -196,32 +196,40 @@ export default function TransfersSection({
   }, [internalFormData, bankFormData, liveRates, activeTab]);
 
   const calculateRealTimeExchange = () => {
-    const currentFormData =
-      activeTab === "internal" ? internalFormData : bankFormData;
-    const fromCurrency = currentFormData.from_currency;
-    const toCurrency = currentFormData.to_currency;
-    const amount = Number(currentFormData.amount);
+  const currentFormData =
+    activeTab === "internal" ? internalFormData : bankFormData;
+  const fromCurrency = currentFormData.from_currency;
+  const toCurrency = currentFormData.to_currency;
+  const amount = Number(currentFormData.amount);
 
-    if (!amount || fromCurrency === toCurrency) {
-      setExchangeRate(1);
-      setEstimatedAmount(amount);
-      setTransferFee(calculateTransferFee(amount, fromCurrency, toCurrency));
-      return;
+  if (!amount || fromCurrency === toCurrency) {
+    setExchangeRate(1);
+    setEstimatedAmount(amount);
+    setTransferFee(calculateTransferFee(amount, fromCurrency, toCurrency));
+    return;
+  }
+
+  // Get real-time exchange rate
+  let rate = exchangeRateService.getExchangeRate(fromCurrency, toCurrency);
+
+  // ✅ Auto-fix inverted rates (universal fix for all currencies)
+  if (rate && rate < 1 && fromCurrency !== toCurrency) {
+    const inverseRate = exchangeRateService.getExchangeRate(toCurrency, fromCurrency);
+    if (inverseRate && inverseRate > rate) {
+      rate = 1 / inverseRate;
+    } else {
+      rate = 1 / rate;
     }
+  }
 
-    // Get real-time exchange rate
-    const rate = exchangeRateService.getExchangeRate(fromCurrency, toCurrency);
-    const convertedAmount = exchangeRateService.convertCurrency(
-      amount,
-      fromCurrency,
-      toCurrency
-    );
-    const fee = calculateTransferFee(amount, fromCurrency, toCurrency);
+  const convertedAmount = amount * rate;
+  const fee = calculateTransferFee(amount, fromCurrency, toCurrency);
 
-    setExchangeRate(rate);
-    setEstimatedAmount(convertedAmount);
-    setTransferFee(fee);
-  };
+  setExchangeRate(rate);
+  setEstimatedAmount(convertedAmount);
+  setTransferFee(fee);
+};
+
 
   const calculateTransferFee = (
     amount: number,

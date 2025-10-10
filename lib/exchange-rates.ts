@@ -55,13 +55,14 @@ export class ExchangeRateService {
           if (fiatData.rates) {
             rates.fiat = {
               USD: 1,
-              EUR: 1 / fiatData.rates.EUR,
-              CAD: 1 / fiatData.rates.CAD,
-              GBP: 1 / fiatData.rates.GBP,
-              JPY: 1 / fiatData.rates.JPY,
-              AUD: 1 / fiatData.rates.AUD,
-              CHF: 1 / fiatData.rates.CHF,
+              EUR: fiatData.rates.EUR,
+              CAD: fiatData.rates.CAD,
+              GBP: fiatData.rates.GBP,
+              JPY: fiatData.rates.JPY,
+              AUD: fiatData.rates.AUD,
+              CHF: fiatData.rates.CHF,
             };
+
             console.log("Fiat rates fetched successfully");
           }
         } else {

@@ -1,5 +1,5 @@
 "use client";
-import React, { memo, useMemo, useCallback } from "react";
+import React, { memo, useDeferredValue, useMemo, useCallback } from "react";
 import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,11 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import TaxCard from "../tax-card";
+if (process.env.NODE_ENV === "production") {
+  console.log = () => {};
+  console.warn = () => {};
+  console.error = () => {};
+}
 
 interface DashboardContentProps {
   userProfile: {
@@ -202,7 +207,6 @@ const BalanceCard = memo(
   )
 );
 
-
 const CryptoCard = memo(
   ({
     cryptoCurrency,
@@ -247,7 +251,6 @@ const CryptoCard = memo(
     );
   }
 );
-
 
 function DashboardContent({
   userProfile,
@@ -1408,12 +1411,12 @@ function DashboardContent({
       />
     ));
   }, [cryptoBalances, formatCurrency]);
-
+  const deferredActivities = useDeferredValue(combinedActivities);
   // Memoized activities display
   const activitiesDisplay = useMemo(() => {
     const displayActivities = showAllActivities
-      ? combinedActivities
-      : combinedActivities.slice(0, 3);
+      ? deferredActivities
+      : deferredActivities.slice(0, 3);
 
     return displayActivities.map((activity) => {
       const isExpanded = expandedActivities.has(activity.id);
