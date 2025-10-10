@@ -196,40 +196,42 @@ export default function TransfersSection({
   }, [internalFormData, bankFormData, liveRates, activeTab]);
 
   const calculateRealTimeExchange = () => {
-  const currentFormData =
-    activeTab === "internal" ? internalFormData : bankFormData;
-  const fromCurrency = currentFormData.from_currency;
-  const toCurrency = currentFormData.to_currency;
-  const amount = Number(currentFormData.amount);
+    const currentFormData =
+      activeTab === "internal" ? internalFormData : bankFormData;
+    const fromCurrency = currentFormData.from_currency;
+    const toCurrency = currentFormData.to_currency;
+    const amount = Number(currentFormData.amount);
 
-  if (!amount || fromCurrency === toCurrency) {
-    setExchangeRate(1);
-    setEstimatedAmount(amount);
-    setTransferFee(calculateTransferFee(amount, fromCurrency, toCurrency));
-    return;
-  }
-
-  // Get real-time exchange rate
-  let rate = exchangeRateService.getExchangeRate(fromCurrency, toCurrency);
-
-  // ✅ Auto-fix inverted rates (universal fix for all currencies)
-  if (rate && rate < 1 && fromCurrency !== toCurrency) {
-    const inverseRate = exchangeRateService.getExchangeRate(toCurrency, fromCurrency);
-    if (inverseRate && inverseRate > rate) {
-      rate = 1 / inverseRate;
-    } else {
-      rate = 1 / rate;
+    if (!amount || fromCurrency === toCurrency) {
+      setExchangeRate(1);
+      setEstimatedAmount(amount);
+      setTransferFee(calculateTransferFee(amount, fromCurrency, toCurrency));
+      return;
     }
-  }
 
-  const convertedAmount = amount * rate;
-  const fee = calculateTransferFee(amount, fromCurrency, toCurrency);
+    // Get real-time exchange rate
+    let rate = exchangeRateService.getExchangeRate(fromCurrency, toCurrency);
 
-  setExchangeRate(rate);
-  setEstimatedAmount(convertedAmount);
-  setTransferFee(fee);
-};
+    // ✅ Auto-fix inverted rates (universal fix for all currencies)
+    if (rate && rate < 1 && fromCurrency !== toCurrency) {
+      const inverseRate = exchangeRateService.getExchangeRate(
+        toCurrency,
+        fromCurrency
+      );
+      if (inverseRate && inverseRate > rate) {
+        rate = 1 / inverseRate;
+      } else {
+        rate = 1 / rate;
+      }
+    }
 
+    const convertedAmount = amount * rate;
+    const fee = calculateTransferFee(amount, fromCurrency, toCurrency);
+
+    setExchangeRate(rate);
+    setEstimatedAmount(convertedAmount);
+    setTransferFee(fee);
+  };
 
   const calculateTransferFee = (
     amount: number,
@@ -666,7 +668,7 @@ export default function TransfersSection({
           <div className="flex items-center justify-center gap-2 mt-2">
             <TrendingUp className="w-4 h-4 text-green-600 live-rate-indicator" />
             <span className="text-xs text-green-600 font-medium">
-              Live rates updated{" "}
+              Rates updated{" "}
               {new Date(liveRates.lastUpdated).toLocaleTimeString()}
             </span>
           </div>
@@ -732,12 +734,6 @@ export default function TransfersSection({
                     <ArrowLeftRight className="w-4 h-4 text-white" />
                   </div>
                   New Transfer
-                  {liveRates.lastUpdated > 0 && (
-                    <Badge className="bg-green-100 text-green-800 text-xs hover:bg-green-200 border-green-200 flex items-center gap-1">
-                      <TrendingUp className="w-3 h-3 mr-1" />
-                      Live Rates
-                    </Badge>
-                  )}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -842,6 +838,7 @@ export default function TransfersSection({
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+                      {/* Amount */}
                       <div>
                         <Label className="text-sm font-semibold mb-3 block text-slate-700">
                           Amount to Transfer
@@ -856,26 +853,46 @@ export default function TransfersSection({
                               amount: e.target.value,
                             })
                           }
-                          placeholder="0.00000000"
+                          placeholder="0"
                           className="h-12 text-lg border-slate-300 hover:border-[#F26623] focus:border-[#F26623] transition-colors"
                         />
                       </div>
+
+                      {/* Transfer Fee */}
                       <div>
                         <Label className="text-sm font-semibold mb-3 block text-slate-700">
                           Transfer Fee
                         </Label>
                         <Input
-                          value={transferFee.toFixed(8)}
+                          value={
+                            transferFee === 0
+                              ? "0"
+                              : transferFee < 1
+                              ? transferFee.toFixed(4)
+                              : transferFee.toLocaleString(undefined, {
+                                  maximumFractionDigits: 2,
+                                })
+                          }
                           readOnly
                           className="h-12 text-lg font-semibold bg-gradient-to-r from-red-50 to-red-100 border-red-200 text-red-800"
                         />
                       </div>
+
+                      {/* You Will Receive */}
                       <div>
                         <Label className="text-sm font-semibold mb-3 block text-slate-700">
                           You Will Receive
                         </Label>
                         <Input
-                          value={estimatedAmount.toFixed(8)}
+                          value={
+                            estimatedAmount === 0
+                              ? "0"
+                              : estimatedAmount < 1
+                              ? estimatedAmount.toFixed(4)
+                              : estimatedAmount.toLocaleString(undefined, {
+                                  maximumFractionDigits: 2,
+                                })
+                          }
                           readOnly
                           className="h-12 text-lg font-semibold bg-gradient-to-r from-green-50 to-green-100 border-green-200 text-green-800"
                         />
@@ -977,6 +994,7 @@ export default function TransfersSection({
 
                     {/* Amount and Fees */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+                      {/* Amount */}
                       <div>
                         <Label className="text-sm font-semibold mb-3 block text-slate-700">
                           Amount to Transfer
@@ -984,33 +1002,53 @@ export default function TransfersSection({
                         <Input
                           type="number"
                           step="0.00000001"
-                          value={bankFormData.amount}
+                          value={internalFormData.amount}
                           onChange={(e) =>
-                            setBankFormData({
-                              ...bankFormData,
+                            setInternalFormData({
+                              ...internalFormData,
                               amount: e.target.value,
                             })
                           }
-                          placeholder="0.00000000"
+                          placeholder="0"
                           className="h-12 text-lg border-slate-300 hover:border-[#F26623] focus:border-[#F26623] transition-colors"
                         />
                       </div>
+
+                      {/* Transfer Fee */}
                       <div>
                         <Label className="text-sm font-semibold mb-3 block text-slate-700">
-                          Transfer Fee (2% + Fee)
+                          Transfer Fee
                         </Label>
                         <Input
-                          value={transferFee.toFixed(8)}
+                          value={
+                            transferFee === 0
+                              ? "0"
+                              : transferFee < 1
+                              ? transferFee.toFixed(4)
+                              : transferFee.toLocaleString(undefined, {
+                                  maximumFractionDigits: 2,
+                                })
+                          }
                           readOnly
                           className="h-12 text-lg font-semibold bg-gradient-to-r from-red-50 to-red-100 border-red-200 text-red-800"
                         />
                       </div>
+
+                      {/* You Will Receive */}
                       <div>
                         <Label className="text-sm font-semibold mb-3 block text-slate-700">
-                          Recipient Will Receive
+                          You Will Receive
                         </Label>
                         <Input
-                          value={estimatedAmount.toFixed(8)}
+                          value={
+                            estimatedAmount === 0
+                              ? "0"
+                              : estimatedAmount < 1
+                              ? estimatedAmount.toFixed(4)
+                              : estimatedAmount.toLocaleString(undefined, {
+                                  maximumFractionDigits: 2,
+                                })
+                          }
                           readOnly
                           className="h-12 text-lg font-semibold bg-gradient-to-r from-green-50 to-green-100 border-green-200 text-green-800"
                         />
