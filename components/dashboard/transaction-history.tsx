@@ -107,7 +107,7 @@ export default function ClientDepositsView() {
         `
         )
         .eq("uuid", userId)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: true });
 
       if (error) throw error;
 
