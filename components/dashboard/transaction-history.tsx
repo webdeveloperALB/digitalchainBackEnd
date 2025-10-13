@@ -244,7 +244,14 @@ export default function ClientDepositsView() {
                           </h3>
                         </div>
                         <p className="text-gray-500 text-sm">
-                          Processed: {new Date(tx.created_at).toLocaleString()}
+                          Processed:{" "}
+                          {new Date(tx.created_at).toLocaleString("en-GB", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
                         </p>
                       </div>
 
