@@ -782,16 +782,19 @@ export default function SecureAdminPage() {
     return (
       <div>
         <div className="bg-[#F26623] text-white p-4 flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold">
+          <div className="flex flex-row items-center justify-between text-orange-100">
+            <h1 className="text-2xl font-bold pr-14">
               Admin Panel - Digital Chain Bank
             </h1>
-            <div className="flex items-center space-x-6 text-orange-100">
+
+            <div className="flex flex-row items-center space-x-6">
               <span>Session ID: {securityState.sessionId.slice(0, 8)}...</span>
+
               <div className="flex items-center">
                 <Clock className="w-4 h-4 mr-1" />
                 <span>Time left: {formatTimeRemaining(sessionTimeLeft)}</span>
               </div>
+
               <div className="flex items-center">
                 <span className="text-sm">
                   Active Sessions: {activeSessions.length}
@@ -799,6 +802,7 @@ export default function SecureAdminPage() {
               </div>
             </div>
           </div>
+
           <div className="flex items-center space-x-2">
             <Button
               variant="outline"
