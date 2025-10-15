@@ -21,6 +21,8 @@ import {
   Crown,
   UserCheck,
   AlertTriangle,
+  MessageCircle,
+  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -107,6 +109,7 @@ export default function EnhancedAdminDashboard({
   const [accessibleUserIds, setAccessibleUserIds] = useState<string[]>([]);
   const [accessibleUserIdsLoaded, setAccessibleUserIdsLoaded] = useState(false);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
+  const [showLiveChat, setShowLiveChat] = useState(false);
 
   const [activeTab, setActiveTab] = useState("UnifiedAdminPanel");
   const [locationInfo, setLocationInfo] = useState<LocationInfo>({
@@ -1120,8 +1123,6 @@ export default function EnhancedAdminDashboard({
             <DatabaseTest />
           </TabsContent>
         </Tabs>
-
-        {/* Live Chat Admin Component */}
         <LiveChatAdmin />
       </div>
     </div>
