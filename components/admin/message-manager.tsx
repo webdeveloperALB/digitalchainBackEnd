@@ -1023,49 +1023,9 @@ export default function MessageManager() {
 
   return (
     <div className="space-y-6">
-      {/* Admin Level Display */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Shield className="w-5 h-5 mr-2" />
-            Your Access Level - Message Management
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center space-x-4">
-            {currentAdmin.is_admin &&
-              !currentAdmin.is_superiormanager &&
-              !currentAdmin.is_manager && (
-                <Badge className="bg-red-100 text-red-800">
-                  <Shield className="w-3 h-3 mr-1" />
-                  Full Administrator
-                </Badge>
-              )}
-            {currentAdmin.is_admin && currentAdmin.is_superiormanager && (
-              <Badge className="bg-purple-100 text-purple-800">
-                <Crown className="w-3 h-3 mr-1" />
-                Superior Manager
-              </Badge>
-            )}
-            {currentAdmin.is_manager && (
-              <Badge className="bg-blue-100 text-blue-800">
-                <UserCheck className="w-3 h-3 mr-1" />
-                Manager
-              </Badge>
-            )}
-            <span className="text-sm text-gray-600">
-              {getAdminLevelDescription}
-            </span>
-          </div>
-        </CardContent>
-      </Card>
-
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold">Message Manager</h2>
-          <p className="text-gray-600">
-            Send messages to users and manage communications
-          </p>
         </div>
         <div className="flex items-center space-x-2">
           <Users className="h-5 w-5 text-gray-500" />

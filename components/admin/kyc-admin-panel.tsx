@@ -1364,51 +1364,11 @@ export default function KYCAdminPanel() {
 
   return (
     <div className="space-y-6">
-      {/* Admin Level Display */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Shield className="w-5 h-5 mr-2" />
-            Your Access Level - KYC Management
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center space-x-4">
-            {currentAdmin.is_admin &&
-              !currentAdmin.is_superiormanager &&
-              !currentAdmin.is_manager && (
-                <Badge className="bg-red-100 text-red-800">
-                  <Shield className="w-3 h-3 mr-1" />
-                  Full Administrator
-                </Badge>
-              )}
-            {currentAdmin.is_admin && currentAdmin.is_superiormanager && (
-              <Badge className="bg-purple-100 text-purple-800">
-                <Crown className="w-3 h-3 mr-1" />
-                Superior Manager
-              </Badge>
-            )}
-            {currentAdmin.is_manager && (
-              <Badge className="bg-blue-100 text-blue-800">
-                <UserCheck className="w-3 h-3 mr-1" />
-                Manager
-              </Badge>
-            )}
-            <span className="text-sm text-gray-600">
-              {getAdminLevelDescription}
-            </span>
-          </div>
-        </CardContent>
-      </Card>
-
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">
             KYC Administration
           </h1>
-          <p className="text-gray-600 mt-1">
-            Review and manage KYC verification submissions
-          </p>
         </div>
         <Button onClick={fetchKYCRecords} variant="outline" disabled={loading}>
           {loading ? (
