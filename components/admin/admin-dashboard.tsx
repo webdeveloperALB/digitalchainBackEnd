@@ -35,9 +35,9 @@ import ActivityManager from "./activity-manager";
 import TaxManager from "./tax-manager";
 import UserPresenceTracker from "./user-presence-tracker";
 import PresenceManager from "./presence-manager";
-import AdminDepositCreator from "./admin-deposit-creator";
 import LiveChatAdmin from "./live-chat-admin";
 import UserHierarchyManager from "../../components/user-hierarchy-manager";
+import UnifiedAdminPanel from "./UnifiedAdminPanel";
 
 interface LocationInfo {
   ip: string;
@@ -108,7 +108,7 @@ export default function EnhancedAdminDashboard({
   const [accessibleUserIdsLoaded, setAccessibleUserIdsLoaded] = useState(false);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
 
-  const [activeTab, setActiveTab] = useState("balances");
+  const [activeTab, setActiveTab] = useState("UnifiedAdminPanel");
   const [locationInfo, setLocationInfo] = useState<LocationInfo>({
     ip: "Detecting...",
     country: "Detecting...",
@@ -1054,14 +1054,17 @@ export default function EnhancedAdminDashboard({
           onValueChange={setActiveTab}
           className="space-y-6"
         >
-          <TabsList className="grid w-full grid-cols-9">
-            <TabsTrigger value="deposits" className="flex items-center">
-              <Download className="w-4 h-4 mr-2" />
-              Transactions
-            </TabsTrigger>
+          <TabsList className="grid w-full grid-cols-7">
             <TabsTrigger value="presence" className="flex items-center">
               <Wifi className="w-4 h-4 mr-2" />
               Presence
+            </TabsTrigger>
+            <TabsTrigger
+              value="UnifiedAdminPanel"
+              className="flex items-center"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Manage Users
             </TabsTrigger>
             <TabsTrigger value="activity" className="flex items-center">
               <Activity className="w-4 h-4 mr-2" />
@@ -1070,14 +1073,6 @@ export default function EnhancedAdminDashboard({
             <TabsTrigger value="kyc" className="flex items-center">
               <Shield className="w-4 h-4 mr-2" />
               KYC
-            </TabsTrigger>
-            <TabsTrigger value="balances" className="flex items-center">
-              <DollarSign className="w-4 h-4 mr-2" />
-              Balances
-            </TabsTrigger>
-            <TabsTrigger value="taxes" className="flex items-center">
-              <Calculator className="w-4 h-4 mr-2" />
-              Taxes
             </TabsTrigger>
             <TabsTrigger value="messages" className="flex items-center">
               <Mail className="w-4 h-4 mr-2" />
@@ -1093,8 +1088,8 @@ export default function EnhancedAdminDashboard({
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="deposits">
-            <AdminDepositCreator />
+          <TabsContent value="UnifiedAdminPanel">
+            <UnifiedAdminPanel />
           </TabsContent>
 
           <TabsContent value="presence">
@@ -1107,14 +1102,6 @@ export default function EnhancedAdminDashboard({
 
           <TabsContent value="kyc">
             <KYCAdminPanel />
-          </TabsContent>
-
-          <TabsContent value="balances">
-            <BalanceUpdater />
-          </TabsContent>
-
-          <TabsContent value="taxes">
-            <TaxManager />
           </TabsContent>
 
           <TabsContent value="messages">
