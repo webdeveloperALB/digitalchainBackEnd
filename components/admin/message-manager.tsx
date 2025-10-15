@@ -1023,18 +1023,6 @@ export default function MessageManager() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">Message Manager</h2>
-        </div>
-        <div className="flex items-center space-x-2">
-          <Users className="h-5 w-5 text-gray-500" />
-          <span className="text-sm text-gray-600">
-            {totalUserCount} accessible users
-          </span>
-        </div>
-      </div>
-
       {alert && (
         <Alert className="border-blue-500 bg-blue-50">
           <Info className="h-4 w-4" />
