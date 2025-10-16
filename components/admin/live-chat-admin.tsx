@@ -69,7 +69,7 @@ export default function LiveChatAdmin() {
   const [activeSession, setActiveSession] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState("");
-  const [isMinimized, setIsMinimized] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
   const [message, setMessage] = useState<{ type: string; text: string } | null>(
     null
