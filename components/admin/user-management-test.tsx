@@ -329,7 +329,7 @@ export default function UserManagement() {
 
       const { data: userData, error: userError } = await query
         .order("created_at", { ascending: false })
-        .limit(15);
+        .limit(5);
 
       if (userError) throw userError;
 
@@ -967,7 +967,7 @@ export default function UserManagement() {
               <Users className="w-5 h-5 mr-2" />
               User Management
               <Badge variant="outline" className="ml-3">
-                {isSearchMode ? "Search Results" : "15 Newest"}
+                {isSearchMode ? "Search Results" : "5 Newest"}
               </Badge>
             </div>
             <Button
@@ -1042,11 +1042,6 @@ export default function UserManagement() {
                 </Button>
               )}
             </div>
-            <p className="text-xs text-gray-500 mt-2">
-              {isSearchMode
-                ? "Searching entire database (up to 100 results)"
-                : "Showing 15 newest users. Use search to find specific users."}
-            </p>
           </div>
 
           {loading || searchLoading ? (
@@ -1081,9 +1076,8 @@ export default function UserManagement() {
               {/* Stats */}
               <div className="flex items-center gap-4 mb-4">
                 <h3 className="text-lg font-semibold">
-                  {isSearchMode ? "Search Results" : "Your Accessible Users"}
+                  {isSearchMode ? "Search Results" : "Showing 5 Newest Users"}
                 </h3>
-                <Badge variant="outline">{users.length} users</Badge>
               </div>
 
               {/* User Grid */}
