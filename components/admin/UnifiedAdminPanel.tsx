@@ -1432,7 +1432,7 @@ export default function UnifiedAdminPanel() {
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center text-base">
                 <Settings className="w-4 h-4 mr-2" />
-                BalanceUpdater
+                Balance Updater
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
