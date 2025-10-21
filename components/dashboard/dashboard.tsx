@@ -20,6 +20,7 @@ import TransfersSection from "./transfers-section-fixed";
 import CryptoSection from "./crypto-section-fixed";
 import MessageSection from "./message-section-database";
 import LoansSection from "./loans-section";
+import Profile from "./Profile";
 import { useRouter } from "next/navigation";
 if (process.env.NODE_ENV === "production") {
   console.log = () => {};
@@ -486,6 +487,7 @@ class SectionRenderer {
     crypto: CryptoSection,
     message: MessageSection,
     support: SupportSection,
+    profile: Profile,
     loans: LoansSection,
   };
 

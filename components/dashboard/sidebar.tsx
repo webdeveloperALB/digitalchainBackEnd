@@ -19,6 +19,7 @@ import {
   Banknote,
 } from "lucide-react";
 import Image from "next/image";
+import { User } from "lucide-react";
 
 const scrollbarHideStyles = `
   .scrollbar-hide {
@@ -98,6 +99,12 @@ const MENU_ITEMS: MenuItem[] = [
     id: "message",
     label: "Message",
     icon: MessageSquare,
+    isEnabled: true,
+  },
+  {
+    id: "profile",
+    label: "Profile",
+    icon: User,
     isEnabled: true,
   },
   {
