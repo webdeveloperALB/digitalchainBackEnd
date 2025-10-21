@@ -311,17 +311,13 @@ function DashboardContent({
       USDT: "₮",
     };
 
-    const decimals =
-      currency === "BTC" || currency === "ETH"
-        ? 8
-        : currency === "USDT"
-        ? 2
-        : 2;
+    // Allow crypto to have more precision, fiat max 2 decimals
+    const decimals = currency === "BTC" || currency === "ETH" ? 8 : 2; // crypto = 2 decimals, everything else = 2
 
-    const formattedAmount =
-      amount % 1 === 0
-        ? amount.toLocaleString(undefined, { maximumFractionDigits: 0 })
-        : amount.toLocaleString(undefined, { maximumFractionDigits: decimals });
+    const formattedAmount = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: decimals,
+    }).format(amount);
 
     return `${symbols[currency] || "$"}${formattedAmount}`;
   }, []);
