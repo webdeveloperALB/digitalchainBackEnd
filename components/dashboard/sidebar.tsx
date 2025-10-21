@@ -340,8 +340,18 @@ export default function Sidebar({
             <div className="flex items-center justify-between">
               <div className="flex items-center">
                 <span className="font-medium text-base">
-                  {userProfile?.full_name || "Client Name"}
+                  {userProfile?.full_name
+                    ? userProfile.full_name
+                        .toLowerCase()
+                        .split(" ")
+                        .map(
+                          (word: string) =>
+                            word.charAt(0).toUpperCase() + word.slice(1)
+                        )
+                        .join(" ")
+                    : "Client Name"}
                 </span>
+
                 <div className="w-2 h-2 bg-green-400 rounded-full ml-3"></div>
               </div>
               <Button
