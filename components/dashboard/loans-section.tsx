@@ -23,7 +23,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Building2,
   DollarSign,
   FileText,
   User,
@@ -665,7 +664,6 @@ export default function LoansSection({}: LoansSectionProps) {
         <Card className="shadow-lg border-0">
           <CardHeader className="bg-[#F5F0F0] border-b p-6">
             <CardTitle className="flex items-center text-lg">
-              <Building2 className="h-5 w-5 mr-2 text-[#F26623]" />
               Digital Chain Bank Loan Application
               <Badge className="ml-2 bg-[#F26623] text-white">Secure</Badge>
             </CardTitle>

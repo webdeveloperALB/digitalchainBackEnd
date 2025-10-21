@@ -796,7 +796,7 @@ export default function TransfersSection({
                           <ArrowLeftRight className="w-6 h-6 text-white" />
                         </div>
                         <div className="bg-[#F26623]/75 text-white px-3 py-1 rounded-full text-sm font-medium">
-                          {exchangeRate === 1 ? "1:1" : exchangeRate.toFixed(6)}
+                          {exchangeRate === 1 ? "1:1" : exchangeRate.toFixed(2)}
                         </div>
                         {liveRates.lastUpdated > 0 && exchangeRate !== 1 && (
                           <div className="text-xs text-green-600 mt-1 flex items-center gap-1">
@@ -951,7 +951,7 @@ export default function TransfersSection({
                           <Building2 className="w-6 h-6 text-white" />
                         </div>
                         <div className="bg-[#F26623]/75 text-white px-3 py-1 rounded-full text-sm font-medium">
-                          {exchangeRate === 1 ? "1:1" : exchangeRate.toFixed(6)}
+                          {exchangeRate === 1 ? "1:1" : exchangeRate.toFixed(2)}
                         </div>
                         {liveRates.lastUpdated > 0 && exchangeRate !== 1 && (
                           <div className="text-xs text-green-600 mt-1 flex items-center gap-1">
