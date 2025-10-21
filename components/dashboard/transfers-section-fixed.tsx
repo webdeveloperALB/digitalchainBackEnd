@@ -1263,10 +1263,7 @@ export default function TransfersSection({
               </CardHeader>
               <CardContent className="p-4 flex-1 overflow-hidden">
                 {transfers.length === 0 ? (
-                  <div className="text-center py-8 flex-1 flex flex-col justify-center">
-                    <div className="w-12 h-12 bg-gradient-to-br from-slate-200 to-slate-300 rounded-full flex items-center justify-center mx-auto mb-3">
-                      <span className="text-slate-500 text-xl">📋</span>
-                    </div>
+                  <div className="text-center py-0 pb-4 flex-1 flex flex-col justify-center">
                     <p className="text-slate-500">No transfers yet</p>
                     <p className="text-slate-400 text-xs mt-1">
                       Your transfer history will appear here
