@@ -204,11 +204,6 @@ export default function Profile({ userProfile }: ProfileProps) {
 
       <div className="bg-white rounded-2xl shadow-sm p-8 mb-6">
         <div className="flex items-center mb-6">
-          <div className="w-20 h-20 bg-[#F26623] rounded-full flex items-center justify-center text-white text-2xl font-bold mr-6">
-            {userData?.full_name?.charAt(0) ||
-              userData?.email?.charAt(0) ||
-              "U"}
-          </div>
           <div>
             <h2 className="text-2xl font-semibold text-gray-800">
               {userData?.full_name
