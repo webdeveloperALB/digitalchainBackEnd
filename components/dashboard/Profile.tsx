@@ -267,22 +267,6 @@ export default function Profile({ userProfile }: ProfileProps) {
               </div>
             </div>
           )}
-
-          <div className="flex items-center">
-            <Calendar className="w-5 h-5 text-gray-400 mr-3" />
-            <div>
-              <p className="text-sm text-gray-500">Member Since</p>
-              <p className="text-gray-800 font-medium">
-                {userData?.created_at
-                  ? new Date(userData.created_at).toLocaleDateString("en-GB", {
-                      day: "2-digit",
-                      month: "2-digit",
-                      year: "numeric",
-                    })
-                  : "N/A"}
-              </p>
-            </div>
-          </div>
         </div>
       </div>
 

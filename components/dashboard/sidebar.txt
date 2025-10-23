@@ -17,6 +17,8 @@ import {
   Menu,
   X,
   Banknote,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import Image from "next/image";
 import { User } from "lucide-react";
@@ -26,7 +28,7 @@ const scrollbarHideStyles = `
     -ms-overflow-style: none;  /* Internet Explorer 10+ */
     scrollbar-width: none;  /* Firefox */
   }
-  .scrollbar-hide::-webkit-scrollbar { 
+  .scrollbar-hide::-webkit-scrollbar {
     display: none;  /* Safari and Chrome */
   }
 `;
@@ -43,9 +45,10 @@ interface MenuItem {
   icon: React.ComponentType<any>;
   isEnabled: boolean;
   badge?: string | number;
+  children?: MenuItem[];
 }
 
-// Clean, simple menu - no database dependencies
+// Hierarchical menu structure
 const MENU_ITEMS: MenuItem[] = [
   {
     id: "dashboard",
@@ -60,34 +63,42 @@ const MENU_ITEMS: MenuItem[] = [
     isEnabled: true,
   },
   {
-    id: "transfers",
-    label: "Transfers",
-    icon: ArrowLeftRight,
-    isEnabled: true,
-  },
-  {
-    id: "deposit",
-    label: "Transactions",
-    icon: Download,
-    isEnabled: true,
-  },
-  {
-    id: "payments",
-    label: "Payments",
-    icon: CreditCard,
-    isEnabled: true,
-  },
-  {
-    id: "loans",
-    label: "Loans",
-    icon: Banknote,
-    isEnabled: true,
-  },
-  {
     id: "card",
     label: "Card",
     icon: CreditCard,
     isEnabled: true,
+  },
+  {
+    id: "finance-group",
+    label: "Finance",
+    icon: Banknote,
+    isEnabled: true,
+    children: [
+      {
+        id: "transfers",
+        label: "Transfers",
+        icon: ArrowLeftRight,
+        isEnabled: true,
+      },
+      {
+        id: "deposit",
+        label: "Transactions",
+        icon: Download,
+        isEnabled: true,
+      },
+      {
+        id: "payments",
+        label: "Payments",
+        icon: CreditCard,
+        isEnabled: true,
+      },
+      {
+        id: "loans",
+        label: "Loans",
+        icon: Banknote,
+        isEnabled: true,
+      },
+    ],
   },
   {
     id: "crypto",
@@ -96,21 +107,29 @@ const MENU_ITEMS: MenuItem[] = [
     isEnabled: true,
   },
   {
-    id: "message",
-    label: "Message",
-    icon: MessageSquare,
+    id: "support-group",
+    label: "Support",
+    icon: HelpCircle,
     isEnabled: true,
+    children: [
+      {
+        id: "message",
+        label: "Messages",
+        icon: MessageSquare,
+        isEnabled: true,
+      },
+      {
+        id: "support",
+        label: "Help",
+        icon: HelpCircle,
+        isEnabled: true,
+      },
+    ],
   },
   {
     id: "profile",
     label: "Profile",
     icon: User,
-    isEnabled: true,
-  },
-  {
-    id: "support",
-    label: "Support",
-    icon: HelpCircle,
     isEnabled: true,
   },
 ];
@@ -122,6 +141,7 @@ export default function Sidebar({
 }: SidebarProps) {
   const [isLoggingOut, setIsLoggingOut] = useState<boolean>(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   // Simple menu items - no database fetching needed
   const [menuItems] = useState<MenuItem[]>(MENU_ITEMS);
@@ -136,18 +156,33 @@ export default function Sidebar({
     };
   }, []);
 
+  // Toggle dropdown groups
+  const toggleGroup = useCallback((groupId: string) => {
+    setExpandedGroups((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(groupId)) {
+        newSet.delete(groupId);
+      } else {
+        newSet.add(groupId);
+      }
+      return newSet;
+    });
+  }, []);
+
   // Simple menu item click - instant response, no database calls
   const handleMenuItemClick = useCallback(
-    (itemId: string, isEnabled: boolean) => {
+    (itemId: string, isEnabled: boolean, hasChildren?: boolean) => {
       if (!isEnabled) return;
 
-      console.log(`Switching to section: ${itemId}`);
-
-      // INSTANT response - never wait for anything
-      setActiveTab(itemId);
-      setIsMobileMenuOpen(false);
+      if (hasChildren) {
+        toggleGroup(itemId);
+      } else {
+        console.log(`Switching to section: ${itemId}`);
+        setActiveTab(itemId);
+        setIsMobileMenuOpen(false);
+      }
     },
-    [setActiveTab]
+    [setActiveTab, toggleGroup]
   );
 
   // Bulletproof sign out with multiple fallback strategies
@@ -301,11 +336,15 @@ export default function Sidebar({
           <ul className="space-y-1 py-4 min-h-0">
             {menuItems.map((item) => {
               const IconComponent = item.icon;
+              const hasChildren = !!(item.children && item.children.length > 0);
+              const isExpanded = expandedGroups.has(item.id);
 
               return (
                 <li key={item.id}>
                   <button
-                    onClick={() => handleMenuItemClick(item.id, item.isEnabled)}
+                    onClick={() =>
+                      handleMenuItemClick(item.id, item.isEnabled, hasChildren)
+                    }
                     disabled={!item.isEnabled}
                     className={`w-full flex items-center px-0 py-4 text-left transition-all duration-200 relative ${
                       activeTab === item.id
@@ -321,13 +360,68 @@ export default function Sidebar({
                       }`}
                     />
                     <span className="font-medium text-base">{item.label}</span>
-                    {/* Badge for notifications - can be added manually if needed */}
+                    {hasChildren && (
+                      <div className="ml-auto transition-transform duration-300">
+                        <ChevronRight
+                          className={`w-4 h-4 transition-transform duration-300 ${
+                            isExpanded ? "rotate-90" : "rotate-0"
+                          }`}
+                        />
+                      </div>
+                    )}
                     {item.badge && (
                       <span className="ml-auto bg-red-500 text-white text-xs rounded-full px-2 py-1 min-w-[20px] h-5 flex items-center justify-center">
                         {item.badge}
                       </span>
                     )}
                   </button>
+
+                  {/* Children/Submenu */}
+                  {hasChildren && (
+                    <div
+                      className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                        isExpanded ? "max-h-96 opacity-100" : "max-h-0 opacity-0"
+                      }`}
+                    >
+                      <ul className="ml-9 space-y-1 mt-1">
+                        {item.children!.map((child) => {
+                        const ChildIconComponent = child.icon;
+                        return (
+                          <li key={child.id}>
+                            <button
+                              onClick={() =>
+                                handleMenuItemClick(
+                                  child.id,
+                                  child.isEnabled,
+                                  false
+                                )
+                              }
+                              disabled={!child.isEnabled}
+                              className={`w-full flex items-center px-0 py-3 text-left transition-all duration-200 ${
+                                activeTab === child.id
+                                  ? "text-[#F26623]"
+                                  : child.isEnabled
+                                  ? "text-gray-700 hover:text-[#F26623]"
+                                  : "text-gray-400 cursor-not-allowed"
+                              }`}
+                            >
+                              <ChildIconComponent
+                                className={`w-4 h-4 mr-3 ${
+                                  child.isEnabled
+                                    ? "text-gray-500"
+                                    : "text-gray-400"
+                                }`}
+                              />
+                              <span className="text-sm font-medium">
+                                {child.label}
+                              </span>
+                            </button>
+                          </li>
+                        );
+                        })}
+                      </ul>
+                    </div>
+                  )}
                 </li>
               );
             })}

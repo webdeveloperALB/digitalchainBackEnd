@@ -35,7 +35,22 @@ import {
   Banknote,
   TrendingUp,
   TrendingDown,
+  RefreshCw,
+  Download,
+  User,
+  MapPin,
+  SkipForward,
+  XCircle,
 } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Tabs as KYCTabs, TabsList as KYCTabsList, TabsTrigger as KYCTabsTrigger, TabsContent as KYCTabsContent } from "@/components/ui/tabs"
 
 interface User {
   id: string
@@ -63,6 +78,38 @@ interface SimpleTax {
   paid: number
   created_at: string
   updated_at: string
+}
+
+interface KYCRecord {
+  id: string
+  user_id: string
+  full_name: string
+  status: string
+  submitted_at: string
+  document_type: string
+  document_number: string
+  date_of_birth: string
+  address: string
+  city: string
+  country: string
+  postal_code?: string
+  id_document_path: string
+  utility_bill_path: string
+  selfie_path: string
+  driver_license_path?: string
+  reviewed_at?: string
+  rejection_reason?: string
+}
+
+interface UserInterface {
+  id: string
+  email: string
+  full_name?: string
+  kyc_status: string
+  created_at: string
+  is_admin: boolean
+  is_manager: boolean
+  is_superiormanager: boolean
 }
 
 export default function UnifiedAdminPanel() {
@@ -115,6 +162,26 @@ export default function UnifiedAdminPanel() {
     usdt?: number
   } | null>(null)
   const [operation, setOperation] = useState("add")
+
+  // KYC Manager state
+  const [kycRecords, setKycRecords] = useState<KYCRecord[]>([])
+  const [kycSearchResults, setKycSearchResults] = useState<UserInterface[]>([])
+  const [loadingKYC, setLoadingKYC] = useState(false)
+  const [searchingKYC, setSearchingKYC] = useState(false)
+  const [kycError, setKycError] = useState<string | null>(null)
+  const [updatingKYC, setUpdatingKYC] = useState<string | null>(null)
+  const [activeKYCTab, setActiveKYCTab] = useState("pending")
+  const [kycSearchTerm, setKycSearchTerm] = useState("")
+  const [userKYCSearchTerm, setUserKYCSearchTerm] = useState("")
+  const [showSkipDialog, setShowSkipDialog] = useState(false)
+  const [selectedKYCUser, setSelectedKYCUser] = useState<UserInterface | null>(null)
+  const [kycProcessingError, setKycProcessingError] = useState<string | null>(null)
+  const [totalKYCStats, setTotalKYCStats] = useState({
+    total: 0,
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+  })
 
   // Currencies configuration
   const currencies = useMemo(
@@ -867,6 +934,205 @@ export default function UnifiedAdminPanel() {
     }).format(amount)
   }, [])
 
+  // KYC Functions
+  const fetchKYCDataForUser = useCallback(async (userId: string) => {
+    if (!currentAdmin || !accessibleUserIdsLoaded) return
+
+    try {
+      setLoadingKYC(true)
+      setKycError(null)
+
+      const canAccessUser = accessibleUserIds.length === 0 || accessibleUserIds.includes(userId)
+      if (!canAccessUser) {
+        setKycRecords([])
+        setTotalKYCStats({ total: 0, pending: 0, approved: 0, rejected: 0 })
+        return
+      }
+
+      const { data, error } = await supabase
+        .from("kyc_verifications")
+        .select("*")
+        .eq("user_id", userId)
+        .order("submitted_at", { ascending: false })
+
+      if (error) throw error
+
+      setKycRecords(data || [])
+      setTotalKYCStats({
+        total: data?.length || 0,
+        pending: data?.filter((r) => r.status === "pending").length || 0,
+        approved: data?.filter((r) => r.status === "approved").length || 0,
+        rejected: data?.filter((r) => r.status === "rejected").length || 0,
+      })
+    } catch (error: any) {
+      console.error("Error fetching KYC data:", error)
+      setKycError(`Failed to load KYC records: ${error.message}`)
+    } finally {
+      setLoadingKYC(false)
+    }
+  }, [currentAdmin, accessibleUserIds, accessibleUserIdsLoaded])
+
+  const updateKYCStatus = async (
+    userId: string,
+    kycId: string,
+    newStatus: string,
+    rejectionReason?: string
+  ) => {
+    if (!currentAdmin) {
+      setKycProcessingError("Admin session not found")
+      return
+    }
+
+    const canManageKYC = accessibleUserIds.length === 0 || accessibleUserIds.includes(userId)
+
+    if (!canManageKYC) {
+      setKycProcessingError("You don't have permission to manage this user's KYC")
+      return
+    }
+
+    try {
+      setUpdatingKYC(kycId)
+      setKycProcessingError(null)
+
+      const updateData: any = {
+        status: newStatus,
+        reviewed_at: new Date().toISOString(),
+      }
+
+      if (rejectionReason) {
+        updateData.rejection_reason = rejectionReason
+      }
+
+      const { error: kycError } = await supabase
+        .from("kyc_verifications")
+        .update(updateData)
+        .eq("id", kycId)
+
+      if (kycError) throw kycError
+
+      const { error: userError } = await supabase
+        .from("users")
+        .update({ kyc_status: newStatus })
+        .eq("id", userId)
+
+      if (userError) throw userError
+
+      if (selectedUser) {
+        await fetchKYCDataForUser(selectedUser.id)
+      }
+      alert(`KYC ${newStatus} successfully!`)
+    } catch (error: any) {
+      console.error("Error updating KYC status:", error)
+      setKycProcessingError(`Error updating KYC status: ${error.message}`)
+      alert(`Error updating KYC status: ${error.message}`)
+    } finally {
+      setUpdatingKYC(null)
+    }
+  }
+
+  const handleRejectKYC = (userId: string, kycId: string) => {
+    const reason = prompt("Please provide a reason for rejection:")
+    if (reason) {
+      updateKYCStatus(userId, kycId, "rejected", reason)
+    }
+  }
+
+  const downloadDocument = async (path: string, filename: string) => {
+    try {
+      if (path.includes("admin_skip") || path.includes("no_document")) {
+        return
+      }
+
+      let cleanPath = path.trim()
+      if (cleanPath.startsWith("/")) {
+        cleanPath = cleanPath.substring(1)
+      }
+
+      const fileName = cleanPath.split("/").pop()
+      if (!fileName) {
+        alert("Invalid file path - could not extract filename")
+        return
+      }
+
+      const { data, error } = await supabase.storage
+        .from("kyc-documents")
+        .download(cleanPath)
+
+      if (error) {
+        const { data: signedUrlData, error: urlError } = await supabase.storage
+          .from("kyc-documents")
+          .createSignedUrl(cleanPath, 60)
+
+        if (urlError) throw urlError
+
+        if (signedUrlData?.signedUrl) {
+          const response = await fetch(signedUrlData.signedUrl)
+          if (!response.ok) throw new Error("Download failed")
+
+          const blob = await response.blob()
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement("a")
+          a.href = url
+          a.download = filename
+          document.body.appendChild(a)
+          a.click()
+          document.body.removeChild(a)
+          URL.revokeObjectURL(url)
+        }
+      } else if (data) {
+        const url = URL.createObjectURL(data)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+      }
+    } catch (error: any) {
+      console.error("Download error:", error)
+      alert(`Download failed: ${error.message}`)
+    }
+  }
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "pending":
+        return <Clock className="w-4 h-4 text-yellow-600" />
+      case "approved":
+        return <CheckCircle className="w-4 h-4 text-green-600" />
+      case "rejected":
+        return <XCircle className="w-4 h-4 text-red-600" />
+      default:
+        return <Clock className="w-4 h-4 text-gray-600" />
+    }
+  }
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "pending":
+        return (
+          <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
+            Pending
+          </Badge>
+        )
+      case "approved":
+        return (
+          <Badge variant="secondary" className="bg-green-100 text-green-800">
+            Approved
+          </Badge>
+        )
+      case "rejected":
+        return (
+          <Badge variant="secondary" className="bg-red-100 text-red-800">
+            Rejected
+          </Badge>
+        )
+      default:
+        return <Badge variant="secondary">Unknown</Badge>
+    }
+  }
+
   // Initialize current admin
   useEffect(() => {
     let mounted = true
@@ -933,12 +1199,15 @@ export default function UnifiedAdminPanel() {
     if (selectedUser) {
       fetchTaxData(selectedUser.id)
       fetchUserBalances(selectedUser.id)
+      fetchKYCDataForUser(selectedUser.id)
     } else {
       setUserTaxData(null)
       setEditValues({ taxes: "0", on_hold: "0", paid: "0" })
       setUserBalances(null)
+      setKycRecords([])
+      setTotalKYCStats({ total: 0, pending: 0, approved: 0, rejected: 0 })
     }
-  }, [selectedUser, fetchTaxData, fetchUserBalances])
+  }, [selectedUser, fetchTaxData, fetchUserBalances, fetchKYCDataForUser])
 
   // Loading state
   if (loadingPermissions) {
@@ -1140,6 +1409,7 @@ export default function UnifiedAdminPanel() {
       </Card>
 
       {selectedUser && (
+        <div className="space-y-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Transaction Creator Section - Column 1 */}
           <Card className="h-fit">
@@ -1600,6 +1870,338 @@ export default function UnifiedAdminPanel() {
               )}
             </CardContent>
           </Card>
+        </div>
+
+        {/* KYC Manager Section - Full Width */}
+        <Card>
+          <CardHeader>
+            <div className="flex justify-between items-center">
+              <CardTitle className="flex items-center">
+                <FileText className="w-5 h-5 mr-2" />
+                KYC Manager for {selectedUser.full_name || selectedUser.email}
+              </CardTitle>
+              <Button onClick={() => selectedUser && fetchKYCDataForUser(selectedUser.id)} variant="outline" size="sm" disabled={loadingKYC}>
+                {loadingKYC ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                )}
+                Refresh
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {kycError && (
+              <Alert className="border-red-500 bg-red-50">
+                <AlertDescription className="text-red-700 text-sm">{kycError}</AlertDescription>
+              </Alert>
+            )}
+
+            {kycProcessingError && (
+              <Alert className="border-red-500 bg-red-50">
+                <AlertDescription className="text-red-700 text-sm">{kycProcessingError}</AlertDescription>
+              </Alert>
+            )}
+
+            {/* Stats Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Total Records</p>
+                      <p className="text-2xl font-bold">{totalKYCStats.total}</p>
+                    </div>
+                    <FileText className="w-8 h-8 text-gray-400" />
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Pending</p>
+                      <p className="text-2xl font-bold text-yellow-600">{totalKYCStats.pending}</p>
+                    </div>
+                    <Clock className="w-8 h-8 text-yellow-400" />
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Approved</p>
+                      <p className="text-2xl font-bold text-green-600">{totalKYCStats.approved}</p>
+                    </div>
+                    <CheckCircle className="w-8 h-8 text-green-400" />
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Rejected</p>
+                      <p className="text-2xl font-bold text-red-600">{totalKYCStats.rejected}</p>
+                    </div>
+                    <XCircle className="w-8 h-8 text-red-400" />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* KYC Records */}
+            {loadingKYC ? (
+              <div className="space-y-4">
+                {[1, 2].map((i) => (
+                  <Card key={i} className="animate-pulse">
+                    <CardContent className="p-6">
+                      <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                      <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : kycRecords.length === 0 ? (
+              <Card>
+                <CardContent className="text-center py-12">
+                  <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-500 text-lg">No KYC records found for this user</p>
+                  <p className="text-sm text-gray-400 mt-2">KYC submissions will appear here when the user completes verification</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-4">
+                {kycRecords.map((record) => (
+                  <Card key={record.id} className="overflow-hidden">
+                    <CardHeader className="bg-gray-50">
+                      <div className="flex justify-between items-start">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-10 h-10 bg-[#F26623] rounded-full flex items-center justify-center">
+                            <User className="w-5 h-5 text-white" />
+                          </div>
+                          <div>
+                            <CardTitle className="text-xl">{record.full_name}</CardTitle>
+                            <div className="flex items-center space-x-2 mt-1">
+                              <span className="text-sm text-gray-600">
+                                Submitted: {new Date(record.submitted_at).toLocaleDateString()}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          {getStatusIcon(record.status)}
+                          {getStatusBadge(record.status)}
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Personal Information */}
+                        <div className="space-y-4">
+                          <h3 className="font-semibold text-lg flex items-center">
+                            <User className="w-5 h-5 mr-2" />
+                            Personal Information
+                          </h3>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                            <div>
+                              <span className="font-medium text-gray-600">Document Type:</span>
+                              <p className="capitalize">{record.document_type.replace("_", " ")}</p>
+                            </div>
+                            <div>
+                              <span className="font-medium text-gray-600">Document Number:</span>
+                              <p>{record.document_number}</p>
+                            </div>
+                            <div>
+                              <span className="font-medium text-gray-600">Date of Birth:</span>
+                              <p>{new Date(record.date_of_birth).toLocaleDateString()}</p>
+                            </div>
+                            <div>
+                              <span className="font-medium text-gray-600">Submitted:</span>
+                              <p>
+                                {new Date(record.submitted_at).toLocaleDateString()} at{" "}
+                                {new Date(record.submitted_at).toLocaleTimeString()}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex items-start space-x-2">
+                              <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />
+                              <div>
+                                <span className="font-medium text-gray-600">Address:</span>
+                                <p className="text-sm">{record.address}</p>
+                                <p className="text-sm text-gray-600">
+                                  {record.city}, {record.country}
+                                  {record.postal_code && ` ${record.postal_code}`}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                          {record.rejection_reason && (
+                            <div
+                              className={`p-3 border rounded-md ${
+                                record.rejection_reason.includes("SKIPPED BY ADMIN")
+                                  ? "bg-blue-50 border-blue-200"
+                                  : "bg-red-50 border-red-200"
+                              }`}
+                            >
+                              <span
+                                className={`font-medium ${
+                                  record.rejection_reason.includes("SKIPPED BY ADMIN")
+                                    ? "text-blue-800"
+                                    : "text-red-800"
+                                }`}
+                              >
+                                {record.rejection_reason.includes("SKIPPED BY ADMIN")
+                                  ? "Admin Note:"
+                                  : "Rejection Reason:"}
+                              </span>
+                              <p
+                                className={`text-sm mt-1 ${
+                                  record.rejection_reason.includes("SKIPPED BY ADMIN")
+                                    ? "text-blue-700"
+                                    : "text-red-700"
+                                }`}
+                              >
+                                {record.rejection_reason}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Documents */}
+                        <div className="space-y-4">
+                          <h3 className="font-semibold text-lg flex items-center">
+                            <FileText className="w-5 h-5 mr-2" />
+                            Uploaded Documents
+                          </h3>
+                          {record.document_number === "ADMIN_SKIP" ? (
+                            <div className="p-4 bg-blue-50 border border-blue-200 rounded-md text-center">
+                              <SkipForward className="w-8 h-8 text-blue-500 mx-auto mb-2" />
+                              <p className="text-blue-800 font-medium">KYC Skipped by Admin</p>
+                              <p className="text-sm text-blue-600 mt-1">
+                                No documents required for this verification
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                                <span className="text-sm font-medium">ID Document</span>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() =>
+                                    downloadDocument(
+                                      record.id_document_path,
+                                      `${record.full_name}_ID_Document`
+                                    )
+                                  }
+                                >
+                                  <Download className="w-4 h-4 mr-1" />
+                                  Download
+                                </Button>
+                              </div>
+                              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                                <span className="text-sm font-medium">Utility Bill</span>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() =>
+                                    downloadDocument(
+                                      record.utility_bill_path,
+                                      `${record.full_name}_Utility_Bill`
+                                    )
+                                  }
+                                >
+                                  <Download className="w-4 h-4 mr-1" />
+                                  Download
+                                </Button>
+                              </div>
+                              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                                <span className="text-sm font-medium">Selfie</span>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() =>
+                                    downloadDocument(
+                                      record.selfie_path,
+                                      `${record.full_name}_Selfie`
+                                    )
+                                  }
+                                >
+                                  <Download className="w-4 h-4 mr-1" />
+                                  Download
+                                </Button>
+                              </div>
+                              {record.driver_license_path && (
+                                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                                  <span className="text-sm font-medium">Driver License</span>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() =>
+                                      downloadDocument(
+                                        record.driver_license_path!,
+                                        `${record.full_name}_Driver_License`
+                                      )
+                                    }
+                                  >
+                                    <Download className="w-4 h-4 mr-1" />
+                                    Download
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Action Buttons */}
+                      {record.status === "pending" && (
+                        <div className="flex justify-end space-x-3 mt-6 pt-4 border-t">
+                          <Button
+                            onClick={() => handleRejectKYC(record.user_id, record.id)}
+                            variant="destructive"
+                            size="sm"
+                            disabled={updatingKYC === record.id}
+                          >
+                            {updatingKYC === record.id ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              "Reject"
+                            )}
+                          </Button>
+                          <Button
+                            onClick={() =>
+                              updateKYCStatus(record.user_id, record.id, "approved")
+                            }
+                            className="bg-green-600 hover:bg-green-700"
+                            size="sm"
+                            disabled={updatingKYC === record.id}
+                          >
+                            {updatingKYC === record.id ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              "Approve"
+                            )}
+                          </Button>
+                        </div>
+                      )}
+                      {record.status !== "pending" && record.reviewed_at && (
+                        <div className="mt-4 pt-4 border-t text-sm text-gray-500">
+                          Status updated on{" "}
+                          {new Date(record.reviewed_at).toLocaleDateString()} at{" "}
+                          {new Date(record.reviewed_at).toLocaleTimeString()}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
         </div>
       )}
     </div>
