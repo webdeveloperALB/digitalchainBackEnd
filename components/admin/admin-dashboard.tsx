@@ -32,7 +32,6 @@ import BalanceUpdater from "./balance-updater";
 import MessageManager from "./message-manager";
 import DatabaseTest from "./database-test";
 import UserManagementTest from "./user-management-test";
-import KYCAdminPanel from "./kyc-admin-panel";
 import ActivityManager from "./activity-manager";
 import TaxManager from "./tax-manager";
 import UserPresenceTracker from "./user-presence-tracker";
@@ -1057,7 +1056,7 @@ export default function EnhancedAdminDashboard({
           onValueChange={setActiveTab}
           className="space-y-6"
         >
-          <TabsList className="grid w-full grid-cols-7">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="presence" className="flex items-center">
               <Wifi className="w-4 h-4 mr-2" />
               Presence
@@ -1072,10 +1071,6 @@ export default function EnhancedAdminDashboard({
             <TabsTrigger value="activity" className="flex items-center">
               <Activity className="w-4 h-4 mr-2" />
               Activity
-            </TabsTrigger>
-            <TabsTrigger value="kyc" className="flex items-center">
-              <Shield className="w-4 h-4 mr-2" />
-              KYC
             </TabsTrigger>
             <TabsTrigger value="messages" className="flex items-center">
               <Mail className="w-4 h-4 mr-2" />
@@ -1101,10 +1096,6 @@ export default function EnhancedAdminDashboard({
 
           <TabsContent value="activity">
             <ActivityManager />
-          </TabsContent>
-
-          <TabsContent value="kyc">
-            <KYCAdminPanel />
           </TabsContent>
 
           <TabsContent value="messages">
