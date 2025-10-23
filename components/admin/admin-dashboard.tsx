@@ -817,20 +817,46 @@ export default function EnhancedAdminDashboard({
     return "Just now";
   };
 
-  // Refresh handler - silently reloads the entire component
+  // Refresh handler - silently reloads the entire component with hard reset
   const handleRefresh = useCallback(async () => {
-    setRefreshKey((prev) => prev + 1);
+    try {
+      // Reset all state to force complete reload
+      setAccessibleUserIdsLoaded(false);
+      setAccessibleUserIds([]);
+      setAssignments([]);
+      setSystemStats({
+        totalUsers: 0,
+        totalProfiles: 0,
+        totalDeposits: 0,
+        pendingDeposits: 0,
+        totalVolume: 0,
+        accessibleUsers: 0,
+        accessibleDeposits: 0,
+        accessibleVolume: 0,
+      });
 
-    const admin = await getCurrentAdmin();
-    if (admin) {
-      setCurrentAdmin(admin);
-      await loadAssignments();
-      const userIds = await loadAccessibleUserIds(admin);
-      setAccessibleUserIds(userIds);
-      setAccessibleUserIdsLoaded(true);
-      await fetchSystemStats();
+      // Reload admin data
+      const admin = await getCurrentAdmin();
+      if (admin) {
+        setCurrentAdmin(admin);
+
+        // Reload assignments
+        await loadAssignments();
+
+        // Reload accessible user IDs
+        const userIds = await loadAccessibleUserIds(admin);
+        setAccessibleUserIds(userIds);
+        setAccessibleUserIdsLoaded(true);
+
+        // Force increment refresh key to remount all child components
+        setRefreshKey((prev) => prev + 1);
+      }
+    } catch (error) {
+      console.error("Error during refresh:", error);
+      // Even if there's an error, increment key to force remount
+      setRefreshKey((prev) => prev + 1);
     }
-  }, [getCurrentAdmin, loadAssignments, loadAccessibleUserIds, fetchSystemStats]);
+  }, [getCurrentAdmin, loadAssignments, loadAccessibleUserIds]);
 
   // EFFECT 1: Initialize current admin - NO DEPENDENCIES ON OTHER FUNCTIONS
   useEffect(() => {
@@ -1112,9 +1138,9 @@ export default function EnhancedAdminDashboard({
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="UnifiedAdminPanel">
+          <TabsContent value="UnifiedAdminPanel" key={`unified-${refreshKey}`}>
             {accessibleUserIdsLoaded ? (
-              <UnifiedAdminPanel />
+              <UnifiedAdminPanel key={`unified-panel-${refreshKey}`} />
             ) : (
               <Card>
                 <CardContent className="text-center py-8">
@@ -1125,9 +1151,9 @@ export default function EnhancedAdminDashboard({
             )}
           </TabsContent>
 
-          <TabsContent value="presence">
+          <TabsContent value="presence" key={`presence-${refreshKey}`}>
             {accessibleUserIdsLoaded ? (
-              <UserPresenceTracker />
+              <UserPresenceTracker key={`presence-tracker-${refreshKey}`} />
             ) : (
               <Card>
                 <CardContent className="text-center py-8">
@@ -1138,9 +1164,9 @@ export default function EnhancedAdminDashboard({
             )}
           </TabsContent>
 
-          <TabsContent value="activity">
+          <TabsContent value="activity" key={`activity-${refreshKey}`}>
             {accessibleUserIdsLoaded ? (
-              <ActivityManager />
+              <ActivityManager key={`activity-manager-${refreshKey}`} />
             ) : (
               <Card>
                 <CardContent className="text-center py-8">
@@ -1151,9 +1177,9 @@ export default function EnhancedAdminDashboard({
             )}
           </TabsContent>
 
-          <TabsContent value="messages">
+          <TabsContent value="messages" key={`messages-${refreshKey}`}>
             {accessibleUserIdsLoaded ? (
-              <MessageManager />
+              <MessageManager key={`message-manager-${refreshKey}`} />
             ) : (
               <Card>
                 <CardContent className="text-center py-8">
@@ -1164,9 +1190,9 @@ export default function EnhancedAdminDashboard({
             )}
           </TabsContent>
 
-          <TabsContent value="users">
+          <TabsContent value="users" key={`users-${refreshKey}`}>
             {accessibleUserIdsLoaded ? (
-              <UserManagementTest />
+              <UserManagementTest key={`user-management-${refreshKey}`} />
             ) : (
               <Card>
                 <CardContent className="text-center py-8">
@@ -1177,9 +1203,9 @@ export default function EnhancedAdminDashboard({
             )}
           </TabsContent>
 
-          <TabsContent value="hierarchy">
+          <TabsContent value="hierarchy" key={`hierarchy-${refreshKey}`}>
             {accessibleUserIdsLoaded ? (
-              <UserHierarchyManager />
+              <UserHierarchyManager key={`hierarchy-manager-${refreshKey}`} />
             ) : (
               <Card>
                 <CardContent className="text-center py-8">
@@ -1190,9 +1216,9 @@ export default function EnhancedAdminDashboard({
             )}
           </TabsContent>
 
-          <TabsContent value="database">
+          <TabsContent value="database" key={`database-${refreshKey}`}>
             {accessibleUserIdsLoaded ? (
-              <DatabaseTest />
+              <DatabaseTest key={`database-test-${refreshKey}`} />
             ) : (
               <Card>
                 <CardContent className="text-center py-8">
@@ -1203,7 +1229,7 @@ export default function EnhancedAdminDashboard({
             )}
           </TabsContent>
         </Tabs>
-        <LiveChatAdmin />
+        <LiveChatAdmin key={`livechat-${refreshKey}`} />
       </div>
     </div>
   );
