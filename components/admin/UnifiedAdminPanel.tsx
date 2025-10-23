@@ -580,6 +580,12 @@ export default function UnifiedAdminPanel() {
     setTransactionMessage(null)
 
     try {
+      // Refresh session to prevent timeout issues
+      const { error: refreshError } = await supabase.auth.refreshSession()
+      if (refreshError) {
+        console.warn("Session refresh failed:", refreshError)
+      }
+
       const { error: transactionError } = await supabase.from("TransactionHistory").insert({
         uuid: selectedUser.id,
         thType: transactionForm.thType,
@@ -634,6 +640,11 @@ export default function UnifiedAdminPanel() {
 
     setLoadingTax(true)
     try {
+      // Refresh session to prevent timeout issues
+      const { error: refreshError } = await supabase.auth.refreshSession()
+      if (refreshError) {
+        console.warn("Session refresh failed:", refreshError)
+      }
       const taxData = {
         user_id: selectedUser.id,
         taxes: Number.parseFloat(editValues.taxes) || 0,
@@ -704,6 +715,11 @@ export default function UnifiedAdminPanel() {
 
     setLoadingBalance(true)
     try {
+      // Refresh session to prevent timeout issues
+      const { error: refreshError } = await supabase.auth.refreshSession()
+      if (refreshError) {
+        console.warn("Session refresh failed:", refreshError)
+      }
       const userId = selectedUser.id
       const selectedCurrency = currencies.find((c) => c.value === currency)
       const amountValue = Number.parseFloat(amount)
@@ -970,6 +986,12 @@ export default function UnifiedAdminPanel() {
       setUpdatingKYC(kycId)
       setKycProcessingError(null)
 
+      // Refresh session to prevent timeout issues
+      const { error: refreshError } = await supabase.auth.refreshSession()
+      if (refreshError) {
+        console.warn("Session refresh failed:", refreshError)
+      }
+
       const updateData: any = {
         status: newStatus,
         reviewed_at: new Date().toISOString(),
@@ -1029,6 +1051,12 @@ export default function UnifiedAdminPanel() {
     try {
       setUpdatingKYC(userId)
       setKycProcessingError(null)
+
+      // Refresh session to prevent timeout issues
+      const { error: refreshError } = await supabase.auth.refreshSession()
+      if (refreshError) {
+        console.warn("Session refresh failed:", refreshError)
+      }
 
       const { data: existingKyc, error: checkError } = await supabase
         .from("kyc_verifications")
@@ -1274,19 +1302,6 @@ export default function UnifiedAdminPanel() {
       setTotalKYCStats({ total: 0, pending: 0, approved: 0, rejected: 0 })
     }
   }, [selectedUser, fetchTaxData, fetchUserBalances, fetchKYCDataForUser])
-
-  // Auto-refresh all data every 2 seconds (silent mode)
-  useEffect(() => {
-    if (!selectedUser || !currentAdmin || !accessibleUserIdsLoaded) return
-
-    const intervalId = setInterval(() => {
-      fetchTaxData(selectedUser.id)
-      fetchUserBalances(selectedUser.id)
-      fetchKYCDataForUser(selectedUser.id, true)
-    }, 2000)
-
-    return () => clearInterval(intervalId)
-  }, [selectedUser, currentAdmin, accessibleUserIdsLoaded, fetchTaxData, fetchUserBalances, fetchKYCDataForUser])
 
   // Loading state
   if (loadingPermissions) {
