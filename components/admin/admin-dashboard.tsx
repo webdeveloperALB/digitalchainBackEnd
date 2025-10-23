@@ -1087,31 +1087,94 @@ export default function EnhancedAdminDashboard({
           </TabsList>
 
           <TabsContent value="UnifiedAdminPanel">
-            <UnifiedAdminPanel />
+            {accessibleUserIdsLoaded ? (
+              <UnifiedAdminPanel />
+            ) : (
+              <Card>
+                <CardContent className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F26623] mx-auto mb-4"></div>
+                  <p className="text-gray-600">Loading panel...</p>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           <TabsContent value="presence">
-            <UserPresenceTracker />
+            {accessibleUserIdsLoaded ? (
+              <UserPresenceTracker />
+            ) : (
+              <Card>
+                <CardContent className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F26623] mx-auto mb-4"></div>
+                  <p className="text-gray-600">Loading presence data...</p>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           <TabsContent value="activity">
-            <ActivityManager />
+            {accessibleUserIdsLoaded ? (
+              <ActivityManager />
+            ) : (
+              <Card>
+                <CardContent className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F26623] mx-auto mb-4"></div>
+                  <p className="text-gray-600">Loading activity data...</p>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           <TabsContent value="messages">
-            <MessageManager />
+            {accessibleUserIdsLoaded ? (
+              <MessageManager />
+            ) : (
+              <Card>
+                <CardContent className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F26623] mx-auto mb-4"></div>
+                  <p className="text-gray-600">Loading messages...</p>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           <TabsContent value="users">
-            <UserManagementTest />
+            {accessibleUserIdsLoaded ? (
+              <UserManagementTest />
+            ) : (
+              <Card>
+                <CardContent className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F26623] mx-auto mb-4"></div>
+                  <p className="text-gray-600">Loading user data...</p>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           <TabsContent value="hierarchy">
-            <UserHierarchyManager />
+            {accessibleUserIdsLoaded ? (
+              <UserHierarchyManager />
+            ) : (
+              <Card>
+                <CardContent className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F26623] mx-auto mb-4"></div>
+                  <p className="text-gray-600">Loading hierarchy data...</p>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           <TabsContent value="database">
-            <DatabaseTest />
+            {accessibleUserIdsLoaded ? (
+              <DatabaseTest />
+            ) : (
+              <Card>
+                <CardContent className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F26623] mx-auto mb-4"></div>
+                  <p className="text-gray-600">Loading database...</p>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
         </Tabs>
         <LiveChatAdmin />
