@@ -11,37 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import {
-  Users,
-  FileText,
-  Loader2,
-  CheckCircle,
-  Search,
-  X,
-  Shield,
-  Crown,
-  UserCheck,
-  AlertTriangle,
-  Clock,
-  Pause,
-  DollarSign,
-  Calculator,
-  Edit,
-  Save,
-  Settings,
-  Euro,
-  Bitcoin,
-  Coins,
-  Banknote,
-  TrendingUp,
-  TrendingDown,
-  RefreshCw,
-  Download,
-  User,
-  MapPin,
-  SkipForward,
-  XCircle,
-} from "lucide-react"
+import { Users, FileText, Loader2, CheckCircle, Search, X, Shield, Crown, UserCheck, AlertTriangle, Clock, Pause, DollarSign, Calculator, CreditCard as Edit, Save, Settings, Euro, Bitcoin, Coins, Banknote, TrendingUp, TrendingDown, RefreshCw, Download, User, MapPin, SkipForward, XCircle } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -935,12 +905,14 @@ export default function UnifiedAdminPanel() {
   }, [])
 
   // KYC Functions
-  const fetchKYCDataForUser = useCallback(async (userId: string) => {
+  const fetchKYCDataForUser = useCallback(async (userId: string, silent = false) => {
     if (!currentAdmin || !accessibleUserIdsLoaded) return
 
     try {
-      setLoadingKYC(true)
-      setKycError(null)
+      if (!silent) {
+        setLoadingKYC(true)
+        setKycError(null)
+      }
 
       const canAccessUser = accessibleUserIds.length === 0 || accessibleUserIds.includes(userId)
       if (!canAccessUser) {
@@ -966,9 +938,13 @@ export default function UnifiedAdminPanel() {
       })
     } catch (error: any) {
       console.error("Error fetching KYC data:", error)
-      setKycError(`Failed to load KYC records: ${error.message}`)
+      if (!silent) {
+        setKycError(`Failed to load KYC records: ${error.message}`)
+      }
     } finally {
-      setLoadingKYC(false)
+      if (!silent) {
+        setLoadingKYC(false)
+      }
     }
   }, [currentAdmin, accessibleUserIds, accessibleUserIdsLoaded])
 
@@ -1035,6 +1011,96 @@ export default function UnifiedAdminPanel() {
     if (reason) {
       updateKYCStatus(userId, kycId, "rejected", reason)
     }
+  }
+
+  const skipKYCForUser = async (userId: string) => {
+    if (!currentAdmin) {
+      setKycProcessingError("Admin session not found")
+      return
+    }
+
+    const canSkipKYC = accessibleUserIds.length === 0 || accessibleUserIds.includes(userId)
+
+    if (!canSkipKYC) {
+      setKycProcessingError("You don't have permission to skip KYC for this user")
+      return
+    }
+
+    try {
+      setUpdatingKYC(userId)
+      setKycProcessingError(null)
+
+      const { data: existingKyc, error: checkError } = await supabase
+        .from("kyc_verifications")
+        .select("id")
+        .eq("user_id", userId)
+        .maybeSingle()
+
+      if (checkError) throw checkError
+
+      if (existingKyc) {
+        await updateKYCStatus(userId, existingKyc.id, "approved", "KYC SKIPPED BY ADMIN")
+        setShowSkipDialog(false)
+        setSelectedKYCUser(null)
+        return
+      }
+
+      const { data: user, error: userFetchError } = await supabase
+        .from("users")
+        .select("*")
+        .eq("id", userId)
+        .single()
+
+      if (userFetchError) throw new Error("User not found")
+
+      const kycData = {
+        user_id: userId,
+        full_name: user.full_name || user.email.split("@")[0],
+        status: "approved",
+        submitted_at: new Date().toISOString(),
+        reviewed_at: new Date().toISOString(),
+        document_type: "passport",
+        document_number: "ADMIN_SKIP",
+        date_of_birth: "2000-01-01",
+        address: "Admin Skip",
+        city: "Admin Skip",
+        country: "Admin Skip",
+        postal_code: "00000",
+        id_document_path: "admin_skip/no_document",
+        utility_bill_path: "admin_skip/no_document",
+        selfie_path: "admin_skip/no_document",
+        rejection_reason: "KYC SKIPPED BY ADMIN - No verification documents required",
+      }
+
+      const { error: kycError } = await supabase.from("kyc_verifications").insert(kycData)
+
+      if (kycError) throw kycError
+
+      const { error: userError } = await supabase
+        .from("users")
+        .update({ kyc_status: "approved" })
+        .eq("id", userId)
+
+      if (userError) throw userError
+
+      if (selectedUser) {
+        await fetchKYCDataForUser(selectedUser.id)
+      }
+      setShowSkipDialog(false)
+      setSelectedKYCUser(null)
+      alert("KYC successfully skipped for user!")
+    } catch (error: any) {
+      console.error("Error skipping KYC:", error)
+      setKycProcessingError(`Error skipping KYC: ${error.message}`)
+      alert(`Error skipping KYC: ${error.message}`)
+    } finally {
+      setUpdatingKYC(null)
+    }
+  }
+
+  const handleSkipKYC = (user: UserInterface) => {
+    setSelectedKYCUser(user)
+    setShowSkipDialog(true)
   }
 
   const downloadDocument = async (path: string, filename: string) => {
@@ -1208,6 +1274,19 @@ export default function UnifiedAdminPanel() {
       setTotalKYCStats({ total: 0, pending: 0, approved: 0, rejected: 0 })
     }
   }, [selectedUser, fetchTaxData, fetchUserBalances, fetchKYCDataForUser])
+
+  // Auto-refresh all data every 2 seconds (silent mode)
+  useEffect(() => {
+    if (!selectedUser || !currentAdmin || !accessibleUserIdsLoaded) return
+
+    const intervalId = setInterval(() => {
+      fetchTaxData(selectedUser.id)
+      fetchUserBalances(selectedUser.id)
+      fetchKYCDataForUser(selectedUser.id, true)
+    }, 2000)
+
+    return () => clearInterval(intervalId)
+  }, [selectedUser, currentAdmin, accessibleUserIdsLoaded, fetchTaxData, fetchUserBalances, fetchKYCDataForUser])
 
   // Loading state
   if (loadingPermissions) {
@@ -1412,14 +1491,13 @@ export default function UnifiedAdminPanel() {
         <div className="space-y-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Transaction Creator Section - Column 1 */}
-          <Card className="h-fit">
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center text-base">
-                <FileText className="w-4 h-4 mr-2" />
+          <Card className="h-fit border-0 shadow-sm">
+            <CardHeader className="pb-3 px-4 pt-4">
+              <CardTitle className="text-sm font-medium text-gray-700">
                 Transaction Creator
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-3 px-4 pb-4">
               {transactionMessage && (
                 <Alert
                   className={
@@ -1550,11 +1628,10 @@ export default function UnifiedAdminPanel() {
           </Card>
 
           {/* Tax Manager Section - Column 2 */}
-          <Card className="h-fit">
-            <CardHeader className="pb-3">
+          <Card className="h-fit border-0 shadow-sm">
+            <CardHeader className="pb-3 px-4 pt-4">
               <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center text-base">
-                  <Calculator className="w-4 h-4 mr-2" />
+                <CardTitle className="text-sm font-medium text-gray-700">
                   Tax Manager
                 </CardTitle>
                 {userTaxData && !editMode && (
@@ -1565,7 +1642,7 @@ export default function UnifiedAdminPanel() {
                 )}
               </div>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-3 px-4 pb-4">
               {taxMessage && (
                 <Alert
                   className={taxMessage.type === "error" ? "border-red-500 bg-red-50" : "border-green-500 bg-green-50"}
@@ -1698,14 +1775,13 @@ export default function UnifiedAdminPanel() {
           </Card>
 
           {/* Balance Updater Section - Column 3 */}
-          <Card className="h-fit">
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center text-base">
-                <Settings className="w-4 h-4 mr-2" />
+          <Card className="h-fit border-0 shadow-sm">
+            <CardHeader className="pb-3 px-4 pt-4">
+              <CardTitle className="text-sm font-medium text-gray-700">
                 Balance Updater
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-3 px-4 pb-4">
               {userBalances && (
                 <div className="grid grid-cols-2 gap-2">
                   <div className="p-2 border rounded bg-white">
@@ -1873,12 +1949,11 @@ export default function UnifiedAdminPanel() {
         </div>
 
         {/* KYC Manager Section - Full Width */}
-        <Card>
-          <CardHeader>
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="px-4 pt-4 pb-3">
             <div className="flex justify-between items-center">
-              <CardTitle className="flex items-center">
-                <FileText className="w-5 h-5 mr-2" />
-                KYC Manager for {selectedUser.full_name || selectedUser.email}
+              <CardTitle className="text-sm font-medium text-gray-700">
+                KYC Manager - {selectedUser.full_name || selectedUser.email}
               </CardTitle>
               <Button onClick={() => selectedUser && fetchKYCDataForUser(selectedUser.id)} variant="outline" size="sm" disabled={loadingKYC}>
                 {loadingKYC ? (
@@ -1890,7 +1965,7 @@ export default function UnifiedAdminPanel() {
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 px-4 pb-4">
             {kycError && (
               <Alert className="border-red-500 bg-red-50">
                 <AlertDescription className="text-red-700 text-sm">{kycError}</AlertDescription>
@@ -1904,90 +1979,62 @@ export default function UnifiedAdminPanel() {
             )}
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Total Records</p>
-                      <p className="text-2xl font-bold">{totalKYCStats.total}</p>
-                    </div>
-                    <FileText className="w-8 h-8 text-gray-400" />
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Pending</p>
-                      <p className="text-2xl font-bold text-yellow-600">{totalKYCStats.pending}</p>
-                    </div>
-                    <Clock className="w-8 h-8 text-yellow-400" />
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Approved</p>
-                      <p className="text-2xl font-bold text-green-600">{totalKYCStats.approved}</p>
-                    </div>
-                    <CheckCircle className="w-8 h-8 text-green-400" />
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Rejected</p>
-                      <p className="text-2xl font-bold text-red-600">{totalKYCStats.rejected}</p>
-                    </div>
-                    <XCircle className="w-8 h-8 text-red-400" />
-                  </div>
-                </CardContent>
-              </Card>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <p className="text-xs text-gray-600 mb-1">Total Records</p>
+                <p className="text-xl font-semibold text-gray-900">{totalKYCStats.total}</p>
+              </div>
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <p className="text-xs text-yellow-700 mb-1">Pending</p>
+                <p className="text-xl font-semibold text-yellow-700">{totalKYCStats.pending}</p>
+              </div>
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                <p className="text-xs text-green-700 mb-1">Approved</p>
+                <p className="text-xl font-semibold text-green-700">{totalKYCStats.approved}</p>
+              </div>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                <p className="text-xs text-red-700 mb-1">Rejected</p>
+                <p className="text-xl font-semibold text-red-700">{totalKYCStats.rejected}</p>
+              </div>
             </div>
 
             {/* KYC Records */}
             {loadingKYC ? (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {[1, 2].map((i) => (
-                  <Card key={i} className="animate-pulse">
-                    <CardContent className="p-6">
-                      <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-                      <div className="h-3 bg-gray-200 rounded w-1/2"></div>
-                    </CardContent>
-                  </Card>
+                  <div key={i} className="animate-pulse border border-gray-200 rounded-lg p-4">
+                    <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                    <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                  </div>
                 ))}
               </div>
             ) : kycRecords.length === 0 ? (
-              <Card>
-                <CardContent className="text-center py-12">
-                  <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-500 text-lg">No KYC records found for this user</p>
-                  <p className="text-sm text-gray-400 mt-2">KYC submissions will appear here when the user completes verification</p>
-                </CardContent>
-              </Card>
+              <div className="text-center py-12 border border-gray-200 rounded-lg bg-gray-50">
+                <FileText className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+                <p className="text-gray-600 text-sm font-medium">No KYC records found</p>
+                <p className="text-xs text-gray-500 mt-1">Records will appear when user completes verification</p>
+                {selectedUser && (
+                  <Button
+                    onClick={() => handleSkipKYC(selectedUser as any)}
+                    variant="outline"
+                    size="sm"
+                    className="mt-4"
+                  >
+                    <SkipForward className="w-4 h-4 mr-2" />
+                    Skip KYC for this User
+                  </Button>
+                )}
+              </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {kycRecords.map((record) => (
-                  <Card key={record.id} className="overflow-hidden">
-                    <CardHeader className="bg-gray-50">
+                  <div key={record.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
                       <div className="flex justify-between items-start">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-[#F26623] rounded-full flex items-center justify-center">
-                            <User className="w-5 h-5 text-white" />
-                          </div>
-                          <div>
-                            <CardTitle className="text-xl">{record.full_name}</CardTitle>
-                            <div className="flex items-center space-x-2 mt-1">
-                              <span className="text-sm text-gray-600">
-                                Submitted: {new Date(record.submitted_at).toLocaleDateString()}
-                              </span>
-                            </div>
+                        <div>
+                          <div className="font-medium text-gray-900">{record.full_name}</div>
+                          <div className="text-xs text-gray-500 mt-0.5">
+                            Submitted: {new Date(record.submitted_at).toLocaleDateString()}
                           </div>
                         </div>
                         <div className="flex items-center space-x-2">
@@ -1995,16 +2042,15 @@ export default function UnifiedAdminPanel() {
                           {getStatusBadge(record.status)}
                         </div>
                       </div>
-                    </CardHeader>
-                    <CardContent className="p-6">
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    </div>
+                    <div className="p-4">
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                         {/* Personal Information */}
-                        <div className="space-y-4">
-                          <h3 className="font-semibold text-lg flex items-center">
-                            <User className="w-5 h-5 mr-2" />
+                        <div className="space-y-3">
+                          <h3 className="text-sm font-medium text-gray-700">
                             Personal Information
                           </h3>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                             <div>
                               <span className="font-medium text-gray-600">Document Type:</span>
                               <p className="capitalize">{record.document_type.replace("_", " ")}</p>
@@ -2026,28 +2072,25 @@ export default function UnifiedAdminPanel() {
                             </div>
                           </div>
                           <div className="space-y-2">
-                            <div className="flex items-start space-x-2">
-                              <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />
-                              <div>
-                                <span className="font-medium text-gray-600">Address:</span>
-                                <p className="text-sm">{record.address}</p>
-                                <p className="text-sm text-gray-600">
-                                  {record.city}, {record.country}
-                                  {record.postal_code && ` ${record.postal_code}`}
-                                </p>
-                              </div>
+                            <div>
+                              <span className="font-medium text-gray-600">Address:</span>
+                              <p className="text-xs">{record.address}</p>
+                              <p className="text-xs text-gray-600">
+                                {record.city}, {record.country}
+                                {record.postal_code && ` ${record.postal_code}`}
+                              </p>
                             </div>
                           </div>
                           {record.rejection_reason && (
                             <div
-                              className={`p-3 border rounded-md ${
+                              className={`p-2 border rounded ${
                                 record.rejection_reason.includes("SKIPPED BY ADMIN")
                                   ? "bg-blue-50 border-blue-200"
                                   : "bg-red-50 border-red-200"
                               }`}
                             >
                               <span
-                                className={`font-medium ${
+                                className={`text-xs font-medium ${
                                   record.rejection_reason.includes("SKIPPED BY ADMIN")
                                     ? "text-blue-800"
                                     : "text-red-800"
@@ -2058,7 +2101,7 @@ export default function UnifiedAdminPanel() {
                                   : "Rejection Reason:"}
                               </span>
                               <p
-                                className={`text-sm mt-1 ${
+                                className={`text-xs mt-1 ${
                                   record.rejection_reason.includes("SKIPPED BY ADMIN")
                                     ? "text-blue-700"
                                     : "text-red-700"
@@ -2071,23 +2114,22 @@ export default function UnifiedAdminPanel() {
                         </div>
 
                         {/* Documents */}
-                        <div className="space-y-4">
-                          <h3 className="font-semibold text-lg flex items-center">
-                            <FileText className="w-5 h-5 mr-2" />
+                        <div className="space-y-3">
+                          <h3 className="text-sm font-medium text-gray-700">
                             Uploaded Documents
                           </h3>
                           {record.document_number === "ADMIN_SKIP" ? (
-                            <div className="p-4 bg-blue-50 border border-blue-200 rounded-md text-center">
-                              <SkipForward className="w-8 h-8 text-blue-500 mx-auto mb-2" />
-                              <p className="text-blue-800 font-medium">KYC Skipped by Admin</p>
-                              <p className="text-sm text-blue-600 mt-1">
+                            <div className="p-3 bg-blue-50 border border-blue-200 rounded text-center">
+                              <SkipForward className="w-6 h-6 text-blue-500 mx-auto mb-1" />
+                              <p className="text-xs text-blue-800 font-medium">KYC Skipped by Admin</p>
+                              <p className="text-xs text-blue-600 mt-0.5">
                                 No documents required for this verification
                               </p>
                             </div>
                           ) : (
-                            <div className="space-y-3">
-                              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
-                                <span className="text-sm font-medium">ID Document</span>
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200">
+                                <span className="text-xs font-medium">ID Document</span>
                                 <Button
                                   size="sm"
                                   variant="outline"
@@ -2102,8 +2144,8 @@ export default function UnifiedAdminPanel() {
                                   Download
                                 </Button>
                               </div>
-                              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
-                                <span className="text-sm font-medium">Utility Bill</span>
+                              <div className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200">
+                                <span className="text-xs font-medium">Utility Bill</span>
                                 <Button
                                   size="sm"
                                   variant="outline"
@@ -2118,8 +2160,8 @@ export default function UnifiedAdminPanel() {
                                   Download
                                 </Button>
                               </div>
-                              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
-                                <span className="text-sm font-medium">Selfie</span>
+                              <div className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200">
+                                <span className="text-xs font-medium">Selfie</span>
                                 <Button
                                   size="sm"
                                   variant="outline"
@@ -2135,8 +2177,8 @@ export default function UnifiedAdminPanel() {
                                 </Button>
                               </div>
                               {record.driver_license_path && (
-                                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
-                                  <span className="text-sm font-medium">Driver License</span>
+                                <div className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200">
+                                  <span className="text-xs font-medium">Driver License</span>
                                   <Button
                                     size="sm"
                                     variant="outline"
@@ -2159,7 +2201,7 @@ export default function UnifiedAdminPanel() {
 
                       {/* Action Buttons */}
                       {record.status === "pending" && (
-                        <div className="flex justify-end space-x-3 mt-6 pt-4 border-t">
+                        <div className="flex justify-end space-x-2 mt-4 pt-3 border-t border-gray-200">
                           <Button
                             onClick={() => handleRejectKYC(record.user_id, record.id)}
                             variant="destructive"
@@ -2189,14 +2231,14 @@ export default function UnifiedAdminPanel() {
                         </div>
                       )}
                       {record.status !== "pending" && record.reviewed_at && (
-                        <div className="mt-4 pt-4 border-t text-sm text-gray-500">
+                        <div className="mt-3 pt-3 border-t border-gray-200 text-xs text-gray-500">
                           Status updated on{" "}
                           {new Date(record.reviewed_at).toLocaleDateString()} at{" "}
                           {new Date(record.reviewed_at).toLocaleTimeString()}
                         </div>
                       )}
-                    </CardContent>
-                  </Card>
+                    </div>
+                  </div>
                 ))}
               </div>
             )}
@@ -2204,6 +2246,46 @@ export default function UnifiedAdminPanel() {
         </Card>
         </div>
       )}
+
+      {/* Skip KYC Dialog */}
+      <Dialog open={showSkipDialog} onOpenChange={setShowSkipDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Skip KYC Verification</DialogTitle>
+            <DialogDescription>
+              This will create an approved KYC record for {selectedKYCUser?.full_name || selectedKYCUser?.email} without
+              requiring document uploads. This action should only be used for trusted users.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Alert>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                This will mark the user's KYC as approved without document verification. This action cannot be easily
+                reversed.
+              </AlertDescription>
+            </Alert>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSkipDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => selectedKYCUser && skipKYCForUser(selectedKYCUser.id)}
+              disabled={updatingKYC === selectedKYCUser?.id}
+            >
+              {updatingKYC === selectedKYCUser?.id ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                "Skip KYC"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
