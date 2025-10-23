@@ -23,6 +23,7 @@ import {
   AlertTriangle,
   MessageCircle,
   X,
+  RefreshCw,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -109,6 +110,7 @@ export default function EnhancedAdminDashboard({
   const [accessibleUserIdsLoaded, setAccessibleUserIdsLoaded] = useState(false);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
   const [showLiveChat, setShowLiveChat] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const [activeTab, setActiveTab] = useState("UnifiedAdminPanel");
   const [locationInfo, setLocationInfo] = useState<LocationInfo>({
@@ -815,6 +817,21 @@ export default function EnhancedAdminDashboard({
     return "Just now";
   };
 
+  // Refresh handler - silently reloads the entire component
+  const handleRefresh = useCallback(async () => {
+    setRefreshKey((prev) => prev + 1);
+
+    const admin = await getCurrentAdmin();
+    if (admin) {
+      setCurrentAdmin(admin);
+      await loadAssignments();
+      const userIds = await loadAccessibleUserIds(admin);
+      setAccessibleUserIds(userIds);
+      setAccessibleUserIdsLoaded(true);
+      await fetchSystemStats();
+    }
+  }, [getCurrentAdmin, loadAssignments, loadAccessibleUserIds, fetchSystemStats]);
+
   // EFFECT 1: Initialize current admin - NO DEPENDENCIES ON OTHER FUNCTIONS
   useEffect(() => {
     let mounted = true;
@@ -1040,6 +1057,15 @@ export default function EnhancedAdminDashboard({
               <Button
                 variant="outline"
                 size="sm"
+                onClick={handleRefresh}
+                className="text-blue-600 border-blue-200 hover:bg-blue-50 bg-transparent"
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Refresh
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={onLogout}
                 className="text-red-600 border-red-200 hover:bg-red-50 bg-transparent"
               >
@@ -1050,7 +1076,7 @@ export default function EnhancedAdminDashboard({
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-36">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-36" key={refreshKey}>
         <Tabs
           value={activeTab}
           onValueChange={setActiveTab}
