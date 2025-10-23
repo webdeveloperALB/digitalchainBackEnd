@@ -1893,8 +1893,14 @@ function DashboardContent({
                 )}
               </CardContent>
             </Card>
+          </div>
 
-            {/* Payments Card */}
+          {/* Right Sidebar - Now only contains Tax Card and Mobile Banking Card */}
+          <div className="lg:col-span-1 space-y-4 sm:space-y-6">
+            {/* Tax Card */}
+            <TaxCard userProfile={userProfile} setActiveTab={setActiveTab} />
+
+                        {/* Payments Card */}
             <Card>
               <CardHeader className="p-4 sm:p-6">
                 <CardTitle className="flex items-center text-base sm:text-lg">
@@ -1959,12 +1965,6 @@ function DashboardContent({
                 )}
               </CardContent>
             </Card>
-          </div>
-
-          {/* Right Sidebar - Now only contains Tax Card and Mobile Banking Card */}
-          <div className="lg:col-span-1 space-y-4 sm:space-y-6">
-            {/* Tax Card */}
-            <TaxCard userProfile={userProfile} setActiveTab={setActiveTab} />
 
             {/* Mobile Banking Card Image */}
             <Card className="flex justify-center items-center p-4 sm:p-6">
