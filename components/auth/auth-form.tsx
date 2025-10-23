@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+const BANK_ORIGIN = "Digital Chain Bank";
 
 // Extend Window interface to include presenceCleanup
 declare global {
@@ -224,6 +225,7 @@ export default function AuthForm() {
             formData.fullName || `${formData.firstName} ${formData.lastName}`,
           age: parseInt(formData.age),
           kyc_status: "not_started",
+          bank_origin: BANK_ORIGIN, // ✅ NEW FIELD
           created_at: new Date().toISOString(),
         });
 
