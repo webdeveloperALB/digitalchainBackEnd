@@ -846,10 +846,10 @@ export default function TransfersSection({
                         <Input
                           type="number"
                           step="0.00000001"
-                          value={internalFormData.amount}
+                          value={bankFormData.amount}
                           onChange={(e) =>
-                            setInternalFormData({
-                              ...internalFormData,
+                            setBankFormData({
+                              ...bankFormData,
                               amount: e.target.value,
                             })
                           }
@@ -1002,10 +1002,10 @@ export default function TransfersSection({
                         <Input
                           type="number"
                           step="0.00000001"
-                          value={internalFormData.amount}
+                          value={bankFormData.amount}
                           onChange={(e) =>
-                            setInternalFormData({
-                              ...internalFormData,
+                            setBankFormData({
+                              ...bankFormData,
                               amount: e.target.value,
                             })
                           }
