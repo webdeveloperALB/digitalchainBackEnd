@@ -521,31 +521,44 @@ export default function TransfersSection({
   };
 
   const getStatusBadge = (status: string) => {
-    const statusConfig = {
-      Pending: {
-        color: "bg-yellow-100 text-yellow-800 border-yellow-200",
+    const normalized = status.trim().toLowerCase() as
+      | "pending"
+      | "approved"
+      | "completed"
+      | "rejected"
+      | "processing";
+
+    const statusConfig: Record<
+      "pending" | "approved" | "completed" | "rejected" | "processing",
+      {
+        color: string;
+        icon: React.ComponentType<{ className?: string }>;
+      }
+    > = {
+      pending: {
+        color: "bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-100",
         icon: Clock,
       },
-      Approved: {
-        color: "bg-blue-100 text-blue-800 border-blue-200",
+      approved: {
+        color: "bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-100",
         icon: CheckCircle,
       },
-      Completed: {
-        color: "bg-green-100 text-green-800 border-green-200",
+      completed: {
+        color: "bg-green-100 text-green-800 border-green-200 hover:bg-green-100",
         icon: CheckCircle,
       },
-      Rejected: {
-        color: "bg-red-100 text-red-800 border-red-200",
+      rejected: {
+        color: "bg-red-100 text-red-800 border-red-200 hover:bg-red-100",
         icon: XCircle,
       },
-      Processing: {
-        color: "bg-purple-100 text-purple-800 border-purple-200",
+      processing: {
+        color: "bg-purple-100 text-purple-800 border-purple-200 hover:bg-purple-100",
         icon: Clock,
       },
     };
 
-    const config =
-      statusConfig[status as keyof typeof statusConfig] || statusConfig.Pending;
+    // ✅ Type-safe fallback handling
+    const config = statusConfig[normalized] ?? statusConfig.pending;
     const Icon = config.icon;
 
     return (
@@ -846,10 +859,10 @@ export default function TransfersSection({
                         <Input
                           type="number"
                           step="0.00000001"
-                          value={bankFormData.amount}
+                          value={internalFormData.amount}
                           onChange={(e) =>
-                            setBankFormData({
-                              ...bankFormData,
+                            setInternalFormData({
+                              ...internalFormData,
                               amount: e.target.value,
                             })
                           }
@@ -1308,7 +1321,7 @@ export default function TransfersSection({
                               </span>
                               {transfer.fee_amount > 0 && (
                                 <span className="text-red-600 text-xs ml-1">
-                                  (Fee: {Number(transfer.fee_amount).toFixed(8)}
+                                  (Fee: {Number(transfer.fee_amount).toFixed(2)}
                                   )
                                 </span>
                               )}
@@ -1329,7 +1342,7 @@ export default function TransfersSection({
                         {transfer.transfer_type === "bank_transfer" &&
                           transfer.status === "Pending" && (
                             <div className="mt-2 text-xs text-amber-600 bg-amber-50 p-2 rounded">
-                              Bank transfer pending admin approval
+                              Bank transfer pending approval
                             </div>
                           )}
                       </div>
