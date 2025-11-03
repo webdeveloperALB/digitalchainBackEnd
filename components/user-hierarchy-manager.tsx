@@ -83,6 +83,10 @@ export default function UserHierarchyManager() {
   const [userSearchResults, setUserSearchResults] = useState<User[]>([]);
   const [userSearchLoading, setUserSearchLoading] = useState(false);
   const [showUserSearch, setShowUserSearch] = useState(false);
+  // Pagination
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(15);
+  const [hasMore, setHasMore] = useState(true);
 
   // Check if user has full admin access (is_admin: true, others: false)
   const hasFullAdminAccess = () => {
@@ -126,108 +130,84 @@ export default function UserHierarchyManager() {
     }
   }, []);
 
-  // Load users based on current admin's permissions
-  const loadUsers = useCallback(async () => {
-    if (!currentAdmin) return;
+  // Load users based on current admin's permissions (with pagination)
+  const loadUsers = useCallback(
+    async (resetPage = false) => {
+      if (!currentAdmin) return;
 
-    setLoading(true);
-    try {
-      console.log("Loading users for admin:", currentAdmin);
-
-      let query = supabase
-        .from("users")
-        .select(
-          "id, email, full_name, first_name, last_name, created_at, kyc_status, is_admin, is_manager, is_superiormanager"
-        );
-
-      // Apply hierarchy filters
-      if (currentAdmin.is_admin && !currentAdmin.is_superiormanager) {
-        // Full admin - can see everyone (limited to 15 newest)
-        console.log("Full admin - loading 15 newest users");
-        query = query.order("created_at", { ascending: false }).limit(15);
-      } else if (currentAdmin.is_admin && currentAdmin.is_superiormanager) {
-        // Superior manager - can only see managers they assigned and their users
-        console.log(
-          "Superior manager - loading assigned managers and their users"
-        );
-        const { data: managerAssignments } = await supabase
-          .from("user_assignments")
-          .select("assigned_user_id")
-          .eq("manager_id", currentAdmin.id);
-
-        console.log("Manager assignments:", managerAssignments);
-
-        const { data: userAssignments } = await supabase
-          .from("user_assignments")
-          .select("assigned_user_id, manager_id")
-          .in(
-            "manager_id",
-            managerAssignments?.map((a) => a.assigned_user_id) || []
-          );
-
-        console.log("User assignments:", userAssignments);
-
-        const accessibleUserIds = [
-          ...(managerAssignments?.map((a) => a.assigned_user_id) || []),
-          ...(userAssignments?.map((a) => a.assigned_user_id) || []),
-        ];
-
-        console.log("Superior manager accessible user IDs:", accessibleUserIds);
-
-        if (accessibleUserIds.length > 0) {
-          query = query
-            .in("id", accessibleUserIds)
-            .order("created_at", { ascending: false })
-            .limit(15);
-        } else {
-          console.log("No accessible users for superior manager");
-          query = query.eq("id", "00000000-0000-0000-0000-000000000000"); // No results
-        }
-      } else if (currentAdmin.is_manager) {
-        // Manager - can only see assigned users
-        console.log("Manager - loading assigned users");
-        const { data: userAssignments } = await supabase
-          .from("user_assignments")
-          .select("assigned_user_id")
-          .eq("manager_id", currentAdmin.id);
-
-        console.log("Manager's user assignments:", userAssignments);
-
-        const accessibleUserIds =
-          userAssignments?.map((a) => a.assigned_user_id) || [];
-
-        if (accessibleUserIds.length > 0) {
-          query = query
-            .in("id", accessibleUserIds)
-            .order("created_at", { ascending: false })
-            .limit(15);
-        } else {
-          console.log("No assigned users for manager");
-          query = query.eq("id", "00000000-0000-0000-0000-000000000000"); // No results
-        }
+      if (resetPage) {
+        setPage(1);
+        setUsers([]);
+        setHasMore(true);
       }
 
-      const { data: userData, error } = await query;
+      setLoading(true);
+      try {
+        console.log("Loading users for admin:", currentAdmin);
 
-      if (error) throw error;
+        const from = (page - 1) * pageSize;
+        const to = from + pageSize - 1;
 
-      const transformedUsers: User[] = (userData || []).map((user: any) => ({
-        ...user,
-        display_name:
-          user.full_name ||
-          `${user.first_name || ""} ${user.last_name || ""}`.trim() ||
-          user.email?.split("@")[0] ||
-          "Unknown User",
-      }));
+        let query = supabase
+          .from("users")
+          .select(
+            "id, email, full_name, first_name, last_name, created_at, kyc_status, is_admin, is_manager, is_superiormanager",
+            { count: "exact" }
+          )
+          .order("created_at", { ascending: false })
+          .range(from, to);
 
-      setUsers(transformedUsers);
-    } catch (error) {
-      console.error("Failed to load users:", error);
-      setMessage({ type: "error", text: "Failed to load users" });
-    } finally {
-      setLoading(false);
-    }
-  }, [currentAdmin]);
+        // Full admin: all users paginated
+        if (currentAdmin.is_admin && !currentAdmin.is_superiormanager) {
+          console.log(`Full admin - loading users ${from + 1} to ${to + 1}`);
+        }
+        // Manager: only assigned users
+        else if (currentAdmin.is_manager) {
+          const { data: userAssignments } = await supabase
+            .from("user_assignments")
+            .select("assigned_user_id")
+            .eq("manager_id", currentAdmin.id);
+
+          const accessibleUserIds =
+            userAssignments?.map((a) => a.assigned_user_id) || [];
+
+          if (accessibleUserIds.length > 0) {
+            query = query.in("id", accessibleUserIds);
+          } else {
+            setUsers([]);
+            setHasMore(false);
+            return;
+          }
+        }
+
+        const { data: userData, count, error } = await query;
+        if (error) throw error;
+
+        const transformedUsers: User[] = (userData || []).map((user: any) => ({
+          ...user,
+          display_name:
+            user.full_name ||
+            `${user.first_name || ""} ${user.last_name || ""}`.trim() ||
+            user.email?.split("@")[0] ||
+            "Unknown User",
+        }));
+
+        setUsers((prev) =>
+          resetPage ? transformedUsers : [...prev, ...transformedUsers]
+        );
+
+        if (count && to + 1 >= count) {
+          setHasMore(false);
+        }
+      } catch (error) {
+        console.error("Failed to load users:", error);
+        setMessage({ type: "error", text: "Failed to load users" });
+      } finally {
+        setLoading(false);
+      }
+    },
+    [currentAdmin, page, pageSize]
+  );
 
   // Load assignments
   const loadAssignments = useCallback(async () => {
@@ -276,9 +256,17 @@ export default function UserHierarchyManager() {
       setSelectedManager("");
       await loadAssignments();
       await loadUsers();
-    } catch (error) {
-      console.error("Assignment failed:", error);
-      setMessage({ type: "error", text: "Failed to assign user" });
+    } catch (error: any) {
+      console.error("Assignment failed:", JSON.stringify(error, null, 2));
+
+      if (error && error.message) {
+        setMessage({ type: "error", text: `Supabase Error: ${error.message}` });
+      } else {
+        setMessage({
+          type: "error",
+          text: "Failed to assign user (check console for details)",
+        });
+      }
     } finally {
       setActionLoading(false);
     }
@@ -512,32 +500,109 @@ export default function UserHierarchyManager() {
 
     return [];
   };
+  const [availableManagers, setAvailableManagers] = useState<User[]>([]);
 
-  // Get managers that can receive assignments
-  const getAvailableManagers = () => {
+  // Get managers that can receive assignments (always from Supabase)
+  const getAvailableManagers = useCallback(async () => {
     if (!currentAdmin) return [];
 
-    if (currentAdmin.is_admin && !currentAdmin.is_superiormanager) {
-      // Full admin can assign to any manager
-      return users.filter((u) => u.is_manager);
+    try {
+      if (currentAdmin.is_admin && !currentAdmin.is_superiormanager) {
+        // ✅ Full admin: load all managers
+        const { data, error } = await supabase
+          .from("users")
+          .select(
+            "id, email, full_name, first_name, last_name, is_manager, is_superiormanager"
+          )
+          .eq("is_manager", true)
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+
+        return (
+          data?.map((u: any) => ({
+            ...u,
+            display_name:
+              u.full_name ||
+              `${u.first_name || ""} ${u.last_name || ""}`.trim() ||
+              u.email?.split("@")[0] ||
+              "Unknown Manager",
+          })) || []
+        );
+      }
+
+      if (currentAdmin.is_admin && currentAdmin.is_superiormanager) {
+        // ✅ Superior manager: only their assigned managers
+        const { data: managerAssignments } = await supabase
+          .from("user_assignments")
+          .select("assigned_user_id")
+          .eq("manager_id", currentAdmin.id);
+
+        const managerIds =
+          managerAssignments?.map((a) => a.assigned_user_id) || [];
+
+        if (managerIds.length === 0) return [];
+
+        const { data, error } = await supabase
+          .from("users")
+          .select(
+            "id, email, full_name, first_name, last_name, is_manager, is_superiormanager"
+          )
+          .in("id", managerIds)
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+
+        return (
+          data?.map((u: any) => ({
+            ...u,
+            display_name:
+              u.full_name ||
+              `${u.first_name || ""} ${u.last_name || ""}`.trim() ||
+              u.email?.split("@")[0] ||
+              "Unknown Manager",
+          })) || []
+        );
+      }
+
+      if (currentAdmin.is_manager) {
+        // ✅ Manager: only themselves
+        const { data, error } = await supabase
+          .from("users")
+          .select(
+            "id, email, full_name, first_name, last_name, is_manager, is_superiormanager"
+          )
+          .eq("id", currentAdmin.id)
+          .single();
+
+        if (error) throw error;
+
+        return [
+          {
+            ...data,
+            display_name:
+              data.full_name ||
+              `${data.first_name || ""} ${data.last_name || ""}`.trim() ||
+              data.email?.split("@")[0] ||
+              "Unknown Manager",
+          },
+        ];
+      }
+
+      return [];
+    } catch (err) {
+      console.error("Failed to load managers:", err);
+      return [];
     }
+  }, [currentAdmin]);
 
-    if (currentAdmin.is_admin && currentAdmin.is_superiormanager) {
-      // Superior manager can assign to their managers
-      const myManagers = assignments
-        .filter((a) => a.manager_id === currentAdmin.id)
-        .map((a) => a.assigned_user_id);
-
-      return users.filter((u) => myManagers.includes(u.id));
-    }
-
-    if (currentAdmin.is_manager) {
-      // Manager can only assign to themselves
-      return users.filter((u) => u.id === currentAdmin.id);
-    }
-
-    return [];
-  };
+  useEffect(() => {
+    const loadManagers = async () => {
+      const data = await getAvailableManagers();
+      setAvailableManagers(data);
+    };
+    loadManagers();
+  }, [getAvailableManagers]);
 
   // Get managers that can be assigned to superior managers
   const getAssignableManagers = () => {
@@ -576,91 +641,51 @@ export default function UserHierarchyManager() {
     return [];
   };
 
-  // Handle user search for assignment
-  const handleUserSearchChange = async (searchValue: string) => {
-    setUserSearchTerm(searchValue);
+  const handleUserSearchChange = useCallback(
+    async (searchValue: string) => {
+      setUserSearchTerm(searchValue);
+      if (!searchValue.trim()) {
+        await loadUsers(true);
+        return;
+      }
 
-    if (!searchValue.trim()) {
-      // If search is empty, load default assignable users
       setUserSearchLoading(true);
       try {
-        const { data: defaultUsers, error } = await supabase
+        const { data: results, error } = await supabase
           .from("users")
           .select(
             "id, email, full_name, first_name, last_name, created_at, kyc_status, is_admin, is_manager, is_superiormanager"
           )
-          .eq("is_admin", false)
-          .eq("is_manager", false)
+          .or(
+            `email.ilike.%${searchValue}%,full_name.ilike.%${searchValue}%,first_name.ilike.%${searchValue}%,last_name.ilike.%${searchValue}%`
+          )
           .order("created_at", { ascending: false })
-          .limit(100);
+          .limit(pageSize);
 
         if (error) throw error;
 
-        const transformedUsers: User[] = (defaultUsers || []).map(
-          (user: any) => ({
-            ...user,
-            display_name:
-              user.full_name ||
-              `${user.first_name || ""} ${user.last_name || ""}`.trim() ||
-              user.email?.split("@")[0] ||
-              "Unknown User",
-          })
-        );
+        const transformed: User[] = (results || []).map((u: any) => ({
+          ...u,
+          display_name:
+            u.full_name ||
+            `${u.first_name || ""} ${u.last_name || ""}`.trim() ||
+            u.email?.split("@")[0] ||
+            "Unknown User",
+        }));
 
-        setAllUsers(transformedUsers);
+        setUsers(transformed);
+        setHasMore(results.length === pageSize);
+        setPage(1);
       } catch (error) {
-        console.error("Failed to load default users:", error);
-        setAllUsers([]);
+        console.error("Search failed:", error);
+        setUsers([]);
+        setMessage({ type: "error", text: "Search failed" });
       } finally {
         setUserSearchLoading(false);
       }
-      return;
-    }
-
-    setUserSearchLoading(true);
-    try {
-      console.log("Searching all users for assignment:", searchValue);
-
-      const searchLower = searchValue.toLowerCase();
-
-      const { data: searchResults, error } = await supabase
-        .from("users")
-        .select(
-          "id, email, full_name, first_name, last_name, created_at, kyc_status, is_admin, is_manager, is_superiormanager"
-        )
-        .or(
-          `email.ilike.%${searchLower}%,full_name.ilike.%${searchLower}%,first_name.ilike.%${searchLower}%,last_name.ilike.%${searchLower}%`
-        )
-        .eq("is_admin", false) // Only non-admin users can be assigned
-        .eq("is_manager", false) // Only non-manager users can be assigned
-        .order("created_at", { ascending: false })
-        .limit(50);
-
-      if (error) throw error;
-
-      const transformedResults: User[] = (searchResults || []).map(
-        (user: any) => ({
-          ...user,
-          display_name:
-            user.full_name ||
-            `${user.first_name || ""} ${user.last_name || ""}`.trim() ||
-            user.email?.split("@")[0] ||
-            "Unknown User",
-        })
-      );
-
-      setAllUsers(transformedResults);
-      console.log(
-        `Found ${transformedResults.length} users matching "${searchValue}"`
-      );
-    } catch (error) {
-      console.error("User search failed:", error);
-      setMessage({ type: "error", text: "Failed to search users" });
-      setAllUsers([]);
-    } finally {
-      setUserSearchLoading(false);
-    }
-  };
+    },
+    [pageSize, loadUsers]
+  );
 
   // Get user hierarchy display
   const getUserHierarchy = () => {
@@ -748,7 +773,7 @@ export default function UserHierarchyManager() {
 
   useEffect(() => {
     if (currentAdmin) {
-      loadUsers();
+      loadUsers(true);
       loadAssignments();
     }
   }, [currentAdmin, loadUsers, loadAssignments]);
@@ -762,7 +787,6 @@ export default function UserHierarchyManager() {
 
   const hierarchy = getUserHierarchy();
   const assignableUsers = getAssignableUsers();
-  const availableManagers = getAvailableManagers();
 
   if (!currentAdmin) {
     return (
@@ -930,11 +954,17 @@ export default function UserHierarchyManager() {
                       <SelectValue placeholder="Choose a manager" />
                     </SelectTrigger>
                     <SelectContent>
-                      {availableManagers.map((manager) => (
-                        <SelectItem key={manager.id} value={manager.id}>
-                          {manager.display_name} ({manager.email})
-                        </SelectItem>
-                      ))}
+                      {availableManagers.length === 0 ? (
+                        <div className="text-gray-500 text-sm p-2">
+                          Loading managers...
+                        </div>
+                      ) : (
+                        availableManagers.map((manager: User) => (
+                          <SelectItem key={manager.id} value={manager.id}>
+                            {manager.display_name} ({manager.email})
+                          </SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-gray-500 mt-1">
@@ -1097,9 +1127,9 @@ export default function UserHierarchyManager() {
               </div>
 
               <div className="space-y-2 max-h-96 overflow-y-auto">
-                {filteredUsers.map((user) => (
+                {filteredUsers.map((user, index) => (
                   <div
-                    key={user.id}
+                    key={`${user.id}-${index}`}
                     className="flex items-center justify-between p-3 border rounded-lg"
                   >
                     <div className="flex items-center space-x-3">
