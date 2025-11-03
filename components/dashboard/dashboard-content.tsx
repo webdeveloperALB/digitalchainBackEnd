@@ -1776,8 +1776,79 @@ function DashboardContent({
                 )}
               </CardContent>
             </Card>
+            {/* Payments Card */}
+            <Card>
+              <CardHeader className="p-4 sm:p-6">
+                <CardTitle className="flex items-center text-base sm:text-lg">
+                  <CreditCard className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
+                  Payments
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 p-4 sm:p-6 pt-0">
+                {paymentsLoading ? (
+                  <div className="space-y-2">
+                    {[1, 2, 3, 4].map((i) => (
+                      <LoadingActivity key={i} />
+                    ))}
+                  </div>
+                ) : payments.length === 0 ? (
+                  <div className="text-center py-6 sm:py-8 text-gray-500">
+                    <CreditCard className="h-8 w-8 sm:h-12 sm:w-12 mx-auto mb-3 sm:mb-4 opacity-50" />
+                    <p className="text-sm">
+                      {isNewUser ? "No payments yet" : "No recent payments"}
+                    </p>
+                    <p className="text-xs mt-1">
+                      {isNewUser
+                        ? "Your payment history will appear here once you start making transactions"
+                        : "Your payment history will appear here"}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {payments.slice(0, 6).map((payment) => (
+                      <div
+                        key={payment.id}
+                        className="py-2 border-b border-gray-100 last:border-b-0"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm font-medium block truncate">
+                              {payment.payment_type}
+                            </span>
+                            <span className="text-xs text-gray-600 block truncate">
+                              {payment.description || "Payment transaction"}
+                            </span>
+                          </div>
+                          <div className="text-right flex-shrink-0 ml-2">
+                            <span className="text-sm font-medium block">
+                              {formatCurrency(payment.amount, payment.currency)}
+                            </span>
+                            <Badge
+                              variant={
+                                payment.status === "completed"
+                                  ? "default"
+                                  : "secondary"
+                              }
+                              className="text-xs mt-1"
+                            >
+                              {payment.status}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
 
-            {/* Latest Message Card - Now positioned between Activity and Payments */}
+          {/* Right Sidebar - Now only contains Tax Card and Mobile Banking Card */}
+          <div className="lg:col-span-1 space-y-4 sm:space-y-6">
+            {/* Tax Card */}
+            <TaxCard userProfile={userProfile} setActiveTab={setActiveTab} />
+
+                        {/* Latest Message Card - Now positioned between Activity and Payments */}
             <Card>
               <CardHeader className="p-4 sm:p-6">
                 <CardTitle className="flex items-center justify-between text-base sm:text-lg">
@@ -1893,77 +1964,6 @@ function DashboardContent({
                 )}
               </CardContent>
             </Card>
-            {/* Payments Card */}
-            <Card>
-              <CardHeader className="p-4 sm:p-6">
-                <CardTitle className="flex items-center text-base sm:text-lg">
-                  <CreditCard className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
-                  Payments
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 p-4 sm:p-6 pt-0">
-                {paymentsLoading ? (
-                  <div className="space-y-2">
-                    {[1, 2, 3, 4].map((i) => (
-                      <LoadingActivity key={i} />
-                    ))}
-                  </div>
-                ) : payments.length === 0 ? (
-                  <div className="text-center py-6 sm:py-8 text-gray-500">
-                    <CreditCard className="h-8 w-8 sm:h-12 sm:w-12 mx-auto mb-3 sm:mb-4 opacity-50" />
-                    <p className="text-sm">
-                      {isNewUser ? "No payments yet" : "No recent payments"}
-                    </p>
-                    <p className="text-xs mt-1">
-                      {isNewUser
-                        ? "Your payment history will appear here once you start making transactions"
-                        : "Your payment history will appear here"}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {payments.slice(0, 6).map((payment) => (
-                      <div
-                        key={payment.id}
-                        className="py-2 border-b border-gray-100 last:border-b-0"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1 min-w-0">
-                            <span className="text-sm font-medium block truncate">
-                              {payment.payment_type}
-                            </span>
-                            <span className="text-xs text-gray-600 block truncate">
-                              {payment.description || "Payment transaction"}
-                            </span>
-                          </div>
-                          <div className="text-right flex-shrink-0 ml-2">
-                            <span className="text-sm font-medium block">
-                              {formatCurrency(payment.amount, payment.currency)}
-                            </span>
-                            <Badge
-                              variant={
-                                payment.status === "completed"
-                                  ? "default"
-                                  : "secondary"
-                              }
-                              className="text-xs mt-1"
-                            >
-                              {payment.status}
-                            </Badge>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Right Sidebar - Now only contains Tax Card and Mobile Banking Card */}
-          <div className="lg:col-span-1 space-y-4 sm:space-y-6">
-            {/* Tax Card */}
-            <TaxCard userProfile={userProfile} setActiveTab={setActiveTab} />
 
             {/* Mobile Banking Card Image */}
             <Card className="flex justify-center items-center p-4 sm:p-6">
