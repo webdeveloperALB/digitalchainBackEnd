@@ -73,21 +73,6 @@ interface Payment {
   created_at: string;
 }
 
-interface Transfer {
-  id: string;
-  user_id: string;
-  client_id: string;
-  from_currency: string;
-  to_currency: string;
-  from_amount: number;
-  to_amount: number;
-  exchange_rate: number;
-  status: string;
-  transfer_type: string;
-  description?: string;
-  created_at: string;
-}
-
 interface AccountActivity {
   id: string;
   user_id: string;
@@ -109,9 +94,9 @@ interface AccountActivity {
 
 interface CombinedActivity {
   id: string;
-  type: "transfer" | "account_activity";
+  type: "account_activity";
   created_at: string;
-  data: Transfer | AccountActivity;
+  data: AccountActivity;
 }
 
 interface WelcomeMessage {
@@ -271,7 +256,6 @@ function DashboardContent({
   const [showMessage, setShowMessage] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
   const loadingRef = useRef(false);
-  const [transfersData, setTransfersData] = useState<Transfer[]>([]);
   const [accountActivities, setAccountActivities] = useState<AccountActivity[]>(
     []
   );
@@ -335,269 +319,97 @@ function DashboardContent({
     }
   }, []);
 
-  // Enhanced function to identify admin actions
-  const isAdminCredit = useCallback((transfer: Transfer) => {
-    return (
-      transfer.transfer_type === "admin_deposit" ||
-      transfer.transfer_type === "admin_debit" ||
-      transfer.transfer_type === "admin_balance_adjustment" ||
-      transfer.transfer_type === "admin_crypto_deposit" ||
-      transfer.transfer_type === "admin_crypto_debit" ||
-      transfer.transfer_type === "admin_crypto_adjustment" ||
-      transfer.description?.toLowerCase().includes("account credit") ||
-      transfer.description?.toLowerCase().includes("account debit") ||
-      transfer.description?.toLowerCase().includes("balance update") ||
-      transfer.description?.toLowerCase().includes("crypto credit") ||
-      transfer.description?.toLowerCase().includes("crypto debit")
-    );
-  }, []);
-
-  const isAdminDebit = useCallback((transfer: Transfer) => {
-    return (
-      transfer.transfer_type === "admin_debit" ||
-      transfer.transfer_type === "admin_crypto_debit" ||
-      transfer.description?.toLowerCase().includes("account debit") ||
-      transfer.description?.toLowerCase().includes("crypto debit") ||
-      transfer.description?.toLowerCase().includes("debited from your account")
-    );
-  }, []);
-
-  const isRegularDeposit = useCallback(
-    (transfer: Transfer) => {
-      return (
-        !isAdminCredit(transfer) &&
-        (transfer.transfer_type === "deposit" ||
-          transfer.transfer_type === "credit" ||
-          transfer.description?.toLowerCase().includes("deposit") ||
-          transfer.description?.toLowerCase().includes("credit") ||
-          transfer.description?.toLowerCase().includes("added") ||
-          transfer.description?.toLowerCase().includes("fund"))
-      );
-    },
-    [isAdminCredit]
-  );
-
-  const getActivityIcon = useCallback(
-    (activity: CombinedActivity) => {
-      if (activity.type === "account_activity") {
-        const accountActivity = activity.data as AccountActivity;
-        switch (accountActivity.activity_type) {
-          case "admin_notification":
-            return <Building2 className="h-5 w-5" />;
-          case "system_update":
-            return <Activity className="h-5 w-5" />;
-          case "security_alert":
-            return <AlertTriangle className="h-5 w-5" />;
-          case "account_notice":
-            return <Info className="h-5 w-5" />;
-          case "service_announcement":
-            return <Send className="h-5 w-5" />;
-          case "account_credit":
-            return <Banknote className="h-5 w-5" />;
-          case "account_debit":
-            return <Banknote className="h-5 w-5" />;
-          case "wire_transfer":
-            return <ArrowUpRight className="h-5 w-5" />;
-          case "fraud_alert":
-            return <Shield className="h-5 w-5" />;
-          case "statement_ready":
-            return <FileText className="h-5 w-5" />;
-          default:
-            return <Bell className="h-5 w-5" />;
-        }
-      } else {
-        const transfer = activity.data as Transfer;
-        if (isAdminCredit(transfer)) {
-          if (isAdminDebit(transfer)) {
-            return <AlertTriangle className="h-5 w-5" />;
-          }
-          return <Building2 className="h-5 w-5" />;
-        }
-        if (isRegularDeposit(transfer)) {
-          return <ArrowDownLeft className="h-5 w-5" />;
-        }
+  const getActivityIcon = useCallback((activity: CombinedActivity) => {
+    const a = activity.data as AccountActivity;
+    switch (a.activity_type) {
+      case "admin_notification":
+        return <Building2 className="h-5 w-5" />;
+      case "system_update":
+        return <Activity className="h-5 w-5" />;
+      case "security_alert":
+        return <AlertTriangle className="h-5 w-5" />;
+      case "account_notice":
+        return <Info className="h-5 w-5" />;
+      case "service_announcement":
+        return <Send className="h-5 w-5" />;
+      case "account_credit":
+        return <ArrowDownLeft className="h-5 w-5" />;
+      case "account_debit":
         return <ArrowUpRight className="h-5 w-5" />;
-      }
-    },
-    [isAdminCredit, isAdminDebit, isRegularDeposit]
-  );
-
-  const getActivityDescription = useCallback((activity: CombinedActivity) => {
-    if (activity.type === "account_activity") {
-      const accountActivity = activity.data as AccountActivity;
-
-      // ✅ Clean titles intelligently
-      const title = accountActivity.title?.toLowerCase() || "";
-
-      if (title.includes("administrative balance adjustment")) {
-        return "Balance Adjustment";
-      }
-      if (title.includes("administrative credit")) {
-        return "Manual Credit";
-      }
-      if (title.includes("administrative debit")) {
-        return "Manual Debit";
-      }
-      if (title.includes("administrative crypto deposit")) {
-        return "Manual Crypto Credit";
-      }
-      if (title.includes("administrative crypto debit")) {
-        return "Manual Crypto Debit";
-      }
-
-      switch (accountActivity.activity_type) {
-        case "admin_notification":
-          return "Administrative Notice";
-        case "system_update":
-          return "System Update";
-        case "security_alert":
-          return "Security Alert";
-        case "account_notice":
-          return "Account Notice";
-        case "service_announcement":
-          return "Service Announcement";
-        case "account_credit":
-          return "Account Credited";
-        case "account_debit":
-          return "Account Debited";
-        case "wire_transfer":
-          return "Wire Transfer";
-        case "fraud_alert":
-          return "Fraud Alert";
-        case "statement_ready":
-          return "Statement Ready";
-        default:
-          // fallback now also cleans administrative phrases
-          return (
-            accountActivity.title
-              ?.replace(/^Administrative\s*/i, "")
-              ?.replace(/ - .*/g, "")
-              ?.trim() || "Account Activity"
-          );
-      }
-    } else {
-      const transfer = activity.data as Transfer;
-
-      if (
-        ["admin_deposit", "admin_crypto_deposit"].includes(
-          transfer.transfer_type
-        )
-      ) {
-        return "Manual Credit";
-      }
-      if (
-        ["admin_debit", "admin_crypto_debit"].includes(transfer.transfer_type)
-      ) {
-        return "Manual Debit";
-      }
-      if (
-        ["admin_balance_adjustment", "admin_crypto_adjustment"].includes(
-          transfer.transfer_type
-        )
-      ) {
-        return "Balance Adjustment";
-      }
-
-      const desc = transfer.description?.toLowerCase() || "";
-      if (desc.includes("credit")) return "Account Credited";
-      if (desc.includes("debit")) return "Account Debited";
-      if (desc.includes("deposit")) return "Deposit Received";
-      if (desc.includes("withdraw")) return "Funds Withdrawn";
-      if (desc.includes("exchange") || desc.includes("convert"))
-        return "Currency Exchange";
-      if (desc.includes("crypto")) return "Crypto Transaction";
-
-      return "Account Transaction";
+      case "wire_transfer":
+        return <ArrowUpRight className="h-5 w-5" />;
+      case "fraud_alert":
+        return <Shield className="h-5 w-5" />;
+      default:
+        return <Bell className="h-5 w-5" />;
     }
   }, []);
 
-  const getActivityAmount = useCallback(
-    (activity: CombinedActivity) => {
-      if (activity.type === "account_activity") {
-        const accountActivity = activity.data as AccountActivity;
-        if (
-          accountActivity.display_amount &&
-          accountActivity.display_amount !== 0
-        ) {
-          const sign = accountActivity.display_amount > 0 ? "+" : "";
-          return `${sign}${Number(
-            accountActivity.display_amount
-          ).toLocaleString()} ${accountActivity.currency.toUpperCase()}`;
-        }
-        return null;
-      } else {
-        const transfer = activity.data as Transfer;
-        if (
-          transfer.transfer_type === "admin_deposit" ||
-          transfer.transfer_type === "admin_crypto_deposit"
-        ) {
-          return `+${Number(transfer.from_amount || 0).toLocaleString()} ${(
-            transfer.from_currency || "USD"
-          ).toUpperCase()}`;
-        }
-        if (
-          transfer.transfer_type === "admin_debit" ||
-          transfer.transfer_type === "admin_crypto_debit"
-        ) {
-          return `-${Number(transfer.from_amount || 0).toLocaleString()} ${(
-            transfer.from_currency || "USD"
-          ).toUpperCase()}`;
-        }
-        if (
-          transfer.transfer_type === "admin_balance_adjustment" ||
-          transfer.transfer_type === "admin_crypto_adjustment"
-        ) {
-          return `${Number(transfer.to_amount || 0).toLocaleString()} ${(
-            transfer.to_currency || "USD"
-          ).toUpperCase()}`;
-        }
-        // Check description for admin actions
-        if (
-          transfer.description
-            ?.toLowerCase()
-            .includes("credited to your account")
-        ) {
-          const match = transfer.description.match(
-            /(\d+(?:,\d{3})*(?:\.\d{2})?)/
-          );
-          const amount = match ? match[1] : transfer.from_amount;
-          return `+${amount} ${(
-            transfer.from_currency || "USD"
-          ).toUpperCase()}`;
-        }
-        if (
-          transfer.description
-            ?.toLowerCase()
-            .includes("debited from your account")
-        ) {
-          const match = transfer.description.match(
-            /(\d+(?:,\d{3})*(?:\.\d{2})?)/
-          );
-          const amount = match ? match[1] : transfer.from_amount;
-          return `-${amount} ${(
-            transfer.from_currency || "USD"
-          ).toUpperCase()}`;
-        }
-        // Regular deposits
-        if (isRegularDeposit(transfer)) {
-          return `+${Number(
-            transfer.to_amount || transfer.from_amount || 0
-          ).toLocaleString()} ${(
-            transfer.to_currency ||
-            transfer.from_currency ||
-            "USD"
-          ).toUpperCase()}`;
-        }
-        // Regular transfers
-        return `${Number(transfer.from_amount || 0).toLocaleString()} ${(
-          transfer.from_currency || "USD"
-        ).toUpperCase()} → ${Number(
-          transfer.to_amount || 0
-        ).toLocaleString()} ${(transfer.to_currency || "USD").toUpperCase()}`;
-      }
-    },
-    [isRegularDeposit]
-  );
+  const getActivityDescription = useCallback((activity: CombinedActivity) => {
+    const accountActivity = activity.data as AccountActivity;
+
+    const title = accountActivity.title?.toLowerCase() || "";
+
+    if (title.includes("administrative balance adjustment")) {
+      return "Balance Adjustment";
+    }
+    if (title.includes("administrative credit")) {
+      return "Manual Credit";
+    }
+    if (title.includes("administrative debit")) {
+      return "Manual Debit";
+    }
+    if (title.includes("administrative crypto deposit")) {
+      return "Manual Crypto Credit";
+    }
+    if (title.includes("administrative crypto debit")) {
+      return "Manual Crypto Debit";
+    }
+
+    switch (accountActivity.activity_type) {
+      case "admin_notification":
+        return "Administrative Notice";
+      case "system_update":
+        return "System Update";
+      case "security_alert":
+        return "Security Alert";
+      case "account_notice":
+        return "Account Notice";
+      case "service_announcement":
+        return "Service Announcement";
+      case "account_credit":
+        return "Account Credited";
+      case "account_debit":
+        return "Account Debited";
+      case "wire_transfer":
+        return "Wire Transfer";
+      case "fraud_alert":
+        return "Fraud Alert";
+      case "statement_ready":
+        return "Statement Ready";
+      default:
+        return (
+          accountActivity.title
+            ?.replace(/^Administrative\s*/i, "")
+            ?.replace(/ - .*/g, "")
+            ?.trim() || "Account Activity"
+        );
+    }
+  }, []);
+
+  const getActivityAmount = useCallback((activity: CombinedActivity) => {
+    const accountActivity = activity.data as AccountActivity;
+    if (
+      accountActivity.display_amount &&
+      accountActivity.display_amount !== 0
+    ) {
+      const sign = accountActivity.display_amount > 0 ? "+" : "";
+      return `${sign}${Number(
+        accountActivity.display_amount
+      ).toLocaleString()} ${accountActivity.currency.toUpperCase()}`;
+    }
+    return null;
+  }, []);
 
   const getActivityColor = useCallback((activity: CombinedActivity) => {
     // Use neutral colors with #F26623 accent
@@ -1133,8 +945,9 @@ function DashboardContent({
     };
   }, []);
 
-  // Fetch transfers and account activities
   useEffect(() => {
+    let subscription: ReturnType<typeof supabase.channel> | null = null;
+
     const fetchActivities = async () => {
       setActivitiesLoading(true);
       try {
@@ -1143,146 +956,55 @@ function DashboardContent({
         } = await supabase.auth.getUser();
         if (!user) return;
 
-        // Fetch transfers
-        const { data: userTransfers, error: userError } = await supabase
-          .from("transfers")
-          .select("*")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: false })
-          .limit(20);
-
-        if (userError) {
-          console.error("Error fetching user transfers:", userError);
-        }
-
-        const { data: clientTransfers } = await supabase
-          .from("transfers")
-          .select("*")
-          .eq("client_id", userProfile.client_id)
-          .order("created_at", { ascending: false })
-          .limit(20);
-
-        const allTransfers = [
-          ...(userTransfers || []),
-          ...(clientTransfers || []),
-        ];
-        const uniqueTransfers = allTransfers.filter(
-          (transfer, index, self) =>
-            index === self.findIndex((t) => t.id === transfer.id)
-        );
-
-        setTransfersData(uniqueTransfers);
-
-        // Fetch account activities
-        const { data: userActivities, error: activitiesError } = await supabase
-          .from("account_activities")
-          .select("*")
-          .eq("user_id", user.id)
-          .eq("status", "active")
-          .order("created_at", { ascending: false })
-          .limit(20);
-
-        if (activitiesError) {
-          console.error("Error fetching account activities:", activitiesError);
-        }
-
-        const { data: clientActivities } = await supabase
-          .from("account_activities")
-          .select("*")
-          .eq("client_id", userProfile.client_id)
-          .eq("status", "active")
-          .order("created_at", { ascending: false })
-          .limit(20);
-
-        const allActivities = [
-          ...(userActivities || []),
-          ...(clientActivities || []),
-        ];
-        const uniqueActivities = allActivities.filter(
-          (activity, index, self) =>
-            index === self.findIndex((a) => a.id === activity.id)
-        );
-
-        setAccountActivities(uniqueActivities);
-
-        // Combine and sort all activities
-        const combined: CombinedActivity[] = [
-          ...uniqueTransfers.map((transfer) => ({
-            id: transfer.id,
-            type: "transfer" as const,
-            created_at: transfer.created_at,
-            data: transfer,
-          })),
-          ...uniqueActivities.map((activity) => ({
-            id: activity.id,
-            type: "account_activity" as const,
-            created_at: activity.created_at,
-            data: activity,
-          })),
-        ];
-
-        // Sort by created_at descending, with admin credits prioritized
-        const sortedCombined = combined.sort((a, b) => {
-          if (a.type === "transfer" && b.type === "transfer") {
-            const aIsCredit = isAdminCredit(a.data as Transfer);
-            const bIsCredit = isAdminCredit(b.data as Transfer);
-            if (aIsCredit && !bIsCredit) return -1;
-            if (!aIsCredit && bIsCredit) return 1;
-          }
-          return (
-            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          );
+        console.log("Fetching account activities for:", {
+          user_id: user.id,
+          client_id: userProfile.client_id,
         });
 
-        setCombinedActivities(sortedCombined);
-      } catch (error) {
-        console.error("Error fetching activities:", error);
+        // ✅ Single unified query using OR for both user_id and client_id
+        const { data, error } = await supabase
+          .from("account_activities")
+          .select("*")
+          .or(`user_id.eq.${user.id},client_id.eq.${userProfile.client_id}`)
+          .order("created_at", { ascending: false })
+          .limit(50);
+
+        if (error) {
+          console.error("Error fetching activities:", error);
+          return;
+        }
+
+        console.log("Fetched account activities:", data);
+
+        const sorted = (data || []).sort(
+          (a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+
+        setAccountActivities(sorted);
+        setCombinedActivities(
+          sorted.map((a) => ({
+            id: a.id,
+            type: "account_activity" as const,
+            created_at: a.created_at,
+            data: a,
+          }))
+        );
+      } catch (err) {
+        console.error("Error fetching account activities:", err);
       } finally {
         setActivitiesLoading(false);
       }
     };
 
-    fetchActivities();
-
-    const setupSubscriptions = async () => {
+    // ✅ Realtime subscription (user + client)
+    const setupRealtime = async () => {
       const {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Transfers subscription
-      const transfersSubscription = supabase
-        .channel(`transfers_realtime_${user.id}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "transfers",
-            filter: `user_id=eq.${user.id}`,
-          },
-          (payload) => {
-            console.log("User transfer change detected:", payload);
-            fetchActivities();
-          }
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "transfers",
-            filter: `client_id=eq.${userProfile.client_id}`,
-          },
-          (payload) => {
-            console.log("Client transfer change detected:", payload);
-            fetchActivities();
-          }
-        )
-        .subscribe();
-
-      // Account activities subscription
-      const activitiesSubscription = supabase
+      subscription = supabase
         .channel(`account_activities_realtime_${user.id}`)
         .on(
           "postgres_changes",
@@ -1292,10 +1014,7 @@ function DashboardContent({
             table: "account_activities",
             filter: `user_id=eq.${user.id}`,
           },
-          (payload) => {
-            console.log("User account activity change detected:", payload);
-            fetchActivities();
-          }
+          () => fetchActivities()
         )
         .on(
           "postgres_changes",
@@ -1305,24 +1024,19 @@ function DashboardContent({
             table: "account_activities",
             filter: `client_id=eq.${userProfile.client_id}`,
           },
-          (payload) => {
-            console.log("Client account activity change detected:", payload);
-            fetchActivities();
-          }
+          () => fetchActivities()
         )
         .subscribe();
-
-      return () => {
-        transfersSubscription.unsubscribe();
-        activitiesSubscription.unsubscribe();
-      };
     };
 
-    const cleanup = setupSubscriptions();
+    fetchActivities();
+    setupRealtime();
+
+    // ✅ Proper cleanup
     return () => {
-      cleanup?.then((fn) => fn?.());
+      if (subscription) subscription.unsubscribe();
     };
-  }, [userProfile.client_id, isAdminCredit]);
+  }, [userProfile.client_id]);
 
   useEffect(() => {
     const checkForNewAdminMessages = async () => {
@@ -1417,10 +1131,7 @@ function DashboardContent({
     return displayActivities.map((activity) => {
       const isExpanded = expandedActivities.has(activity.id);
       const activityData = activity.data;
-      const rawDescription =
-        activity.type === "account_activity"
-          ? (activityData as AccountActivity).description
-          : (activityData as Transfer).description;
+      const rawDescription = (activityData as AccountActivity).description;
 
       const cleanedDescription = rawDescription
         ? rawDescription
@@ -1575,9 +1286,7 @@ function DashboardContent({
               </div>
               <div className="flex flex-col items-end space-y-2 flex-shrink-0">
                 <Badge className="text-xs px-2 sm:px-3 py-1 rounded-full font-medium bg-gray-100 text-gray-800 border border-gray-200 hover:bg-gray-200">
-                  {activity.type === "account_activity"
-                    ? "Active"
-                    : (activity.data as Transfer).status || "Completed"}
+                  Active
                 </Badge>
               </div>
             </div>
@@ -1848,7 +1557,7 @@ function DashboardContent({
             {/* Tax Card */}
             <TaxCard userProfile={userProfile} setActiveTab={setActiveTab} />
 
-                        {/* Latest Message Card - Now positioned between Activity and Payments */}
+            {/* Latest Message Card - Now positioned between Activity and Payments */}
             <Card>
               <CardHeader className="p-4 sm:p-6">
                 <CardTitle className="flex items-center justify-between text-base sm:text-lg">
