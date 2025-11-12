@@ -82,6 +82,9 @@ export default function ActivityManager() {
   );
   const [recentActivities, setRecentActivities] = useState<ActivityEntry[]>([]);
   const [activitiesLoading, setActivitiesLoading] = useState(false);
+  const [editingActivity, setEditingActivity] = useState<ActivityEntry | null>(
+    null
+  );
 
   // Form state
   const [activityType, setActivityType] = useState("");
@@ -479,7 +482,6 @@ export default function ActivityManager() {
     }
   }, [currentAdmin, fetchRecentActivities]);
 
-  // Submit activity - OPTIMIZED
   const handleSubmit = useCallback(async () => {
     if (!selectedUser || !activityType || !activityTitle || !currentAdmin) {
       setMessage({ type: "error", text: "Please fill in all required fields" });
@@ -501,6 +503,7 @@ export default function ActivityManager() {
         status: "active",
         is_read: false,
         metadata: {},
+        updated_at: new Date().toISOString(),
       };
 
       if (displayAmount && currency) {
@@ -512,12 +515,31 @@ export default function ActivityManager() {
         activityData.expires_at = new Date(expiresAt).toISOString();
       }
 
-      const { error } = await supabase
-        .from("account_activities")
-        .insert(activityData);
-      if (error) throw error;
+      // ✅ If editing, update instead of insert
+      if (editingActivity) {
+        const { error } = await supabase
+          .from("account_activities")
+          .update(activityData)
+          .eq("id", editingActivity.id);
 
-      // Reset form
+        if (error) throw error;
+
+        setMessage({ type: "success", text: "Activity updated successfully!" });
+      } else {
+        const { error } = await supabase
+          .from("account_activities")
+          .insert(activityData);
+        if (error) throw error;
+        setMessage({
+          type: "success",
+          text: `Activity created successfully for ${
+            selectedUser.full_name || selectedUser.email
+          }!`,
+        });
+      }
+
+      // Reset everything
+      setEditingActivity(null);
       setActivityType("");
       setActivityTitle("");
       setActivityDescription("");
@@ -527,13 +549,6 @@ export default function ActivityManager() {
       setExpiresAt("");
       setSelectedUser(null);
       setUserSearch("");
-
-      setMessage({
-        type: "success",
-        text: `Activity created successfully for ${
-          selectedUser.full_name || selectedUser.email
-        }!`,
-      });
 
       fetchRecentActivities();
     } catch (error: any) {
@@ -551,6 +566,7 @@ export default function ActivityManager() {
     priority,
     expiresAt,
     currentAdmin,
+    editingActivity,
     fetchRecentActivities,
   ]);
 
@@ -1017,6 +1033,26 @@ export default function ActivityManager() {
                   </>
                 )}
               </Button>
+              {editingActivity && (
+                <Button
+                  onClick={() => {
+                    setEditingActivity(null);
+                    setActivityType("");
+                    setActivityTitle("");
+                    setActivityDescription("");
+                    setDisplayAmount("");
+                    setCurrency("");
+                    setPriority("normal");
+                    setExpiresAt("");
+                    setSelectedUser(null);
+                    setUserSearch("");
+                  }}
+                  variant="outline"
+                  className="w-full border-gray-400 mt-2"
+                >
+                  Cancel Edit
+                </Button>
+              )}
             </div>
           )}
         </CardContent>
@@ -1098,6 +1134,41 @@ export default function ActivityManager() {
                     <span className="text-xs text-gray-500">
                       {new Date(activity.created_at).toLocaleDateString()}
                     </span>
+
+                    {/* ✅ Edit button */}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setEditingActivity(activity);
+                        setSelectedUser({
+                          id: activity.user_id,
+                          client_id: activity.client_id,
+                          full_name: "Selected User",
+                          email: "",
+                          is_admin: false,
+                          is_manager: false,
+                          is_superiormanager: false,
+                        });
+                        setActivityType(activity.activity_type);
+                        setActivityTitle(activity.title);
+                        setActivityDescription(activity.description || "");
+                        setDisplayAmount(
+                          activity.display_amount?.toString() || ""
+                        );
+                        setCurrency(activity.currency || "");
+                        setPriority(activity.priority || "normal");
+                        setExpiresAt(
+                          activity.expires_at
+                            ? activity.expires_at.slice(0, 16)
+                            : ""
+                        );
+                      }}
+                      className="text-blue-600 hover:text-blue-700"
+                    >
+                      Edit
+                    </Button>
+
                     <Button
                       size="sm"
                       variant="ghost"
