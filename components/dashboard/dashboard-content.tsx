@@ -1179,11 +1179,6 @@ function DashboardContent({
           <div className="p-3 sm:p-4 lg:p-6">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-start space-x-3 flex-1 min-w-0">
-                <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 rounded-full bg-white shadow-sm flex items-center justify-center flex-shrink-0 border-2 border-gray-100">
-                  {React.cloneElement(getActivityIcon(activity), {
-                    className: "h-4 w-4 sm:h-5 sm:w-5 text-[#F26623]",
-                  })}
-                </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-3 mb-2 sm:mb-3">
                     <h4 className="font-bold text-sm sm:text-base lg:text-lg text-gray-900 leading-tight">
