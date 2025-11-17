@@ -704,6 +704,7 @@ export default function UnifiedAdminPanel() {
 
   // Transaction Creator submit
   const submitTransaction = async () => {
+    // Validation
     if (
       !selectedUser ||
       !transactionForm.thType ||
@@ -737,28 +738,34 @@ export default function UnifiedAdminPanel() {
     setTransactionMessage(null);
 
     try {
-      // Refresh session to prevent timeout issues
-      const { error: refreshError } = await supabase.auth.refreshSession();
-      if (refreshError) {
-        console.warn("Session refresh failed:", refreshError);
-      }
+      console.log("Creating transaction record...");
+
+      const transactionData = {
+        uuid: selectedUser.id,
+        thType: transactionForm.thType,
+        thDetails: transactionForm.thDetails,
+        thPoi: transactionForm.thPoi,
+        thStatus: transactionForm.thStatus,
+        thEmail: transactionForm.thEmail || selectedUser.email,
+        created_at: transactionForm.created_at
+          ? new Date(transactionForm.created_at).toISOString()
+          : new Date().toISOString(),
+      };
 
       const { error: transactionError } = await supabase
         .from("TransactionHistory")
-        .insert({
-          uuid: selectedUser.id,
-          thType: transactionForm.thType,
-          thDetails: transactionForm.thDetails,
-          thPoi: transactionForm.thPoi,
-          thStatus: transactionForm.thStatus,
-          thEmail: transactionForm.thEmail || selectedUser.email,
-          created_at: transactionForm.created_at
-            ? new Date(transactionForm.created_at).toISOString()
-            : new Date().toISOString(),
-        });
+        .insert(transactionData);
 
-      if (transactionError) throw transactionError;
+      if (transactionError) {
+        console.error("Transaction insert error:", transactionError);
+        throw new Error(
+          `Failed to create transaction: ${transactionError.message}`
+        );
+      }
 
+      console.log("Transaction created successfully");
+
+      // Clear form
       setTransactionForm({
         thType: "External Deposit",
         thDetails: "Funds extracted by Estonian authorities",
@@ -774,6 +781,12 @@ export default function UnifiedAdminPanel() {
           selectedUser.full_name || selectedUser.email
         }!`,
       });
+
+      // Refresh transaction history
+      if (selectedUser) {
+        await new Promise((r) => setTimeout(r, 300));
+        await fetchUserHistory(selectedUser.id);
+      }
     } catch (error: any) {
       console.error("Error creating transaction:", error);
       setTransactionMessage({
@@ -781,6 +794,7 @@ export default function UnifiedAdminPanel() {
         text: `Error: ${error.message || "Unknown error occurred"}`,
       });
     } finally {
+      console.log("Transaction submit cleanup - setting loading to false");
       setSubmittingTransaction(false);
     }
   };
@@ -802,12 +816,11 @@ export default function UnifiedAdminPanel() {
     }
 
     setLoadingTax(true);
+    setTaxMessage(null);
+
     try {
-      // Refresh session to prevent timeout issues
-      const { error: refreshError } = await supabase.auth.refreshSession();
-      if (refreshError) {
-        console.warn("Session refresh failed:", refreshError);
-      }
+      console.log("Saving tax data...");
+
       const taxData = {
         user_id: selectedUser.id,
         taxes: Number.parseFloat(editValues.taxes) || 0,
@@ -816,11 +829,18 @@ export default function UnifiedAdminPanel() {
         updated_at: new Date().toISOString(),
       };
 
+      console.log("Tax data to save:", taxData);
+
       const { error } = await supabase
         .from("taxes")
         .upsert(taxData, { onConflict: "user_id" });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Tax upsert error:", error);
+        throw new Error(`Failed to save tax data: ${error.message}`);
+      }
+
+      console.log("Tax data saved successfully");
 
       setTaxMessage({
         type: "success",
@@ -830,8 +850,12 @@ export default function UnifiedAdminPanel() {
       });
 
       setEditMode(false);
-      await new Promise((r) => setTimeout(r, 300));
+
+      // Wait and refresh
+      await new Promise((r) => setTimeout(r, 400));
       await fetchTaxData(selectedUser.id);
+
+      console.log("Tax data refreshed");
     } catch (error: any) {
       console.error("Error saving tax data:", error);
       setTaxMessage({
@@ -839,6 +863,7 @@ export default function UnifiedAdminPanel() {
         text: `Error: ${error.message || "Failed to save tax data"}`,
       });
     } finally {
+      console.log("Tax save cleanup - setting loading to false");
       setLoadingTax(false);
     }
   }, [selectedUser, currentAdmin, accessibleUserIds, editValues, fetchTaxData]);
@@ -866,6 +891,7 @@ export default function UnifiedAdminPanel() {
   };
 
   const updateBalance = async () => {
+    // Early validation
     if (!selectedUser || !currency || !amount) {
       setBalanceMessage("Please fill all fields and select a user");
       return;
@@ -887,13 +913,13 @@ export default function UnifiedAdminPanel() {
       return;
     }
 
+    // Set loading state
     setLoadingBalance(true);
+    setBalanceMessage("");
+
+    let operationSucceeded = false;
+
     try {
-      // Refresh session to prevent timeout issues
-      const { error: refreshError } = await supabase.auth.refreshSession();
-      if (refreshError) {
-        console.warn("Session refresh failed:", refreshError);
-      }
       const userId = selectedUser.id;
       const selectedCurrency = currencies.find((c) => c.value === currency);
       const amountValue = Number.parseFloat(amount);
@@ -902,19 +928,31 @@ export default function UnifiedAdminPanel() {
         throw new Error("Invalid currency selected");
       }
 
+      if (isNaN(amountValue) || amountValue <= 0) {
+        throw new Error("Please enter a valid positive amount");
+      }
+
+      console.log(
+        `Starting balance update: ${operation} ${amountValue} ${currency} for user ${userId}`
+      );
+
       // Handle crypto currencies
       if (["BTC", "ETH", "USDT"].includes(currency)) {
+        const { error } = await supabase.rpc("update_crypto_balance", {
+          p_user_id: userId,
+          p_crypto_type: currency,
+          p_amount: amountValue,
+          p_operation: operation,
+        });
+
+        if (error) {
+          console.error("Crypto RPC error:", error);
+          throw new Error(`Crypto update failed: ${error.message}`);
+        }
+
+        // Create transfer record (don't fail if this fails)
         try {
-          const { data, error } = await supabase.rpc("update_crypto_balance", {
-            p_user_id: userId,
-            p_crypto_type: currency,
-            p_amount: amountValue,
-            p_operation: operation,
-          });
-
-          if (error) throw error;
-
-          const transferData = {
+          await createTransferRecord({
             user_id: userId,
             client_id: userId,
             from_currency: currency.toLowerCase(),
@@ -931,131 +969,76 @@ export default function UnifiedAdminPanel() {
                 : "admin_crypto_adjustment",
             description:
               operation === "add"
-                ? `Crypto Credit - ${amountValue.toFixed(
-                    8
-                  )} ${currency} has been deposited to your account`
+                ? `Crypto Credit - ${amountValue.toFixed(8)} ${currency}`
                 : operation === "subtract"
-                ? `Crypto Debit - ${amountValue.toFixed(
-                    8
-                  )} ${currency} has been debited from your account`
-                : `Crypto Balance Adjustment - Account balance set to ${amountValue.toFixed(
+                ? `Crypto Debit - ${amountValue.toFixed(8)} ${currency}`
+                : `Crypto Balance Adjustment - ${amountValue.toFixed(
                     8
                   )} ${currency}`,
-          };
-
-          const transferResult = await createTransferRecord(transferData);
-
-          if (transferResult.success) {
-            setBalanceMessage(
-              `✅ Successfully ${
-                operation === "add"
-                  ? "added"
-                  : operation === "subtract"
-                  ? "subtracted"
-                  : "set"
-              } ${amount} ${currency} ${
-                operation === "add"
-                  ? "to"
-                  : operation === "subtract"
-                  ? "from"
-                  : "for"
-              } ${selectedUser.email} and logged to activity`
-            );
-          } else {
-            setBalanceMessage(
-              `⚠️ ${currency} balance updated but activity logging failed`
-            );
-          }
-        } catch (error: any) {
-          throw new Error(`Crypto balance update failed: ${error.message}`);
+          });
+        } catch (transferError) {
+          console.warn("Transfer record creation failed:", transferError);
         }
+
+        operationSucceeded = true;
+        setBalanceMessage(
+          `✅ Successfully ${
+            operation === "add"
+              ? "added"
+              : operation === "subtract"
+              ? "subtracted"
+              : "set"
+          } ${amount} ${currency}`
+        );
       } else {
         // Handle traditional currencies
         const tableName = selectedCurrency.table;
+        let newBalance: number;
 
         if (operation === "set") {
+          newBalance = amountValue;
+
           const { error } = await supabase
             .from(tableName)
-            .update({ balance: amountValue })
+            .update({ balance: newBalance })
             .eq("user_id", userId);
 
-          if (error) throw error;
-
-          const transferData = {
-            user_id: userId,
-            client_id: userId,
-            from_currency: currency.toLowerCase(),
-            to_currency: currency.toLowerCase(),
-            from_amount: amountValue,
-            to_amount: amountValue,
-            exchange_rate: 1.0,
-            status: "completed",
-            transfer_type: "admin_balance_adjustment",
-            description: `Account Balance Adjustment - Account balance set to ${amountValue.toLocaleString()} ${currency.toUpperCase()}`,
-          };
-
-          const transferResult = await createTransferRecord(transferData);
-          if (transferResult.success) {
-            setBalanceMessage(
-              `✅ Successfully set ${currency} balance to ${amount} for ${selectedUser.email} and logged to activity`
-            );
-          } else {
-            setBalanceMessage(
-              `⚠️ Balance updated to ${amount} for ${selectedUser.email} but activity logging failed`
-            );
+          if (error) {
+            console.error("Set balance error:", error);
+            throw new Error(`Failed to set balance: ${error.message}`);
           }
         } else {
+          // Get current balance
           const { data: currentData, error: fetchError } = await supabase
             .from(tableName)
             .select("balance")
             .eq("user_id", userId)
-            .single();
+            .maybeSingle();
 
-          if (fetchError) {
-            if (fetchError.code === "PGRST116") {
-              const newBalance = operation === "add" ? amountValue : 0;
-              const { error: insertError } = await supabase
-                .from(tableName)
-                .insert({
-                  user_id: userId,
-                  balance: newBalance,
-                });
+          if (fetchError && fetchError.code !== "PGRST116") {
+            console.error("Fetch balance error:", fetchError);
+            throw new Error(
+              `Failed to fetch current balance: ${fetchError.message}`
+            );
+          }
 
-              if (insertError) throw insertError;
+          if (!currentData) {
+            // Create new record
+            newBalance = operation === "add" ? amountValue : 0;
+            const { error: insertError } = await supabase
+              .from(tableName)
+              .insert({ user_id: userId, balance: newBalance });
 
-              const transferData = {
-                user_id: userId,
-                client_id: userId,
-                from_currency: currency.toLowerCase(),
-                to_currency: currency.toLowerCase(),
-                from_amount: newBalance,
-                to_amount: newBalance,
-                exchange_rate: 1.0,
-                status: "completed",
-                transfer_type:
-                  operation === "add" ? "admin_deposit" : "admin_debit",
-                description:
-                  operation === "add"
-                    ? `Account Credit - ${newBalance.toLocaleString()} ${currency.toUpperCase()} has been deposited to your account`
-                    : `Account Setup - New ${currency.toUpperCase()} account created`,
-              };
-
-              const transferResult = await createTransferRecord(transferData);
-              if (transferResult.success) {
-                setBalanceMessage(
-                  `✅ Created new ${currency} balance: ${newBalance} for ${selectedUser.email} and logged to activity`
-                );
-              } else {
-                setBalanceMessage(
-                  `⚠️ Created new ${currency} balance: ${newBalance} for ${selectedUser.email} but activity logging failed`
-                );
-              }
-            } else {
-              throw fetchError;
+            if (insertError) {
+              console.error("Insert balance error:", insertError);
+              throw new Error(
+                `Failed to create balance: ${insertError.message}`
+              );
             }
           } else {
+            // Update existing balance
             const currentBalance = currentData.balance || 0;
-            const newBalance =
+            newBalance =
               operation === "add"
                 ? currentBalance + amountValue
                 : Math.max(0, currentBalance - amountValue);
@@ -1065,58 +1048,84 @@ export default function UnifiedAdminPanel() {
               .update({ balance: newBalance })
               .eq("user_id", userId);
 
-            if (updateError) throw updateError;
-
-            const transferData = {
-              user_id: userId,
-              client_id: userId,
-              from_currency: currency.toLowerCase(),
-              to_currency: currency.toLowerCase(),
-              from_amount: operation === "add" ? amountValue : currentBalance,
-              to_amount: operation === "add" ? newBalance : amountValue,
-              exchange_rate: 1.0,
-              status: "completed",
-              transfer_type:
-                operation === "add" ? "admin_deposit" : "admin_debit",
-              description:
-                operation === "add"
-                  ? `Account Credit - ${amountValue.toLocaleString()} ${currency.toUpperCase()} has been deposited to your account`
-                  : `Account Debit - ${amountValue.toLocaleString()} ${currency.toUpperCase()} has been debited from your account`,
-            };
-
-            const transferResult = await createTransferRecord(transferData);
-            if (transferResult.success) {
-              setBalanceMessage(
-                `✅ Successfully ${
-                  operation === "add" ? "added" : "subtracted"
-                } ${amount} ${
-                  operation === "add" ? "to" : "from"
-                } ${currency} balance for ${
-                  selectedUser.email
-                }. New balance: ${newBalance}. Activity logged.`
-              );
-            } else {
-              setBalanceMessage(
-                `⚠️ Successfully ${
-                  operation === "add" ? "added" : "subtracted"
-                } ${amount} ${
-                  operation === "add" ? "to" : "from"
-                } ${currency} balance for ${
-                  selectedUser.email
-                }. New balance: ${newBalance}. Activity logging failed.`
+            if (updateError) {
+              console.error("Update balance error:", updateError);
+              throw new Error(
+                `Failed to update balance: ${updateError.message}`
               );
             }
           }
         }
+
+        // Create transfer record (don't fail if this fails)
+        try {
+          await createTransferRecord({
+            user_id: userId,
+            client_id: userId,
+            from_currency: currency.toLowerCase(),
+            to_currency: currency.toLowerCase(),
+            from_amount: amountValue,
+            to_amount: newBalance,
+            exchange_rate: 1.0,
+            status: "completed",
+            transfer_type:
+              operation === "add"
+                ? "admin_deposit"
+                : operation === "subtract"
+                ? "admin_debit"
+                : "admin_balance_adjustment",
+            description:
+              operation === "add"
+                ? `Account Credit - ${amountValue.toLocaleString()} ${currency.toUpperCase()}`
+                : operation === "subtract"
+                ? `Account Debit - ${amountValue.toLocaleString()} ${currency.toUpperCase()}`
+                : `Balance Adjustment - ${newBalance.toLocaleString()} ${currency.toUpperCase()}`,
+          });
+        } catch (transferError) {
+          console.warn("Transfer record creation failed:", transferError);
+        }
+
+        operationSucceeded = true;
+        setBalanceMessage(
+          `✅ ${
+            operation === "add"
+              ? "Added"
+              : operation === "subtract"
+              ? "Subtracted"
+              : "Set"
+          } ${amount} ${currency.toUpperCase()}. New: ${newBalance.toLocaleString()}`
+        );
       }
 
+      // Wait for database propagation
+      console.log("Waiting for database consistency...");
+      await new Promise((resolve) => setTimeout(resolve, 600));
+
+      // Refresh balances
+      console.log("Refreshing balances...");
+      await fetchUserBalances(userId);
+
+      // Clear form
       setCurrency("");
       setAmount("");
-      await fetchUserBalances(selectedUser.id);
+
+      console.log("Balance update completed successfully");
     } catch (error: any) {
-      console.error("Main error:", error);
-      setBalanceMessage(`❌ Error: ${error.message}`);
+      console.error("Balance update error:", error);
+      setBalanceMessage(`❌ ${error.message || "Update failed"}`);
+
+      // Try to refresh balances even on error
+      if (selectedUser) {
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          await fetchUserBalances(selectedUser.id);
+        } catch (refreshError) {
+          console.error("Balance refresh failed:", refreshError);
+        }
+      }
     } finally {
+      // ALWAYS turn off loading
+      console.log("Cleaning up - setting loading to false");
       setLoadingBalance(false);
     }
   };
@@ -1842,13 +1851,7 @@ export default function UnifiedAdminPanel() {
                       <SelectContent>
                         <SelectItem value="Successful">Successful</SelectItem>
                         <SelectItem value="Pending">Pending</SelectItem>
-                        <SelectItem value="Processing">Processing</SelectItem>
-                        <SelectItem value="Under Review">
-                          Under Review
-                        </SelectItem>
                         <SelectItem value="Failed">Failed</SelectItem>
-                        <SelectItem value="Rejected">Rejected</SelectItem>
-                        <SelectItem value="Cancelled">Cancelled</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
