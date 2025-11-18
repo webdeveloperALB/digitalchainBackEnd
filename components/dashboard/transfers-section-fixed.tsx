@@ -536,7 +536,8 @@ export default function TransfersSection({
       }
     > = {
       pending: {
-        color: "bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-100",
+        color:
+          "bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-100",
         icon: Clock,
       },
       approved: {
@@ -544,7 +545,8 @@ export default function TransfersSection({
         icon: CheckCircle,
       },
       completed: {
-        color: "bg-green-100 text-green-800 border-green-200 hover:bg-green-100",
+        color:
+          "bg-green-100 text-green-800 border-green-200 hover:bg-green-100",
         icon: CheckCircle,
       },
       rejected: {
@@ -552,7 +554,8 @@ export default function TransfersSection({
         icon: XCircle,
       },
       processing: {
-        color: "bg-purple-100 text-purple-800 border-purple-200 hover:bg-purple-100",
+        color:
+          "bg-purple-100 text-purple-800 border-purple-200 hover:bg-purple-100",
         icon: Clock,
       },
     };
@@ -1331,8 +1334,18 @@ export default function TransfersSection({
                         </div>
                         <div className="flex justify-between items-center text-xs">
                           <span className="text-slate-500">
-                            {new Date(transfer.created_at).toLocaleDateString()}
+                            {(() => {
+                              const d = new Date(transfer.created_at);
+                              const day = String(d.getDate()).padStart(2, "0");
+                              const month = String(d.getMonth() + 1).padStart(
+                                2,
+                                "0"
+                              );
+                              const year = d.getFullYear();
+                              return `${day}-${month}-${year}`;
+                            })()}
                           </span>
+
                           {transfer.reference_number && (
                             <span className="text-slate-600 bg-slate-100 px-2 py-1 rounded text-xs">
                               {transfer.reference_number}

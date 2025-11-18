@@ -92,11 +92,22 @@ interface AccountActivity {
   metadata: any;
 }
 
+interface TransactionHistory {
+  id: number;
+  created_at: string;
+  thType: string;
+  thDetails: string;
+  thPoi: string;
+  thStatus: string;
+  uuid: string | null;
+  thEmail: string | null;
+}
+
 interface CombinedActivity {
   id: string;
   type: "account_activity";
   created_at: string;
-  data: AccountActivity;
+  data: AccountActivity | TransactionHistory;
 }
 
 interface WelcomeMessage {
@@ -956,48 +967,44 @@ function DashboardContent({
         } = await supabase.auth.getUser();
         if (!user) return;
 
-        console.log("Fetching account activities for:", {
+        console.log("Fetching transaction history for:", {
           user_id: user.id,
-          client_id: userProfile.client_id,
         });
 
-        // ✅ Single unified query using OR for both user_id and client_id
         const { data, error } = await supabase
-          .from("account_activities")
+          .from("TransactionHistory")
           .select("*")
-          .or(`user_id.eq.${user.id},client_id.eq.${userProfile.client_id}`)
+          .eq("uuid", user.id)
           .order("created_at", { ascending: false })
           .limit(50);
 
         if (error) {
-          console.error("Error fetching activities:", error);
+          console.error("Error fetching transaction history:", error);
           return;
         }
 
-        console.log("Fetched account activities:", data);
+        console.log("Fetched transaction history:", data);
 
         const sorted = (data || []).sort(
           (a, b) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         );
 
-        setAccountActivities(sorted);
         setCombinedActivities(
           sorted.map((a) => ({
-            id: a.id,
+            id: String(a.id),
             type: "account_activity" as const,
             created_at: a.created_at,
             data: a,
           }))
         );
       } catch (err) {
-        console.error("Error fetching account activities:", err);
+        console.error("Error fetching transaction history:", err);
       } finally {
         setActivitiesLoading(false);
       }
     };
 
-    // ✅ Realtime subscription (user + client)
     const setupRealtime = async () => {
       const {
         data: { user },
@@ -1005,24 +1012,14 @@ function DashboardContent({
       if (!user) return;
 
       subscription = supabase
-        .channel(`account_activities_realtime_${user.id}`)
+        .channel(`transaction_history_realtime_${user.id}`)
         .on(
           "postgres_changes",
           {
             event: "*",
             schema: "public",
-            table: "account_activities",
-            filter: `user_id=eq.${user.id}`,
-          },
-          () => fetchActivities()
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "account_activities",
-            filter: `client_id=eq.${userProfile.client_id}`,
+            table: "TransactionHistory",
+            filter: `uuid=eq.${user.id}`,
           },
           () => fetchActivities()
         )
@@ -1032,7 +1029,6 @@ function DashboardContent({
     fetchActivities();
     setupRealtime();
 
-    // ✅ Proper cleanup
     return () => {
       if (subscription) subscription.unsubscribe();
     };
@@ -1131,50 +1127,49 @@ function DashboardContent({
     return displayActivities.map((activity) => {
       const isExpanded = expandedActivities.has(activity.id);
       const activityData = activity.data;
-      const rawDescription = (activityData as AccountActivity).description;
 
-      const cleanedDescription = rawDescription
-        ? rawDescription
-            .replace(/^Administrative\s*/i, "")
-            .replace(/Account balance set to/i, "New balance:")
-            .replace(/Crypto Credit - /i, "Deposit confirmed:")
-            .replace(/Crypto Debit - /i, "Withdrawal processed:")
-            .replace(/Account Credit - /i, "Deposit confirmed:")
-            .replace(/Account Debit - /i, "Withdrawal processed:")
-            .replace(/Balance Adjustment - /i, "Balance updated:")
-            .trim()
+      const isTransactionHistory = "thType" in activityData;
+
+      const title = isTransactionHistory
+        ? (activityData as TransactionHistory).thType
+        : (() => {
+            const text = getActivityDescription(activity);
+            switch (text) {
+              case "Manual Credit":
+              case "Account Credited":
+                return "Deposit Received";
+              case "Manual Debit":
+              case "Account Debited":
+                return "Funds Withdrawn";
+              case "Balance Adjustment":
+                return "Balance Updated";
+              case "Manual Crypto Credit":
+                return "Crypto Deposit";
+              case "Manual Crypto Debit":
+                return "Crypto Withdrawal";
+              default:
+                return text;
+            }
+          })();
+
+      const description = isTransactionHistory
+        ? (activityData as TransactionHistory).thDetails
         : null;
 
-      const title = (() => {
-        const text = getActivityDescription(activity);
-        switch (text) {
-          case "Manual Credit":
-          case "Account Credited":
-            return "Deposit Received";
-          case "Manual Debit":
-          case "Account Debited":
-            return "Funds Withdrawn";
-          case "Balance Adjustment":
-            return "Balance Updated";
-          case "Manual Crypto Credit":
-            return "Crypto Deposit";
-          case "Manual Crypto Debit":
-            return "Crypto Withdrawal";
-          default:
-            return text;
-        }
-      })();
+      const pointOfInteraction = isTransactionHistory
+        ? (activityData as TransactionHistory).thPoi
+        : null;
 
-      const amount = getActivityAmount(activity);
-      const shouldShowExpand =
-        cleanedDescription && cleanedDescription.length > 100;
+      const status = isTransactionHistory
+        ? (activityData as TransactionHistory).thStatus
+        : null;
+
+      const shouldShowExpand = description && description.length > 100;
 
       return (
         <div
           key={activity.id}
-          className={`transition-all duration-200 hover:bg-gray-50/50 ${getActivityColor(
-            activity
-          )} border-l-4 hover:border-l-[#F26623]`}
+          className={`transition-all duration-200 hover:bg-gray-50/50 border-gray-200 bg-gray-50/30 hover:border-[#F26623]/30 border-l-4 hover:border-l-[#F26623]`}
         >
           <div className="p-3 sm:p-4 lg:p-6">
             <div className="flex items-start justify-between gap-3">
@@ -1184,42 +1179,26 @@ function DashboardContent({
                     <h4 className="font-bold text-sm sm:text-base lg:text-lg text-gray-900 leading-tight">
                       {title}
                     </h4>
-                    {activity.type === "account_activity" && (
+                    {status && (
                       <Badge
-                        className={`text-xs font-medium border mt-1 sm:mt-0 self-start ${getPriorityColor(
-                          (activityData as AccountActivity).priority
-                        )}`}
+                        className={`text-xs font-medium border mt-1 sm:mt-0 self-start ${
+                          status.toLowerCase() === "successful"
+                            ? "bg-green-100 text-green-800 border-green-200"
+                            : "bg-gray-100 text-gray-800 border-gray-200"
+                        }`}
                       >
-                        {(
-                          activityData as AccountActivity
-                        ).priority.toUpperCase()}
+                        {status.toUpperCase()}
                       </Badge>
                     )}
                   </div>
-                  {amount && (
-                    <div className="flex items-center space-x-2 mb-2 sm:mb-3">
-                      <Banknote className="h-3 w-3 sm:h-4 sm:w-4 text-gray-500" />
-                      <span
-                        className={`font-semibold text-sm sm:text-base lg:text-lg ${
-                          amount.startsWith("+")
-                            ? "text-[#10B981]"
-                            : amount.startsWith("-")
-                            ? "text-[#EF4444]"
-                            : "text-gray-800"
-                        }`}
-                      >
-                        {amount}
-                      </span>
-                    </div>
-                  )}
-                  {cleanedDescription && (
+                  {description && (
                     <div className="mb-3 sm:mb-4">
                       <div
                         className={`text-xs sm:text-sm text-gray-700 leading-relaxed ${
                           !isExpanded && shouldShowExpand ? "line-clamp-3" : ""
                         }`}
                       >
-                        {cleanedDescription.split("\n").map((line, index) => (
+                        {description.split("\n").map((line, index) => (
                           <div key={index} className={index > 0 ? "mt-2" : ""}>
                             {line}
                           </div>
@@ -1247,6 +1226,14 @@ function DashboardContent({
                       )}
                     </div>
                   )}
+                  {pointOfInteraction && (
+                    <div className="mb-2 sm:mb-3">
+                      <span className="text-xs text-gray-600">
+                        <strong>Point of Interaction:</strong>{" "}
+                        {pointOfInteraction}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-6 space-y-1 sm:space-y-0 text-xs text-gray-500">
                     <div className="flex items-center space-x-1">
                       <Clock className="h-3 w-3" />
@@ -1269,19 +1256,12 @@ function DashboardContent({
                         )}
                       </span>
                     </div>
-                    {activity.type === "account_activity" &&
-                      (activityData as AccountActivity).created_by && (
-                        <div className="flex items-center space-x-1">
-                          <User className="h-3 w-3" />
-                          <span>Verified by Bank</span>
-                        </div>
-                      )}
                   </div>
                 </div>
               </div>
               <div className="flex flex-col items-end space-y-2 flex-shrink-0">
                 <Badge className="text-xs px-2 sm:px-3 py-1 rounded-full font-medium bg-gray-100 text-gray-800 border border-gray-200 hover:bg-gray-200">
-                  Active
+                  {status || "Active"}
                 </Badge>
               </div>
             </div>
@@ -1293,11 +1273,6 @@ function DashboardContent({
     combinedActivities,
     showAllActivities,
     expandedActivities,
-    getActivityColor,
-    getActivityIcon,
-    getActivityDescription,
-    getPriorityColor,
-    getActivityAmount,
     toggleActivityExpansion,
   ]);
 
