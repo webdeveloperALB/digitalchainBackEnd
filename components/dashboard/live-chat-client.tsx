@@ -11,7 +11,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { MessageCircle, Send, X, Minimize2, Maximize2, User, Wifi, WifiOff } from 'lucide-react';
+import {
+  MessageCircle,
+  Send,
+  X,
+  Minimize2,
+  Maximize2,
+  User,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 
@@ -44,6 +53,8 @@ export default function LiveChatClient({
   const [isStarted, setIsStarted] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  // NEW — detect logged-in Supabase user
+  const [isAuthUser, setIsAuthUser] = useState(false);
 
   const messagesPaneRef = useRef<HTMLDivElement>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -70,6 +81,22 @@ export default function LiveChatClient({
     }
   }, [isOpen]);
 
+  // NEW — auto-fill email & name from logged-in user
+  useEffect(() => {
+    const loadUser = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) {
+        setClientEmail(user.email || "");
+        setClientName(user.user_metadata?.full_name || "");
+        setIsAuthUser(true);
+      }
+    };
+
+    loadUser();
+  }, []);
+
   useEffect(() => {
     if (isOpen && !isMinimized && isStarted && messages.length > 0) {
       forceScrollToBottom();
@@ -87,13 +114,24 @@ export default function LiveChatClient({
     }
 
     try {
+      const { data: authData } = await supabase.auth.getUser();
+      const user = authData?.user || null;
+
+      // prepare payload
+      const insertPayload: any = {
+        client_name: clientName.trim(),
+        client_email: clientEmail.trim(),
+        status: "active",
+      };
+
+      // if user logged in -> attach real user ID
+      if (user) {
+        insertPayload.client_user_id = user.id;
+      }
+
       const { data, error } = await supabase
         .from("chat_sessions")
-        .insert({
-          client_name: clientName.trim(),
-          client_email: clientEmail.trim(),
-          status: "active",
-        })
+        .insert(insertPayload)
         .select()
         .single();
 
@@ -309,15 +347,28 @@ export default function LiveChatClient({
                   placeholder="Enter your name"
                 />
               </div>
-              <div>
-                <Label>Email *</Label>
-                <Input
-                  type="email"
-                  value={clientEmail}
-                  onChange={(e) => setClientEmail(e.target.value)}
-                  placeholder="Enter your email"
-                />
-              </div>
+              {isAuthUser ? (
+                <div>
+                  <Label>Email *</Label>
+                  <Input
+                    type="email"
+                    value={clientEmail}
+                    readOnly
+                    className="bg-gray-100 cursor-not-allowed"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <Label>Email *</Label>
+                  <Input
+                    type="email"
+                    value={clientEmail}
+                    onChange={(e) => setClientEmail(e.target.value)}
+                    placeholder="Enter your email"
+                  />
+                </div>
+              )}
+
               <Button
                 onClick={startChat}
                 className="w-full bg-[#F26623] hover:bg-[#E55A1F]"
