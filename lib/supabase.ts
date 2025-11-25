@@ -25,6 +25,37 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 })
 
+export interface UserBankDetails {
+  id: string;
+  user_id: string;
+  beneficiary: string;
+  iban: string;
+  bic: string;
+  bank_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FundAccount {
+  id: string;
+  user_id: string;
+  funding_method: 'crypto' | 'bank';
+  status: 'pending' | 'success';
+  amount: number;
+  currency: string;
+  user_name: string;
+  user_email: string;
+  crypto_type?: 'bitcoin' | 'ethereum' | 'tron';
+  crypto_address?: string;
+  bank_beneficiary?: string;
+  bank_iban?: string;
+  bank_bic?: string;
+  bank_name?: string;
+  reference_number?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export type User = {
   id: string
   email: string | null
