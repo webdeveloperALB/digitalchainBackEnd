@@ -439,30 +439,6 @@ export default function BankTransferForm({ onBack }: BankTransferFormProps) {
                         </button>
                       </div>
                     </div>
-
-                    {/* Reference Number */}
-                    <div className="bg-[#F26623] bg-opacity-10 border-2 border-[#F26623] rounded-lg p-4">
-                      <label className="block text-sm font-medium text-[#F26623] mb-1">
-                        Reference Number (Required)
-                      </label>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-gray-900 font-bold font-mono">{bankDetails.reference}</span>
-                        <button
-                          onClick={() => handleCopy(bankDetails.reference)}
-                          className="p-2 hover:bg-orange-100 rounded transition-colors"
-                          title="Copy reference"
-                        >
-                          <Copy className="w-4 h-4 text-[#F26623]" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Important Notice */}
-                  <div className="mt-6 bg-amber-50 border border-amber-200 rounded-lg p-4">
-                    <p className="text-sm text-amber-800">
-                      <strong>Important:</strong> Please include the reference number in your bank transfer to ensure your funds are credited correctly.
-                    </p>
                   </div>
 
                   {/* Amount Display */}
