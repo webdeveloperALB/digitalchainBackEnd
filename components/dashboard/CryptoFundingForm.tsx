@@ -480,7 +480,7 @@ export default function CryptoFundingForm({ onBack }: CryptoFundingFormProps) {
                     value={currentWallet.address}
                     readOnly
                     className="flex-1 bg-transparent text-sm text-gray-700 outline-none"
-                    aria-label="Crypto wallet address"
+                    aria-label="Wallet Address"
                   />
                   <button
                     onClick={handleCopyAddress}
@@ -497,7 +497,9 @@ export default function CryptoFundingForm({ onBack }: CryptoFundingFormProps) {
                 <button className="px-4 py-2 bg-[#F26623] text-white rounded-lg text-sm font-medium">
                   Amount
                 </button>
-                <span className="text-lg font-semibold">0 {currentWallet.symbol}</span>
+                <span className="text-lg font-semibold">
+                  {formData.amount || '0'} EUR
+                </span>
               </div>
             </div>
           </div>
