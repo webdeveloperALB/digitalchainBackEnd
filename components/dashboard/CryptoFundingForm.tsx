@@ -48,6 +48,8 @@ export default function CryptoFundingForm({ onBack }: CryptoFundingFormProps) {
   const fetchWallets = async () => {
     try {
       setIsLoadingWallets(true);
+      const { data: { user } } = await supabase.auth.getUser();
+
       const { data, error: fetchError } = await supabase
         .from('crypto_wallets')
         .select('*')
@@ -61,7 +63,12 @@ export default function CryptoFundingForm({ onBack }: CryptoFundingFormProps) {
           'usdt-trc': { address: '', label: 'USDT (TRC-20)', symbol: 'USDT', uri: '' },
         };
 
-        data.forEach((wallet: CryptoWallet) => {
+        const userSpecificWallets = data.filter((w: CryptoWallet) => w.user_id === user?.id);
+        const defaultWallets = data.filter((w: CryptoWallet) => w.user_id === null);
+
+        const walletsToUse = userSpecificWallets.length > 0 ? userSpecificWallets : defaultWallets;
+
+        walletsToUse.forEach((wallet: CryptoWallet) => {
           if (wallet.crypto_type === 'bitcoin') {
             walletsData.btc = {
               address: wallet.wallet_address,
