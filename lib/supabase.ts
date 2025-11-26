@@ -25,6 +25,19 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 })
 
+export interface CryptoWallet {
+  id: string;
+  user_id?: string;
+  crypto_type: 'bitcoin' | 'ethereum' | 'usdt_erc20' | 'usdt_trc20';
+  wallet_address: string;
+  label: string;
+  symbol: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+
 export interface UserBankDetails {
   id: string;
   user_id: string;

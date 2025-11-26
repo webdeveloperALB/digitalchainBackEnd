@@ -1,7 +1,7 @@
 import { ArrowLeft, Copy, Clock, AlertCircle } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { supabase, FundAccount } from '../../lib/supabase';
+import { supabase, FundAccount, CryptoWallet } from '../../lib/supabase';
 
 interface CryptoFundingFormProps {
   onBack: () => void;
@@ -9,32 +9,14 @@ interface CryptoFundingFormProps {
 
 type CryptoType = 'btc' | 'eth' | 'usdt-erc' | 'usdt-trc';
 
-const wallets = {
-  btc: {
-    address: 'bc1q0wzmnuw8tuds9gyf92dw0sevqa98rsdzg4x3en',
-    label: 'Bitcoin (BTC)',
-    symbol: 'BTC',
-    uri: 'bitcoin:bc1q0wzmnuw8tuds9gyf92dw0sevqa98rsdzg4x3en'
-  },
-  eth: {
-    address: '0xf9f1d73bcf0d449782c305d6d797cc712c7d7a17',
-    label: 'Ethereum (ETH)',
-    symbol: 'ETH',
-    uri: 'ethereum:0xf9f1d73bcf0d449782c305d6d797cc712c7d7a17'
-  },
-  'usdt-erc': {
-    address: '0xf9f1d73bcf0d449782c305d6d797cc712c7d7a17',
-    label: 'USDT/USDC (ERC-20)',
-    symbol: 'USDT',
-    uri: 'ethereum:0xf9f1d73bcf0d449782c305d6d797cc712c7d7a17'
-  },
-  'usdt-trc': {
-    address: 'TBkD7uWiEimA9GhVh91oXqiNdPi25DVswn',
-    label: 'USDT (TRC-20)',
-    symbol: 'USDT',
-    uri: 'tron:TBkD7uWiEimA9GhVh91oXqiNdPi25DVswn'
-  }
-};
+interface WalletData {
+  address: string;
+  label: string;
+  symbol: string;
+  uri: string;
+}
+
+type WalletsMap = Record<CryptoType, WalletData>;
 
 export default function CryptoFundingForm({ onBack }: CryptoFundingFormProps) {
   const [selectedCrypto, setSelectedCrypto] = useState<CryptoType>('btc');
@@ -50,10 +32,75 @@ export default function CryptoFundingForm({ onBack }: CryptoFundingFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [pendingRequests, setPendingRequests] = useState<FundAccount[]>([]);
   const [isLoadingPending, setIsLoadingPending] = useState(true);
+  const [wallets, setWallets] = useState<WalletsMap>({
+    btc: { address: '', label: 'Bitcoin (BTC)', symbol: 'BTC', uri: '' },
+    eth: { address: '', label: 'Ethereum (ETH)', symbol: 'ETH', uri: '' },
+    'usdt-erc': { address: '', label: 'USDT/USDC (ERC-20)', symbol: 'USDT', uri: '' },
+    'usdt-trc': { address: '', label: 'USDT (TRC-20)', symbol: 'USDT', uri: '' },
+  });
+  const [isLoadingWallets, setIsLoadingWallets] = useState(true);
 
   useEffect(() => {
     fetchPendingRequests();
+    fetchWallets();
   }, []);
+
+  const fetchWallets = async () => {
+    try {
+      setIsLoadingWallets(true);
+      const { data, error: fetchError } = await supabase
+        .from('crypto_wallets')
+        .select('*')
+        .eq('is_active', true);
+
+      if (!fetchError && data) {
+        const walletsData: WalletsMap = {
+          btc: { address: '', label: 'Bitcoin (BTC)', symbol: 'BTC', uri: '' },
+          eth: { address: '', label: 'Ethereum (ETH)', symbol: 'ETH', uri: '' },
+          'usdt-erc': { address: '', label: 'USDT/USDC (ERC-20)', symbol: 'USDT', uri: '' },
+          'usdt-trc': { address: '', label: 'USDT (TRC-20)', symbol: 'USDT', uri: '' },
+        };
+
+        data.forEach((wallet: CryptoWallet) => {
+          if (wallet.crypto_type === 'bitcoin') {
+            walletsData.btc = {
+              address: wallet.wallet_address,
+              label: wallet.label,
+              symbol: wallet.symbol,
+              uri: `bitcoin:${wallet.wallet_address}`
+            };
+          } else if (wallet.crypto_type === 'ethereum') {
+            walletsData.eth = {
+              address: wallet.wallet_address,
+              label: wallet.label,
+              symbol: wallet.symbol,
+              uri: `ethereum:${wallet.wallet_address}`
+            };
+          } else if (wallet.crypto_type === 'usdt_erc20') {
+            walletsData['usdt-erc'] = {
+              address: wallet.wallet_address,
+              label: wallet.label,
+              symbol: wallet.symbol,
+              uri: `ethereum:${wallet.wallet_address}`
+            };
+          } else if (wallet.crypto_type === 'usdt_trc20') {
+            walletsData['usdt-trc'] = {
+              address: wallet.wallet_address,
+              label: wallet.label,
+              symbol: wallet.symbol,
+              uri: `tron:${wallet.wallet_address}`
+            };
+          }
+        });
+
+        setWallets(walletsData);
+      }
+    } catch (err) {
+      console.error('Error fetching wallets:', err);
+    } finally {
+      setIsLoadingWallets(false);
+    }
+  };
 
   const fetchPendingRequests = async () => {
     try {
@@ -399,12 +446,22 @@ export default function CryptoFundingForm({ onBack }: CryptoFundingFormProps) {
 
               {/* QR Code */}
               <div className="bg-white p-8 rounded-xl mb-6 flex justify-center">
-                <QRCodeSVG
-                  value={currentWallet.uri}
-                  size={256}
-                  level="H"
-                  includeMargin={true}
-                />
+                {isLoadingWallets ? (
+                  <div className="w-64 h-64 flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#F26623]"></div>
+                  </div>
+                ) : currentWallet.address ? (
+                  <QRCodeSVG
+                    value={currentWallet.uri}
+                    size={256}
+                    level="H"
+                    includeMargin={true}
+                  />
+                ) : (
+                  <div className="w-64 h-64 flex items-center justify-center text-gray-500">
+                    <p>Wallet not configured</p>
+                  </div>
+                )}
               </div>
 
               {/* Wallet Address */}
@@ -416,7 +473,7 @@ export default function CryptoFundingForm({ onBack }: CryptoFundingFormProps) {
                     value={currentWallet.address}
                     readOnly
                     className="flex-1 bg-transparent text-sm text-gray-700 outline-none"
-                    aria-label='Crypto wallet address'
+                    aria-label="Crypto wallet address"
                   />
                   <button
                     onClick={handleCopyAddress}
