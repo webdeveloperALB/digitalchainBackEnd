@@ -62,7 +62,7 @@ const MENU_ITEMS: MenuItem[] = [
   {
     id: "fund_account",
     label: "Fund Account",
-    icon: Wallet, // You can change icon if you want
+    icon: Wallet, 
     isEnabled: true,
   },
   {
