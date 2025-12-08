@@ -1049,16 +1049,6 @@ export default function RealCryptoTransferSection({
                       </div>
 
                       <div className="flex items-center gap-3 mt-3 sm:mt-0">
-                        <div className="text-right">
-                          <p className="font-medium text-gray-900">
-                            -{" "}
-                            {formatCryptoAmount(
-                              Number(transaction.total_value),
-                              crypto?.decimals || 8
-                            )}{" "}
-                            {transaction.crypto_type}
-                          </p>
-                        </div>
                         <div
                           className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(
                             transaction.status
