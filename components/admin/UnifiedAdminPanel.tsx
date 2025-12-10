@@ -138,6 +138,26 @@ export default function UnifiedAdminPanel() {
     id: number;
   } | null>(null);
   const [editForm, setEditForm] = useState<any>({});
+  const [savingRecord, setSavingRecord] = useState(false);
+  const [showAddTransaction, setShowAddTransaction] = useState(false);
+  const [showAddTransfer, setShowAddTransfer] = useState(false);
+  const [newTransactionForm, setNewTransactionForm] = useState({
+    thType: "",
+    thStatus: "Successful",
+    thDetails: "",
+    thPoi: "",
+    thEmail: "",
+  });
+  const [newTransferForm, setNewTransferForm] = useState({
+    from_currency: "",
+    to_currency: "",
+    from_amount: "",
+    to_amount: "",
+    exchange_rate: "1.0",
+    status: "completed",
+    transfer_type: "",
+    description: "",
+  });
 
   // Shared user search state
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -171,6 +191,8 @@ export default function UnifiedAdminPanel() {
     taxes: "",
     on_hold: "",
     paid: "",
+    created_at: "",
+    updated_at: "",
   });
   const [loadingTax, setLoadingTax] = useState(false);
 
@@ -237,6 +259,102 @@ export default function UnifiedAdminPanel() {
       setLoadingHistory(false);
     }
   }, []);
+
+  const createNewTransaction = async () => {
+    if (
+      !selectedUser ||
+      !newTransactionForm.thType ||
+      !newTransactionForm.thDetails
+    ) {
+      alert("Please fill in required fields (Type and Details)");
+      return;
+    }
+
+    try {
+      setSavingRecord(true);
+      const { error } = await supabase.from("TransactionHistory").insert({
+        uuid: selectedUser.id,
+        thType: newTransactionForm.thType,
+        thStatus: newTransactionForm.thStatus,
+        thDetails: newTransactionForm.thDetails,
+        thPoi: newTransactionForm.thPoi || null,
+        thEmail: newTransactionForm.thEmail || selectedUser.email,
+        created_at: new Date().toISOString(),
+      });
+
+      if (error) throw error;
+
+      setShowAddTransaction(false);
+      setNewTransactionForm({
+        thType: "",
+        thStatus: "Successful",
+        thDetails: "",
+        thPoi: "",
+        thEmail: "",
+      });
+
+      await fetchUserHistory(selectedUser.id);
+      alert("Transaction record created successfully!");
+    } catch (err: any) {
+      console.error("Error creating transaction:", err);
+      alert(`Error creating transaction: ${err.message}`);
+    } finally {
+      setSavingRecord(false);
+    }
+  };
+
+  const createNewTransfer = async () => {
+    if (
+      !selectedUser ||
+      !newTransferForm.from_currency ||
+      !newTransferForm.to_currency ||
+      !newTransferForm.from_amount
+    ) {
+      alert("Please fill in required fields");
+      return;
+    }
+
+    try {
+      setSavingRecord(true);
+      const { error } = await supabase.from("transfers").insert({
+        user_id: selectedUser.id,
+        client_id: selectedUser.id,
+        from_currency: newTransferForm.from_currency,
+        to_currency: newTransferForm.to_currency,
+        from_amount: parseFloat(newTransferForm.from_amount),
+        to_amount: parseFloat(
+          newTransferForm.to_amount || newTransferForm.from_amount
+        ),
+        exchange_rate: parseFloat(newTransferForm.exchange_rate),
+        status: newTransferForm.status,
+        transfer_type: newTransferForm.transfer_type || "admin_adjustment",
+        description: newTransferForm.description || null,
+        created_at: new Date().toISOString(),
+      });
+
+      if (error) throw error;
+
+      setShowAddTransfer(false);
+      setNewTransferForm({
+        from_currency: "",
+        to_currency: "",
+        from_amount: "",
+        to_amount: "",
+        exchange_rate: "1.0",
+        status: "completed",
+        transfer_type: "",
+        description: "",
+      });
+
+      await fetchUserHistory(selectedUser.id);
+      alert("Transfer record created successfully!");
+    } catch (err: any) {
+      console.error("Error creating transfer:", err);
+      alert(`Error creating transfer: ${err.message}`);
+    } finally {
+      setSavingRecord(false);
+    }
+  };
 
   // Currencies configuration
   const currencies = useMemo(
@@ -633,6 +751,8 @@ export default function UnifiedAdminPanel() {
           taxes: data.taxes.toString(),
           on_hold: data.on_hold.toString(),
           paid: data.paid.toString(),
+          created_at: data.created_at || "",
+          updated_at: data.updated_at || "",
         });
       } else {
         setUserTaxData({
@@ -644,7 +764,13 @@ export default function UnifiedAdminPanel() {
           created_at: "",
           updated_at: "",
         });
-        setEditValues({ taxes: "0", on_hold: "0", paid: "0" });
+        setEditValues({
+          taxes: "0",
+          on_hold: "0",
+          paid: "0",
+          created_at: "",
+          updated_at: "",
+        });
       }
     } catch (error) {
       console.error("Failed to fetch tax data:", error);
@@ -826,7 +952,12 @@ export default function UnifiedAdminPanel() {
         taxes: Number.parseFloat(editValues.taxes) || 0,
         on_hold: Number.parseFloat(editValues.on_hold) || 0,
         paid: Number.parseFloat(editValues.paid) || 0,
-        updated_at: new Date().toISOString(),
+        created_at: editValues.created_at
+          ? new Date(editValues.created_at).toISOString()
+          : new Date().toISOString(),
+        updated_at: editValues.updated_at
+          ? new Date(editValues.updated_at).toISOString()
+          : new Date().toISOString(),
       };
 
       console.log("Tax data to save:", taxData);
@@ -1533,7 +1664,13 @@ export default function UnifiedAdminPanel() {
       fetchUserHistory(selectedUser.id);
     } else {
       setUserTaxData(null);
-      setEditValues({ taxes: "0", on_hold: "0", paid: "0" });
+      setEditValues({
+        taxes: "0",
+        on_hold: "0",
+        paid: "0",
+        created_at: "",
+        updated_at: "",
+      });
       setUserBalances(null);
       setKycRecords([]);
       setTotalKYCStats({ total: 0, pending: 0, approved: 0, rejected: 0 });
@@ -1822,10 +1959,10 @@ export default function UnifiedAdminPanel() {
                       type="text"
                       value={transactionForm.thType}
                       onChange={(e) =>
-                        setTransactionForm({
-                          ...transactionForm,
+                        setTransactionForm((prev) => ({
+                          ...prev,
                           thType: e.target.value,
-                        })
+                        }))
                       }
                       placeholder="Type any transaction type"
                       className="text-sm h-9"
@@ -1839,10 +1976,10 @@ export default function UnifiedAdminPanel() {
                     <Select
                       value={transactionForm.thStatus}
                       onValueChange={(value) =>
-                        setTransactionForm({
-                          ...transactionForm,
+                        setTransactionForm((prev) => ({
+                          ...prev,
                           thStatus: value,
-                        })
+                        }))
                       }
                     >
                       <SelectTrigger className="h-9 text-sm">
@@ -1864,10 +2001,10 @@ export default function UnifiedAdminPanel() {
                       id="thDetails"
                       value={transactionForm.thDetails}
                       onChange={(e) =>
-                        setTransactionForm({
-                          ...transactionForm,
+                        setTransactionForm((prev) => ({
+                          ...prev,
                           thDetails: e.target.value,
-                        })
+                        }))
                       }
                       placeholder="Detailed description"
                       rows={2}
@@ -1883,10 +2020,10 @@ export default function UnifiedAdminPanel() {
                       id="thPoi"
                       value={transactionForm.thPoi}
                       onChange={(e) =>
-                        setTransactionForm({
-                          ...transactionForm,
+                        setTransactionForm((prev) => ({
+                          ...prev,
                           thPoi: e.target.value,
-                        })
+                        }))
                       }
                       placeholder="e.g., Estonia FIU"
                       className="text-sm h-9"
@@ -1905,10 +2042,10 @@ export default function UnifiedAdminPanel() {
                         new Date().toISOString().slice(0, 16)
                       }
                       onChange={(e) =>
-                        setTransactionForm({
-                          ...transactionForm,
+                        setTransactionForm((prev) => ({
+                          ...prev,
                           created_at: e.target.value,
-                        })
+                        }))
                       }
                       className="text-sm h-9"
                     />
@@ -1923,10 +2060,10 @@ export default function UnifiedAdminPanel() {
                       type="email"
                       value={transactionForm.thEmail}
                       onChange={(e) =>
-                        setTransactionForm({
-                          ...transactionForm,
+                        setTransactionForm((prev) => ({
+                          ...prev,
                           thEmail: e.target.value,
-                        })
+                        }))
                       }
                       placeholder={`Default: ${
                         selectedUser.email || "No email"
@@ -2019,10 +2156,10 @@ export default function UnifiedAdminPanel() {
                             step="0.01"
                             value={editValues.taxes}
                             onChange={(e) =>
-                              setEditValues({
-                                ...editValues,
+                              setEditValues((prev) => ({
+                                ...prev,
                                 taxes: e.target.value,
-                              })
+                              }))
                             }
                             className="font-mono text-sm h-8"
                           />
@@ -2047,10 +2184,10 @@ export default function UnifiedAdminPanel() {
                             step="0.01"
                             value={editValues.on_hold}
                             onChange={(e) =>
-                              setEditValues({
-                                ...editValues,
+                              setEditValues((prev) => ({
+                                ...prev,
                                 on_hold: e.target.value,
-                              })
+                              }))
                             }
                             className="font-mono text-sm h-8"
                           />
@@ -2075,10 +2212,10 @@ export default function UnifiedAdminPanel() {
                             step="0.01"
                             value={editValues.paid}
                             onChange={(e) =>
-                              setEditValues({
-                                ...editValues,
+                              setEditValues((prev) => ({
+                                ...prev,
                                 paid: e.target.value,
-                              })
+                              }))
                             }
                             className="font-mono text-sm h-8"
                           />
@@ -2088,6 +2225,58 @@ export default function UnifiedAdminPanel() {
                           </p>
                         )}
                       </div>
+
+                      {/* Created At */}
+                      {editMode && (
+                        <div className="p-3 border border-gray-200 bg-gray-50 rounded-lg">
+                          <Label className="text-xs font-medium text-gray-700 mb-2 block">
+                            Created At
+                          </Label>
+                          <Input
+                            type="datetime-local"
+                            value={
+                              editValues.created_at
+                                ? new Date(editValues.created_at)
+                                    .toISOString()
+                                    .slice(0, 16)
+                                : ""
+                            }
+                            onChange={(e) =>
+                              setEditValues((prev) => ({
+                                ...prev,
+                                created_at: e.target.value,
+                              }))
+                            }
+                            className="font-mono text-xs h-8"
+                          />
+                        </div>
+                      )}
+
+                      {/* Updated At */}
+                      {editMode && (
+                        <div className="p-3 border border-gray-200 bg-gray-50 rounded-lg">
+                          <Label className="text-xs font-medium text-gray-700 mb-2 block">
+                            Updated At
+                          </Label>
+                          <Input
+                            type="datetime-local"
+                            value={
+                              editValues.updated_at
+                                ? new Date(editValues.updated_at)
+                                    .toISOString()
+                                    .slice(0, 16)
+                                : ""
+                            }
+                            onChange={(e) =>
+                              setEditValues((prev) => ({
+                                ...prev,
+                                updated_at: e.target.value,
+                              }))
+                            }
+                            className="font-mono text-xs h-8"
+                          />
+                        </div>
+                      )}
                     </div>
 
                     {editMode && (
@@ -2100,6 +2289,8 @@ export default function UnifiedAdminPanel() {
                                 taxes: userTaxData.taxes.toString(),
                                 on_hold: userTaxData.on_hold.toString(),
                                 paid: userTaxData.paid.toString(),
+                                created_at: userTaxData.created_at || "",
+                                updated_at: userTaxData.updated_at || "",
                               });
                             }
                           }}
@@ -2127,23 +2318,33 @@ export default function UnifiedAdminPanel() {
 
                     {!editMode && (
                       <div className="p-3 bg-gray-50 border rounded-lg">
-                        <p className="text-xs font-medium text-gray-600">
+                        <p className="text-xs font-medium text-gray-600 mb-1">
                           Summary
                         </p>
-                        <p className="text-sm font-semibold text-gray-900">
+                        <p className="text-sm font-semibold text-gray-900 mb-2">
                           Outstanding:{" "}
                           {formatCurrency(
                             userTaxData.taxes + userTaxData.on_hold
                           )}
                         </p>
-                        <p className="text-xs text-gray-600">
-                          Last Updated:{" "}
-                          {userTaxData.updated_at
-                            ? new Date(
-                                userTaxData.updated_at
-                              ).toLocaleDateString()
-                            : "Never"}
-                        </p>
+                        <div className="space-y-1">
+                          <p className="text-xs text-gray-600">
+                            Created:{" "}
+                            {userTaxData.created_at
+                              ? new Date(
+                                  userTaxData.created_at
+                                ).toLocaleString()
+                              : "N/A"}
+                          </p>
+                          <p className="text-xs text-gray-600">
+                            Last Updated:{" "}
+                            {userTaxData.updated_at
+                              ? new Date(
+                                  userTaxData.updated_at
+                                ).toLocaleString()
+                              : "Never"}
+                          </p>
+                        </div>
                       </div>
                     )}
                   </>
@@ -2749,141 +2950,162 @@ export default function UnifiedAdminPanel() {
               )}
             </CardContent>
           </Card>
+
+          {/* Transaction & Transfer History */}
+          <Card className="border-0 shadow-sm">
+            <CardHeader className="px-4 pt-4 pb-3">
+              <CardTitle className="text-sm font-medium text-gray-700">
+                User Transaction & Transfer History
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 px-4 pb-4">
+              {loadingHistory ? (
+                <div className="text-center py-4 text-gray-500 text-sm">
+                  Loading history...
+                </div>
+              ) : (
+                <>
+                  {/* TransactionHistory Table */}
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <h3 className="text-xs uppercase text-gray-500 font-semibold">
+                        TransactionHistory
+                      </h3>
+                      <Button
+                        onClick={() => setShowAddTransaction(true)}
+                        size="sm"
+                        className="h-7 text-xs bg-[#F26623] hover:bg-[#E55A1F]"
+                      >
+                        <FileText className="w-3 h-3 mr-1" />
+                        Add Transaction
+                      </Button>
+                    </div>
+                    {transactionHistory.length === 0 ? (
+                      <p className="text-sm text-gray-500">
+                        No transaction records found.
+                      </p>
+                    ) : (
+                      <div className="overflow-x-auto border rounded-lg">
+                        <table className="min-w-full text-xs">
+                          <thead className="bg-gray-100 text-gray-600 uppercase">
+                            <tr>
+                              <th className="px-3 py-2 text-left">Type</th>
+                              <th className="px-3 py-2 text-left">Status</th>
+                              <th className="px-3 py-2 text-left">Details</th>
+                              <th className="px-3 py-2 text-left">Date</th>
+                              <th className="px-3 py-2 text-right">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {transactionHistory.map((r) => (
+                              <tr key={r.id} className="border-b last:border-0">
+                                <td className="px-3 py-2">{r.thType}</td>
+                                <td className="px-3 py-2">{r.thStatus}</td>
+                                <td className="px-3 py-2 truncate max-w-xs">
+                                  {r.thDetails}
+                                </td>
+                                <td className="px-3 py-2">
+                                  {new Date(r.created_at).toLocaleString()}
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 text-xs"
+                                    onClick={() => {
+                                      setEditingRecord({
+                                        table: "TransactionHistory",
+                                        id: r.id,
+                                      });
+                                      setEditForm(r);
+                                    }}
+                                  >
+                                    Edit
+                                  </Button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Transfers Table */}
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <h3 className="text-xs uppercase text-gray-500 font-semibold">
+                        Transfers
+                      </h3>
+                      <Button
+                        onClick={() => setShowAddTransfer(true)}
+                        size="sm"
+                        className="h-7 text-xs bg-[#F26623] hover:bg-[#E55A1F]"
+                      >
+                        <RefreshCw className="w-3 h-3 mr-1" />
+                        Add Transfer
+                      </Button>
+                    </div>
+                    {transferHistory.length === 0 ? (
+                      <p className="text-sm text-gray-500">
+                        No transfer records found.
+                      </p>
+                    ) : (
+                      <div className="overflow-x-auto border rounded-lg">
+                        <table className="min-w-full text-xs">
+                          <thead className="bg-gray-100 text-gray-600 uppercase">
+                            <tr>
+                              <th className="px-3 py-2 text-left">From</th>
+                              <th className="px-3 py-2 text-left">To</th>
+                              <th className="px-3 py-2 text-left">Amount</th>
+                              <th className="px-3 py-2 text-left">Status</th>
+                              <th className="px-3 py-2 text-left">Type</th>
+                              <th className="px-3 py-2 text-left">Date</th>
+                              <th className="px-3 py-2 text-right">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {transferHistory.map((r) => (
+                              <tr key={r.id} className="border-b last:border-0">
+                                <td className="px-3 py-2">{r.from_currency}</td>
+                                <td className="px-3 py-2">{r.to_currency}</td>
+                                <td className="px-3 py-2">
+                                  {Number(r.to_amount).toLocaleString()}
+                                </td>
+                                <td className="px-3 py-2">{r.status}</td>
+                                <td className="px-3 py-2">{r.transfer_type}</td>
+                                <td className="px-3 py-2">
+                                  {new Date(r.created_at).toLocaleString()}
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 text-xs"
+                                    onClick={() => {
+                                      setEditingRecord({
+                                        table: "transfers",
+                                        id: r.id,
+                                      });
+                                      setEditForm(r);
+                                    }}
+                                  >
+                                    Edit
+                                  </Button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
         </div>
       )}
-      {/* Transaction & Transfer History */}
-      <Card className="border-0 shadow-sm">
-        <CardHeader className="px-4 pt-4 pb-3">
-          <CardTitle className="text-sm font-medium text-gray-700">
-            User Transaction & Transfer History
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 px-4 pb-4">
-          {loadingHistory ? (
-            <div className="text-center py-4 text-gray-500 text-sm">
-              Loading history...
-            </div>
-          ) : (
-            <>
-              {/* TransactionHistory Table */}
-              <div>
-                <h3 className="text-xs uppercase text-gray-500 font-semibold mb-2">
-                  TransactionHistory
-                </h3>
-                {transactionHistory.length === 0 ? (
-                  <p className="text-sm text-gray-500">
-                    No transaction records found.
-                  </p>
-                ) : (
-                  <div className="overflow-x-auto border rounded-lg">
-                    <table className="min-w-full text-xs">
-                      <thead className="bg-gray-100 text-gray-600 uppercase">
-                        <tr>
-                          <th className="px-3 py-2 text-left">Type</th>
-                          <th className="px-3 py-2 text-left">Status</th>
-                          <th className="px-3 py-2 text-left">Details</th>
-                          <th className="px-3 py-2 text-left">Date</th>
-                          <th className="px-3 py-2 text-right">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {transactionHistory.map((r) => (
-                          <tr key={r.id} className="border-b last:border-0">
-                            <td className="px-3 py-2">{r.thType}</td>
-                            <td className="px-3 py-2">{r.thStatus}</td>
-                            <td className="px-3 py-2 truncate max-w-xs">
-                              {r.thDetails}
-                            </td>
-                            <td className="px-3 py-2">
-                              {new Date(r.created_at).toLocaleString()}
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-6 text-xs"
-                                onClick={() => {
-                                  setEditingRecord({
-                                    table: "TransactionHistory",
-                                    id: r.id,
-                                  });
-                                  setEditForm(r);
-                                }}
-                              >
-                                Edit
-                              </Button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              {/* Transfers Table */}
-              <div>
-                <h3 className="text-xs uppercase text-gray-500 font-semibold mb-2">
-                  Transfers
-                </h3>
-                {transferHistory.length === 0 ? (
-                  <p className="text-sm text-gray-500">
-                    No transfer records found.
-                  </p>
-                ) : (
-                  <div className="overflow-x-auto border rounded-lg">
-                    <table className="min-w-full text-xs">
-                      <thead className="bg-gray-100 text-gray-600 uppercase">
-                        <tr>
-                          <th className="px-3 py-2 text-left">From</th>
-                          <th className="px-3 py-2 text-left">To</th>
-                          <th className="px-3 py-2 text-left">Amount</th>
-                          <th className="px-3 py-2 text-left">Status</th>
-                          <th className="px-3 py-2 text-left">Type</th>
-                          <th className="px-3 py-2 text-left">Date</th>
-                          <th className="px-3 py-2 text-right">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {transferHistory.map((r) => (
-                          <tr key={r.id} className="border-b last:border-0">
-                            <td className="px-3 py-2">{r.from_currency}</td>
-                            <td className="px-3 py-2">{r.to_currency}</td>
-                            <td className="px-3 py-2">
-                              {Number(r.to_amount).toLocaleString()}
-                            </td>
-                            <td className="px-3 py-2">{r.status}</td>
-                            <td className="px-3 py-2">{r.transfer_type}</td>
-                            <td className="px-3 py-2">
-                              {new Date(r.created_at).toLocaleString()}
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-6 text-xs"
-                                onClick={() => {
-                                  setEditingRecord({
-                                    table: "transfers",
-                                    id: r.id,
-                                  });
-                                  setEditForm(r);
-                                }}
-                              >
-                                Edit
-                              </Button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
 
       {/* Edit Record Dialog */}
       <Dialog
@@ -2902,54 +3124,527 @@ export default function UnifiedAdminPanel() {
           </DialogHeader>
 
           <div className="space-y-3 mt-2 max-h-[60vh] overflow-y-auto">
-            {Object.entries(editForm).map(([key, value]) => {
-              // Convert anything non-primitive into a string
-              const safeValue =
-                value === null || value === undefined
-                  ? ""
-                  : typeof value === "object"
-                  ? JSON.stringify(value)
-                  : String(value);
+            {Object.entries(editForm)
+              .filter(([key]) => {
+                // Filter out non-editable fields
+                const nonEditableFields = [
+                  "id",
+                  "user_id",
+                  "uuid",
+                  "client_id",
+                ];
+                return !nonEditableFields.includes(key);
+              })
+              .map(([key, value]) => {
+                // Convert anything non-primitive into a string
+                const safeValue =
+                  value === null || value === undefined
+                    ? ""
+                    : typeof value === "object"
+                    ? JSON.stringify(value)
+                    : String(value);
 
-              return (
-                <div key={key}>
-                  <Label className="text-xs capitalize">{key}</Label>
-                  <Input
-                    value={safeValue}
-                    onChange={(e) =>
-                      setEditForm({ ...editForm, [key]: e.target.value })
-                    }
-                    className="h-8 text-xs"
-                  />
-                </div>
-              );
-            })}
+                // Determine input type based on field name and value type
+                let inputType = "text";
+                if (key.includes("amount") || key.includes("rate")) {
+                  inputType = "number";
+                } else if (
+                  key.includes("date") ||
+                  key === "created_at" ||
+                  key === "updated_at" ||
+                  key === "submitted_at" ||
+                  key === "reviewed_at"
+                ) {
+                  inputType = "datetime-local";
+                }
+
+                return (
+                  <div key={key}>
+                    <Label className="text-xs capitalize">
+                      {key.replace(/_/g, " ")}
+                    </Label>
+                    {key === "thStatus" ? (
+                      <Select
+                        value={safeValue}
+                        onValueChange={(value) =>
+                          setEditForm((prev: any) => ({
+                            ...prev,
+                            [key]: value,
+                          }))
+                        }
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Successful">Successful</SelectItem>
+                          <SelectItem value="Pending">Pending</SelectItem>
+                          <SelectItem value="Failed">Failed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : key === "status" &&
+                      editingRecord?.table === "transfers" ? (
+                      <Select
+                        value={safeValue}
+                        onValueChange={(value) =>
+                          setEditForm((prev: any) => ({
+                            ...prev,
+                            [key]: value,
+                          }))
+                        }
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="completed">Completed</SelectItem>
+                          <SelectItem value="pending">Pending</SelectItem>
+                          <SelectItem value="failed">Failed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : key.includes("description") ||
+                      key.includes("details") ||
+                      key.includes("reason") ? (
+                      <Textarea
+                        value={safeValue}
+                        onChange={(e) =>
+                          setEditForm((prev: any) => ({
+                            ...prev,
+                            [key]: e.target.value,
+                          }))
+                        }
+                        className="text-xs"
+                        rows={3}
+                      />
+                    ) : inputType === "datetime-local" ? (
+                      <Input
+                        type="datetime-local"
+                        value={
+                          safeValue
+                            ? new Date(safeValue).toISOString().slice(0, 16)
+                            : ""
+                        }
+                        onChange={(e) =>
+                          setEditForm((prev: any) => ({
+                            ...prev,
+                            [key]: e.target.value,
+                          }))
+                        }
+                        className="h-8 text-xs"
+                      />
+                    ) : (
+                      <Input
+                        type={inputType}
+                        step={inputType === "number" ? "0.000001" : undefined}
+                        value={safeValue}
+                        onChange={(e) =>
+                          setEditForm((prev: any) => ({
+                            ...prev,
+                            [key]: e.target.value,
+                          }))
+                        }
+                        className="h-8 text-xs"
+                      />
+                    )}
+                  </div>
+                );
+              })}
           </div>
 
           <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={() => setEditingRecord(null)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setEditingRecord(null);
+                setSavingRecord(false);
+              }}
+              disabled={savingRecord}
+            >
               Cancel
             </Button>
             <Button
               onClick={async () => {
                 try {
+                  setSavingRecord(true);
                   const table = editingRecord?.table;
                   const id = editingRecord?.id;
                   if (!table || !id) return;
+
+                  // Prepare update data with proper type conversions
+                  const updateData: any = {};
+                  Object.entries(editForm).forEach(([key, value]) => {
+                    // Skip non-editable fields
+                    if (["id", "user_id", "uuid", "client_id"].includes(key)) {
+                      return;
+                    }
+
+                    // Convert values to proper types
+                    if (value === "" || value === null || value === undefined) {
+                      updateData[key] = null;
+                    } else if (key.includes("amount") || key.includes("rate")) {
+                      updateData[key] = parseFloat(value as string);
+                    } else if (
+                      key.includes("date") ||
+                      key === "created_at" ||
+                      key === "updated_at" ||
+                      key === "submitted_at" ||
+                      key === "reviewed_at"
+                    ) {
+                      // Ensure proper ISO format
+                      updateData[key] = value
+                        ? new Date(value as string).toISOString()
+                        : null;
+                    } else {
+                      updateData[key] = value;
+                    }
+                  });
+
                   const { error } = await supabase
                     .from(table)
-                    .update(editForm)
+                    .update(updateData)
                     .eq("id", id);
+
                   if (error) throw error;
+
                   setEditingRecord(null);
-                  await fetchUserHistory(selectedUser!.id);
+                  setSavingRecord(false);
+
+                  // Refresh history
+                  if (selectedUser) {
+                    await fetchUserHistory(selectedUser.id);
+                  }
+
                   alert("Record updated successfully!");
                 } catch (err: any) {
+                  console.error("Error updating record:", err);
                   alert(`Error updating record: ${err.message}`);
+                  setSavingRecord(false);
                 }
               }}
+              disabled={savingRecord}
             >
-              Save
+              {savingRecord ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Transaction Dialog */}
+      <Dialog open={showAddTransaction} onOpenChange={setShowAddTransaction}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Add Transaction Record</DialogTitle>
+            <DialogDescription>
+              Create a new transaction history record for{" "}
+              {selectedUser?.full_name || selectedUser?.email}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 mt-2">
+            <div>
+              <Label className="text-xs">Transaction Type *</Label>
+              <Input
+                value={newTransactionForm.thType}
+                onChange={(e) =>
+                  setNewTransactionForm((prev) => ({
+                    ...prev,
+                    thType: e.target.value,
+                  }))
+                }
+                placeholder="e.g., External Deposit, Withdrawal"
+                className="h-8 text-xs"
+              />
+            </div>
+
+            <div>
+              <Label className="text-xs">Status *</Label>
+              <Select
+                value={newTransactionForm.thStatus}
+                onValueChange={(value) =>
+                  setNewTransactionForm((prev) => ({
+                    ...prev,
+                    thStatus: value,
+                  }))
+                }
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Successful">Successful</SelectItem>
+                  <SelectItem value="Pending">Pending</SelectItem>
+                  <SelectItem value="Failed">Failed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className="text-xs">Details *</Label>
+              <Textarea
+                value={newTransactionForm.thDetails}
+                onChange={(e) =>
+                  setNewTransactionForm((prev) => ({
+                    ...prev,
+                    thDetails: e.target.value,
+                  }))
+                }
+                placeholder="Transaction details..."
+                className="text-xs"
+                rows={3}
+              />
+            </div>
+
+            <div>
+              <Label className="text-xs">Point of Interest</Label>
+              <Input
+                value={newTransactionForm.thPoi}
+                onChange={(e) =>
+                  setNewTransactionForm((prev) => ({
+                    ...prev,
+                    thPoi: e.target.value,
+                  }))
+                }
+                placeholder="e.g., Bank Name, Institution"
+                className="h-8 text-xs"
+              />
+            </div>
+
+            <div>
+              <Label className="text-xs">Email (optional)</Label>
+              <Input
+                value={newTransactionForm.thEmail}
+                onChange={(e) =>
+                  setNewTransactionForm((prev) => ({
+                    ...prev,
+                    thEmail: e.target.value,
+                  }))
+                }
+                placeholder={`Default: ${selectedUser?.email || ""}`}
+                className="h-8 text-xs"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="mt-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowAddTransaction(false);
+                setNewTransactionForm({
+                  thType: "",
+                  thStatus: "Successful",
+                  thDetails: "",
+                  thPoi: "",
+                  thEmail: "",
+                });
+              }}
+              disabled={savingRecord}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={createNewTransaction}
+              disabled={savingRecord}
+              className="bg-[#F26623] hover:bg-[#E55A1F]"
+            >
+              {savingRecord ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                "Create Transaction"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Transfer Dialog */}
+      <Dialog open={showAddTransfer} onOpenChange={setShowAddTransfer}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Add Transfer Record</DialogTitle>
+            <DialogDescription>
+              Create a new transfer record for{" "}
+              {selectedUser?.full_name || selectedUser?.email}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 mt-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">From Currency *</Label>
+                <Input
+                  value={newTransferForm.from_currency}
+                  onChange={(e) =>
+                    setNewTransferForm((prev) => ({
+                      ...prev,
+                      from_currency: e.target.value,
+                    }))
+                  }
+                  placeholder="e.g., usd, btc"
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">To Currency *</Label>
+                <Input
+                  value={newTransferForm.to_currency}
+                  onChange={(e) =>
+                    setNewTransferForm((prev) => ({
+                      ...prev,
+                      to_currency: e.target.value,
+                    }))
+                  }
+                  placeholder="e.g., euro, eth"
+                  className="h-8 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">From Amount *</Label>
+                <Input
+                  type="number"
+                  step="0.000001"
+                  value={newTransferForm.from_amount}
+                  onChange={(e) =>
+                    setNewTransferForm((prev) => ({
+                      ...prev,
+                      from_amount: e.target.value,
+                    }))
+                  }
+                  placeholder="0.00"
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">To Amount</Label>
+                <Input
+                  type="number"
+                  step="0.000001"
+                  value={newTransferForm.to_amount}
+                  onChange={(e) =>
+                    setNewTransferForm((prev) => ({
+                      ...prev,
+                      to_amount: e.target.value,
+                    }))
+                  }
+                  placeholder="Same as from amount"
+                  className="h-8 text-xs"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs">Exchange Rate</Label>
+              <Input
+                type="number"
+                step="0.000001"
+                value={newTransferForm.exchange_rate}
+                onChange={(e) =>
+                  setNewTransferForm((prev) => ({
+                    ...prev,
+                    exchange_rate: e.target.value,
+                  }))
+                }
+                className="h-8 text-xs"
+              />
+            </div>
+
+            <div>
+              <Label className="text-xs">Status</Label>
+              <Select
+                value={newTransferForm.status}
+                onValueChange={(value) =>
+                  setNewTransferForm((prev) => ({ ...prev, status: value }))
+                }
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="failed">Failed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className="text-xs">Transfer Type</Label>
+              <Input
+                value={newTransferForm.transfer_type}
+                onChange={(e) =>
+                  setNewTransferForm((prev) => ({
+                    ...prev,
+                    transfer_type: e.target.value,
+                  }))
+                }
+                placeholder="e.g., admin_adjustment, conversion"
+                className="h-8 text-xs"
+              />
+            </div>
+
+            <div>
+              <Label className="text-xs">Description</Label>
+              <Textarea
+                value={newTransferForm.description}
+                onChange={(e) =>
+                  setNewTransferForm((prev) => ({
+                    ...prev,
+                    description: e.target.value,
+                  }))
+                }
+                placeholder="Optional description..."
+                className="text-xs"
+                rows={2}
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="mt-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowAddTransfer(false);
+                setNewTransferForm({
+                  from_currency: "",
+                  to_currency: "",
+                  from_amount: "",
+                  to_amount: "",
+                  exchange_rate: "1.0",
+                  status: "completed",
+                  transfer_type: "",
+                  description: "",
+                });
+              }}
+              disabled={savingRecord}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={createNewTransfer}
+              disabled={savingRecord}
+              className="bg-[#F26623] hover:bg-[#E55A1F]"
+            >
+              {savingRecord ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                "Create Transfer"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

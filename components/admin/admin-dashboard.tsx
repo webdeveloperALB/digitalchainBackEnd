@@ -1108,7 +1108,7 @@ export default function EnhancedAdminDashboard({
           onValueChange={setActiveTab}
           className="space-y-6"
         >
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="presence" className="flex items-center">
               <Wifi className="w-4 h-4 mr-2" />
               Presence
@@ -1119,10 +1119,6 @@ export default function EnhancedAdminDashboard({
             >
               <Download className="w-4 h-4 mr-2" />
               Manage Users
-            </TabsTrigger>
-            <TabsTrigger value="activity" className="flex items-center">
-              <Activity className="w-4 h-4 mr-2" />
-              Activity
             </TabsTrigger>
             <TabsTrigger value="messages" className="flex items-center">
               <Mail className="w-4 h-4 mr-2" />
