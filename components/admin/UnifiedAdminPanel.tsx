@@ -3112,146 +3112,169 @@ export default function UnifiedAdminPanel() {
         open={!!editingRecord}
         onOpenChange={() => setEditingRecord(null)}
       >
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+          <DialogHeader className="border-b pb-4">
+            <DialogTitle className="text-xl font-bold text-gray-900">
               Edit{" "}
               {editingRecord?.table === "TransactionHistory"
                 ? "Transaction"
                 : "Transfer"}{" "}
               Record
             </DialogTitle>
+            <p className="text-sm text-gray-500 mt-1">
+              Update the details of this record
+            </p>
           </DialogHeader>
 
-          <div className="space-y-3 mt-2 max-h-[60vh] overflow-y-auto">
-            {Object.entries(editForm)
-              .filter(([key]) => {
-                // Filter out non-editable fields
-                const nonEditableFields = [
-                  "id",
-                  "user_id",
-                  "uuid",
-                  "client_id",
-                ];
-                return !nonEditableFields.includes(key);
-              })
-              .map(([key, value]) => {
-                // Convert anything non-primitive into a string
-                const safeValue =
-                  value === null || value === undefined
-                    ? ""
-                    : typeof value === "object"
-                    ? JSON.stringify(value)
-                    : String(value);
+          <div className="flex-1 overflow-y-auto py-4 pr-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {Object.entries(editForm)
+                .filter(([key]) => {
+                  // Filter out non-editable fields
+                  const nonEditableFields = [
+                    "id",
+                    "user_id",
+                    "uuid",
+                    "client_id",
+                  ];
+                  return !nonEditableFields.includes(key);
+                })
+                .map(([key, value]) => {
+                  // Convert anything non-primitive into a string
+                  const safeValue =
+                    value === null || value === undefined
+                      ? ""
+                      : typeof value === "object"
+                      ? JSON.stringify(value)
+                      : String(value);
 
-                // Determine input type based on field name and value type
-                let inputType = "text";
-                if (key.includes("amount") || key.includes("rate")) {
-                  inputType = "number";
-                } else if (
-                  key.includes("date") ||
-                  key === "created_at" ||
-                  key === "updated_at" ||
-                  key === "submitted_at" ||
-                  key === "reviewed_at"
-                ) {
-                  inputType = "datetime-local";
-                }
+                  // Determine input type based on field name and value type
+                  let inputType = "text";
+                  if (key.includes("amount") || key.includes("rate")) {
+                    inputType = "number";
+                  } else if (
+                    key.includes("date") ||
+                    key === "created_at" ||
+                    key === "updated_at" ||
+                    key === "submitted_at" ||
+                    key === "reviewed_at"
+                  ) {
+                    inputType = "datetime-local";
+                  }
 
-                return (
-                  <div key={key}>
-                    <Label className="text-xs capitalize">
-                      {key.replace(/_/g, " ")}
-                    </Label>
-                    {key === "thStatus" ? (
-                      <Select
-                        value={safeValue}
-                        onValueChange={(value) =>
-                          setEditForm((prev: any) => ({
-                            ...prev,
-                            [key]: value,
-                          }))
-                        }
-                      >
-                        <SelectTrigger className="h-8 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Successful">Successful</SelectItem>
-                          <SelectItem value="Pending">Pending</SelectItem>
-                          <SelectItem value="Failed">Failed</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    ) : key === "status" &&
-                      editingRecord?.table === "transfers" ? (
-                      <Select
-                        value={safeValue}
-                        onValueChange={(value) =>
-                          setEditForm((prev: any) => ({
-                            ...prev,
-                            [key]: value,
-                          }))
-                        }
-                      >
-                        <SelectTrigger className="h-8 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="completed">Completed</SelectItem>
-                          <SelectItem value="pending">Pending</SelectItem>
-                          <SelectItem value="failed">Failed</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    ) : key.includes("description") ||
-                      key.includes("details") ||
-                      key.includes("reason") ? (
-                      <Textarea
-                        value={safeValue}
-                        onChange={(e) =>
-                          setEditForm((prev: any) => ({
-                            ...prev,
-                            [key]: e.target.value,
-                          }))
-                        }
-                        className="text-xs"
-                        rows={3}
-                      />
-                    ) : inputType === "datetime-local" ? (
-                      <Input
-                        type="datetime-local"
-                        value={
-                          safeValue
-                            ? new Date(safeValue).toISOString().slice(0, 16)
-                            : ""
-                        }
-                        onChange={(e) =>
-                          setEditForm((prev: any) => ({
-                            ...prev,
-                            [key]: e.target.value,
-                          }))
-                        }
-                        className="h-8 text-xs"
-                      />
-                    ) : (
-                      <Input
-                        type={inputType}
-                        step={inputType === "number" ? "0.000001" : undefined}
-                        value={safeValue}
-                        onChange={(e) =>
-                          setEditForm((prev: any) => ({
-                            ...prev,
-                            [key]: e.target.value,
-                          }))
-                        }
-                        className="h-8 text-xs"
-                      />
-                    )}
-                  </div>
-                );
-              })}
+                  // Determine if field should span full width
+                  const fullWidthFields = [
+                    "description",
+                    "details",
+                    "reason",
+                    "transfer_type",
+                  ];
+                  const isFullWidth = fullWidthFields.some((field) =>
+                    key.includes(field)
+                  );
+
+                  return (
+                    <div
+                      key={key}
+                      className={`${isFullWidth ? "md:col-span-2" : ""}`}
+                    >
+                      <Label className="text-sm font-semibold text-gray-700 mb-2 block capitalize">
+                        {key.replace(/_/g, " ")}
+                      </Label>
+                      {key === "thStatus" ? (
+                        <Select
+                          value={safeValue}
+                          onValueChange={(value) =>
+                            setEditForm((prev: any) => ({
+                              ...prev,
+                              [key]: value,
+                            }))
+                          }
+                        >
+                          <SelectTrigger className="h-10 text-sm border-gray-300 focus:ring-2 focus:ring-[#F26623]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Successful">
+                              Successful
+                            </SelectItem>
+                            <SelectItem value="Pending">Pending</SelectItem>
+                            <SelectItem value="Failed">Failed</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : key === "status" &&
+                        editingRecord?.table === "transfers" ? (
+                        <Select
+                          value={safeValue}
+                          onValueChange={(value) =>
+                            setEditForm((prev: any) => ({
+                              ...prev,
+                              [key]: value,
+                            }))
+                          }
+                        >
+                          <SelectTrigger className="h-10 text-sm border-gray-300 focus:ring-2 focus:ring-[#F26623]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="completed">Completed</SelectItem>
+                            <SelectItem value="pending">Pending</SelectItem>
+                            <SelectItem value="failed">Failed</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : key.includes("description") ||
+                        key.includes("details") ||
+                        key.includes("reason") ? (
+                        <Textarea
+                          value={safeValue}
+                          onChange={(e) =>
+                            setEditForm((prev: any) => ({
+                              ...prev,
+                              [key]: e.target.value,
+                            }))
+                          }
+                          className="text-sm border-gray-300 focus:ring-2 focus:ring-[#F26623] resize-none"
+                          rows={4}
+                          placeholder="Enter description..."
+                        />
+                      ) : inputType === "datetime-local" ? (
+                        <Input
+                          type="datetime-local"
+                          value={
+                            safeValue
+                              ? new Date(safeValue).toISOString().slice(0, 16)
+                              : ""
+                          }
+                          onChange={(e) =>
+                            setEditForm((prev: any) => ({
+                              ...prev,
+                              [key]: e.target.value,
+                            }))
+                          }
+                          className="h-10 text-sm border-gray-300 focus:ring-2 focus:ring-[#F26623]"
+                        />
+                      ) : (
+                        <Input
+                          type={inputType}
+                          step={inputType === "number" ? "0.000001" : undefined}
+                          value={safeValue}
+                          onChange={(e) =>
+                            setEditForm((prev: any) => ({
+                              ...prev,
+                              [key]: e.target.value,
+                            }))
+                          }
+                          className="h-10 text-sm border-gray-300 focus:ring-2 focus:ring-[#F26623]"
+                          placeholder={`Enter ${key.replace(/_/g, " ")}`}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+            </div>
           </div>
 
-          <DialogFooter className="mt-4">
+          <DialogFooter className="border-t pt-4 flex-shrink-0">
             <Button
               variant="outline"
               onClick={() => {
@@ -3259,6 +3282,7 @@ export default function UnifiedAdminPanel() {
                 setSavingRecord(false);
               }}
               disabled={savingRecord}
+              className="h-10 px-6"
             >
               Cancel
             </Button>
@@ -3322,6 +3346,7 @@ export default function UnifiedAdminPanel() {
                 }
               }}
               disabled={savingRecord}
+              className="bg-[#F26623] hover:bg-[#E55A1F] h-10 px-6"
             >
               {savingRecord ? (
                 <>
@@ -3329,7 +3354,10 @@ export default function UnifiedAdminPanel() {
                   Saving...
                 </>
               ) : (
-                "Save"
+                <>
+                  <Save className="w-4 h-4 mr-2" />
+                  Save Changes
+                </>
               )}
             </Button>
           </DialogFooter>

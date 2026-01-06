@@ -174,6 +174,13 @@ const LoadingActivity = memo(() => (
   </div>
 ));
 
+const formatName = (name = "") =>
+  name
+    .trim()
+    .split(/\s+/) // split by spaces
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+
 const BalanceCard = memo(
   ({
     currency,
@@ -1326,7 +1333,7 @@ function DashboardContent({
       <div className="max-w-7xl mx-auto">
         <div className="mb-6 sm:mb-8">
           <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 leading-tight">
-            Welcome, {displayName}!
+            Welcome, {formatName(displayName)}!
           </h1>
         </div>
 
